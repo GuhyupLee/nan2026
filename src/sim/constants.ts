@@ -55,5 +55,12 @@ export const HEAL_BOOST_TIME = 1.6
 export const ATK_INTERVAL = 0.28
 export const ATK_DAMAGE = 13
 export const ATK_RANGE = 15
-/** 관통 수. 선 위의 적을 몇 명까지 뚫는가. */
-export const ATK_PIERCE = 3
+/**
+ * 관통 수. 선 위의 적을 몇 명까지 뚫는가.
+ *
+ * 3으로 두니 원거리가 8시드 전부 3:14에 죽었다. 생존력이 아니라 군중
+ * 정리 속도가 원인이었다 — 근접은 「월참」이 1초마다 부채꼴 광역을 뿌리는데
+ * 원거리의 광역은 14초 쿨의 E 하나뿐이었다.
+ * 관통을 늘리는 것이 "선을 긋는다"는 정체성과도 맞는다.
+ */
+export const ATK_PIERCE = 5

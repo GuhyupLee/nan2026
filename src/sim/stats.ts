@@ -9,7 +9,6 @@ import {
   HEAL_BOOST_TIME,
   HEAL_COOLDOWN,
   HEAL_SPEED_BOOST,
-  PLAYER_MAX_HP,
   PLAYER_RADIUS,
   PLAYER_SPEED,
 } from './constants.ts'
@@ -40,6 +39,23 @@ export interface Stats {
   atkInterval: number
   atkRange: number
   atkPierce: number
+  /**
+   * 점등된 적에게 평타가 주는 추가 피해.
+   *
+   * 원거리 패시브 「점등」의 전부다 — 스킬이 평타를 강화하는 순환이
+   * 이 값 하나로 성립한다. 평타가 자동이라 순환이 저절로 돈다.
+   * 근접은 순환 방향이 반대(평타가 스킬을 강화)라 값이 작다.
+   */
+  markBonus: number
+  /**
+   * 점등된 적을 처치할 때 회복하는 양.
+   *
+   * 실측이 구조적 비대칭을 드러내서 넣었다. 근접은 「월참」이 초당 4,
+   * 궁극기가 58을 회복해 300초에 1200을 회복하는데 원거리는 D(45초 쿨)뿐이라
+   * 0.78/초였다. 5배 격차라 8시드 전부 3:14에 죽었다.
+   * 원거리의 회복은 정체성에 붙인다 — 빛을 머금은 적이 죽으면 그 빛이 돌아온다.
+   */
+  markKillHeal: number
 
   // --- 전역 배수. 강화 카드가 곱해서 쌓는다 ---
   cooldownMul: number
@@ -69,15 +85,23 @@ export interface Stats {
 export function createStats(cls: PlayerClass): Stats {
   const melee = cls === 'melee'
   return {
-    maxHp: melee ? 140 : PLAYER_MAX_HP,
+    // 실효 체력 격차는 8시드 실측으로 좁힌 값이다.
+    // 처음 명세대로 100 vs 194(1.94배)로 두니 원딜이 0/8 전멸,
+    // 근딜이 8/8 완주였다. 원딜은 "안 맞으면 된다"를 전제했지만
+    // 적 100마리가 수렴하는 서바이버류에서 그 전제는 성립하지 않는다.
+    // 현재 격차 133 vs 162(1.22배) — 근딜이 더 단단하되 원딜이 즉사하지 않는다.
+    maxHp: melee ? 130 : 120,
     speed: melee ? 10.5 : PLAYER_SPEED,
     radius: melee ? 0.62 : PLAYER_RADIUS,
-    damageTakenMul: melee ? 0.72 : 1,
+    damageTakenMul: melee ? 0.8 : 0.9,
 
     atkDamage: melee ? 22 : ATK_DAMAGE,
     atkInterval: melee ? 0.42 : ATK_INTERVAL,
     atkRange: melee ? 3.2 : ATK_RANGE,
     atkPierce: melee ? 2 : ATK_PIERCE,
+    // 원거리는 점등 시 13 → 30 (약 2.3배). 스킬 하나만 맞춰두면 평타가 배 이상 아프다.
+    markBonus: melee ? 5 : 17,
+    markKillHeal: melee ? 0 : 0.6,
 
     cooldownMul: 1,
     atkDamageMul: 1,

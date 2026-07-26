@@ -1,7 +1,10 @@
 import { DT } from './constants.ts'
-import { ENEMY_TYPES, type EnemyPool, removeEnemy } from './enemies.ts'
+import { damageEnemy } from './damage.ts'
+import { ENEMY_TYPES, type EnemyPool } from './enemies.ts'
+import { tryEmpoweredAttack } from './kits.ts'
 import type { SpatialHash } from './spatial.ts'
 import { effectiveAtkDamage, effectiveAtkInterval } from './stats.ts'
+import { isMarked } from './status.ts'
 import type { TracerEvent, World } from './types.ts'
 
 /**
@@ -126,12 +129,16 @@ export function stepAutoAttack(
   const p = world.player
   const s = world.stats
   p.attackCooldown -= DT
-  if (p.attackCooldown > 0 || pool.count === 0) return 0
+  // 궁극기로 사라진 동안에는 평타가 나가지 않는다.
+  if (p.attackCooldown > 0 || pool.count === 0 || world.ult.active) return 0
 
   const target = pickTarget(pool, p.pos.x, p.pos.y, world.lastAim.x, world.lastAim.y, s.atkRange)
   if (target < 0) return 0
 
   p.attackCooldown = effectiveAtkInterval(s)
+
+  // 근접 패시브가 게이지를 채웠으면 이번 평타는 광역 「월참」으로 승격된다.
+  if (tryEmpoweredAttack(world)) return 0
 
   // 타겟 방향으로 사거리 끝까지 뻗는 선분
   const tx = pool.x[target]!
@@ -147,7 +154,7 @@ export function stepAutoAttack(
   const ey = p.pos.y + dy * s.atkRange
 
   if (tracers.length < 64) {
-    tracers.push({ x0: p.pos.x, y0: p.pos.y, x1: ex, y1: ey })
+    tracers.push({ x0: p.pos.x, y0: p.pos.y, x1: ex, y1: ey, width: 1, kind: 0 })
   }
 
   // 선분에 걸리는 적을 가까운 순으로 모은다
@@ -165,27 +172,16 @@ export function stepAutoAttack(
     return da - db
   })
 
-  let xp = 0
-  const dmg = effectiveAtkDamage(s)
+  const base = effectiveAtkDamage(s)
   const n = Math.min(hitBuf.length, s.atkPierce)
-  // 뒤에서부터 지워야 swap-remove가 앞쪽 인덱스를 흔들지 않는다.
-  const killed: number[] = []
   for (let k = 0; k < n; k++) {
     const i = hitBuf[k]!
-    pool.hp[i] = pool.hp[i]! - dmg
-    pool.flash[i] = 0.08
-    if (pool.hp[i]! <= 0) killed.push(i)
+    // 점등: 스킬에 맞아둔 적은 평타가 훨씬 아프다.
+    // 판정은 f32 비교 하나 — 순환 전체가 이 한 줄로 성립한다.
+    const dmg = isMarked(pool, i, world.time) ? base + s.markBonus : base
+    damageEnemy(world, i, dmg)
   }
 
-  killed.sort((a, b) => b - a)
-  for (const i of killed) {
-    const def = ENEMY_TYPES[pool.type[i]!]!
-    xp += def.xp
-    if (world.deaths.length < 128) {
-      world.deaths.push({ x: pool.x[i]!, y: pool.y[i]!, type: pool.type[i]! })
-    }
-    removeEnemy(pool, i)
-  }
-
-  return xp
+  // XP는 damageEnemy가 직접 지급한다. 제거는 틱 끝의 스윕이 맡는다.
+  return 0
 }

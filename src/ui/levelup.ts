@@ -1,28 +1,35 @@
+import { getSkillDef } from '../content/skills.ts'
 import { UPGRADES, getUpgrade } from '../content/upgrades.ts'
-import { rollUpgrades, type UpgradeCandidate } from '../sim/progression.ts'
+import { pendingReward, rollUpgrades, type UpgradeCandidate } from '../sim/progression.ts'
+import { lockedChoosableSkills, unlockSkill, type SkillId } from '../sim/skills.ts'
 import type { World } from '../sim/types.ts'
 
 /**
- * 레벨업 3택 카드.
+ * 레벨업 보상 화면.
  *
- * 뱀서 문법 그대로 — 게임이 멈추고, 카드 3장이 뜨고, 하나를 고르면 재개된다.
- * 5분 게임에서 이 화면이 5~6번 뜨므로 0.5초라도 굼뜨면 흐름이 죽는다.
+ * 뱀서 문법 그대로 — 게임이 멈추고, 카드가 뜨고, 하나를 고르면 재개된다.
+ * 5분 게임에서 이 화면이 9번 뜨므로 0.5초라도 굼뜨면 흐름이 죽는다.
  * 그래서 1/2/3 키로 즉시 고를 수 있게 하고 애니메이션을 짧게 잡았다.
  *
- * 카드가 뜨는 동안 world.awaitingChoice가 true라 시뮬은 한 틱도 진행하지 않는다.
- * 카드를 읽는 시간이 5분 시계에 섞이면 비트 시트 검증이 무의미해진다.
+ * 보상 종류는 progression.LEVEL_REWARDS가 정한다:
+ *   Lv2·3  스킬 해금 (남은 것 중 선택)
+ *   Lv5    마지막 스킬 확정 지급 — 카드가 1장뿐인 선택은 선택이 아니다
+ *   Lv8    궁극기 확정 지급 → 10초 뒤 보스
+ *   나머지  강화 3택
  */
 
-/**
- * QWER 스킬 해금 카드를 낼 것인가.
- *
- * 스킬 구현이 끝나기 전에 켜면 D/F 때와 같은 문제가 생긴다 —
- * 해금은 되는데 눌러도 아무 일이 없는 카드가 나온다. 그건 잠긴 것보다 나쁘다.
- * QWER 킷이 붙는 순간 true로 바꾼다.
- */
-export const SKILL_UNLOCKS_ENABLED = false
+interface Card {
+  id: string
+  kind: 'unlock' | 'upgrade'
+  accent: string
+  glyph: string
+  slotLabel?: string
+  tag: string
+  name: string
+  desc: string
+}
 
-function buildCandidates(world: World): UpgradeCandidate[] {
+function upgradeCandidates(world: World): UpgradeCandidate[] {
   return UPGRADES.map((u) => ({
     id: u.id,
     available: u.isAvailable ? u.isAvailable(world) : true,
@@ -30,16 +37,86 @@ function buildCandidates(world: World): UpgradeCandidate[] {
   }))
 }
 
+function skillCard(world: World, id: SkillId): Card | null {
+  const def = getSkillDef(world.playerClass, id)
+  if (!def) return null
+  return {
+    id,
+    kind: 'unlock',
+    accent: world.playerClass === 'melee' ? '#ff5a6e' : '#4dd0ff',
+    glyph: def.glyph,
+    slotLabel: def.key,
+    tag: def.tag,
+    name: def.name,
+    desc: def.oneLiner,
+  }
+}
+
+/** 이번 레벨업에 보여줄 카드를 정한다. */
+function buildCards(world: World): Card[] {
+  const reward = pendingReward(world.progression)
+
+  if (reward === 'unlock-choice' || reward === 'unlock-last') {
+    const locked = lockedChoosableSkills(world.skills)
+    if (locked.length > 0) {
+      return locked.map((id) => skillCard(world, id)).filter((c): c is Card => c !== null)
+    }
+    // 이미 다 갖고 있으면 강화로 흘려보낸다.
+  }
+
+  if (reward === 'unlock-ult' && !world.skills.r.unlocked) {
+    const c = skillCard(world, 'r')
+    if (c) return [c]
+  }
+
+  const out: Card[] = []
+  for (const choice of rollUpgrades(
+    world.rng,
+    upgradeCandidates(world),
+    3,
+    world.upgradesTaken,
+  )) {
+    const u = getUpgrade(choice.id)
+    if (!u) continue
+    out.push({
+      id: u.id,
+      kind: 'upgrade',
+      accent: '#4dd0ff',
+      glyph: u.glyph,
+      tag: '강화',
+      name: u.name,
+      desc: u.oneLiner,
+    })
+  }
+  return out
+}
+
+function applyCard(world: World, card: Card): void {
+  if (card.kind === 'unlock') {
+    const def = getSkillDef(world.playerClass, card.id as SkillId)
+    if (def) unlockSkill(world.skills, card.id as SkillId, def.cooldown * world.stats.cooldownMul)
+    return
+  }
+  const u = getUpgrade(card.id)
+  if (u) {
+    u.apply(world)
+    world.upgradesTaken.add(card.id)
+  }
+}
+
 /**
  * 카드 화면을 띄우고 고를 때까지 기다린다.
  * 선택 효과는 여기서 적용하고, 호출부가 resolveLevelUp을 부른다.
  */
 export function showLevelUp(parent: HTMLElement, world: World): Promise<void> {
-  const choices = rollUpgrades(world.rng, buildCandidates(world), 3, world.upgradesTaken)
+  const cards = buildCards(world)
 
-  // 뽑을 카드가 하나도 없으면(전부 획득) 화면을 띄우지 않고 넘어간다.
-  // 빈 화면에서 심사자가 멈추는 것보다 조용히 지나가는 게 낫다.
-  if (choices.length === 0) return Promise.resolve()
+  // 낼 카드가 하나도 없으면 화면을 띄우지 않고 조용히 넘어간다.
+  // 빈 화면에서 심사자가 멈추는 것보다 낫다.
+  if (cards.length === 0) return Promise.resolve()
+
+  const isUnlock = cards[0]!.kind === 'unlock'
+  const single = cards.length === 1
 
   return new Promise((resolve) => {
     const root = document.createElement('div')
@@ -47,57 +124,58 @@ export function showLevelUp(parent: HTMLElement, world: World): Promise<void> {
 
     const banner = document.createElement('div')
     banner.className = 'banner'
-    banner.innerHTML = `<div class="lv">LEVEL ${world.progression.level}</div><h2>강화를 선택하세요</h2>`
+    banner.innerHTML =
+      `<div class="lv">LEVEL ${world.progression.level}</div>` +
+      `<h2>${isUnlock ? (single ? '새로운 힘을 얻었다' : '스킬을 해금하세요') : '강화를 선택하세요'}</h2>`
     root.appendChild(banner)
 
-    const cards = document.createElement('div')
-    cards.className = 'cards'
-    root.appendChild(cards)
+    const list = document.createElement('div')
+    list.className = 'cards'
+    root.appendChild(list)
 
     let done = false
-    const pick = (id: string): void => {
+    const pick = (card: Card): void => {
       if (done) return
       done = true
       window.removeEventListener('keydown', onKey)
-
-      const def = getUpgrade(id)
-      if (def) {
-        def.apply(world)
-        world.upgradesTaken.add(id)
-      }
+      applyCard(world, card)
       root.remove()
       resolve()
     }
 
-    choices.forEach((choice, i) => {
-      const def = getUpgrade(choice.id)
-      if (!def) return
+    cards.forEach((card, i) => {
+      const el = document.createElement('button')
+      el.className = 'lvcard'
+      el.type = 'button'
+      el.dataset.kind = card.kind
+      el.style.setProperty('--accent', card.accent)
 
-      const card = document.createElement('button')
-      card.className = 'lvcard'
-      card.type = 'button'
-      card.dataset.kind = choice.kind
-
-      card.innerHTML =
+      el.innerHTML =
         `<div class="hotkey">${i + 1}</div>` +
-        `<div class="top"><div class="icon">${def.glyph}</div><span class="tag">강화</span></div>` +
-        `<h3>${def.name}</h3>` +
-        `<p>${def.oneLiner}</p>`
+        `<div class="top">` +
+        `<div class="icon">${card.glyph}</div>` +
+        (card.slotLabel ? `<span class="slot">${card.slotLabel}</span>` : '') +
+        `<span class="tag">${card.tag}</span>` +
+        `</div>` +
+        `<h3>${card.name}</h3>` +
+        `<p>${card.desc}</p>`
 
-      card.addEventListener('click', () => pick(def.id))
-      cards.appendChild(card)
+      el.addEventListener('click', () => pick(card))
+      list.appendChild(el)
     })
 
     const onKey = (e: KeyboardEvent): void => {
-      const n = Number.parseInt(e.key, 10)
-      if (Number.isFinite(n) && n >= 1 && n <= choices.length) {
-        pick(choices[n - 1]!.id)
+      // 카드가 1장뿐이면 아무 키로나 넘어간다 — 확인 화면에서 막히지 않게.
+      if (single && (e.key === 'Enter' || e.key === ' ' || e.key === '1')) {
+        pick(cards[0]!)
+        return
       }
+      const n = Number.parseInt(e.key, 10)
+      if (Number.isFinite(n) && n >= 1 && n <= cards.length) pick(cards[n - 1]!)
     }
     window.addEventListener('keydown', onKey)
 
     parent.appendChild(root)
-    // 첫 카드에 포커스를 줘서 키보드만으로도 흐름이 끊기지 않게 한다.
-    ;(cards.firstElementChild as HTMLElement | null)?.focus()
+    ;(list.firstElementChild as HTMLElement | null)?.focus()
   })
 }

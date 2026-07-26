@@ -1,7 +1,16 @@
 import { ARENA_RADIUS, DT, PLAYER_ACCEL } from './constants.ts'
 import { currentSpeed, stepAbilities } from './abilities.ts'
 import { stepAutoAttack } from './combat.ts'
-import { createEnemyHash, createEnemyPool, stepEnemies, updateSpawner } from './enemies.ts'
+import { sweepDead } from './damage.ts'
+import { stepGauge, stepKits } from './kits.ts'
+import { stepZones } from './zones.ts'
+import {
+  createEnemyHash,
+  createEnemyPool,
+  rebuildEnemyHash,
+  stepEnemies,
+  updateSpawner,
+} from './enemies.ts'
 import { addXp, consumeLevelUp, createProgression } from './progression.ts'
 import { createRng } from './rng.ts'
 import { createSkillBook, tickSkills, unlockSkill } from './skills.ts'
@@ -21,6 +30,9 @@ export function createWorld(seed: number, playerClass: PlayerClass = 'ranged'): 
     hp: stats.maxHp,
     attackCooldown: 0,
     speedBoostUntil: -1,
+    invulnUntil: -1,
+    gauge: 0,
+    empowered: false,
   }
 
   const skills = createSkillBook()
@@ -45,9 +57,13 @@ export function createWorld(seed: number, playerClass: PlayerClass = 'ranged'): 
     enemies: createEnemyPool(),
     enemyHash: createEnemyHash(),
     spawnEnabled: true,
+    zones: [],
+    blasts: [],
+    ult: { active: false, nextHitAt: 0, hitsLeft: 0 },
     deaths: [],
     tracers: [],
     rings: [],
+    casts: [],
     awaitingChoice: false,
     outcome: 'alive',
   }
@@ -66,6 +82,10 @@ export function stepWorld(world: World, input: Input): void {
   world.lastAim.x = input.aim.x
   world.lastAim.y = input.aim.y
 
+  // 격자를 가장 먼저 만든다. 스킬 시전이 이동보다 앞서므로 여기서
+  // 갱신하지 않으면 스킬이 낡은(첫 틱엔 빈) 격자를 질의해 헛손질한다.
+  rebuildEnemyHash(world.enemies, world.enemyHash)
+
   tickSkills(world.skills, DT)
   // 스킬은 이동보다 먼저 처리한다. 점멸이 위치를 바꾸므로
   // 같은 틱의 이동이 그 새 위치에서 이어져야 순간이동이 매끄럽다.
@@ -77,15 +97,30 @@ export function stepWorld(world: World, input: Input): void {
     updateSpawner(world.enemies, world.rng, world.time, p.pos.x, p.pos.y)
   }
 
-  const res = stepEnemies(world.enemies, world.enemyHash, p.pos.x, p.pos.y, world.stats.radius)
-  if (res.contactDamage > 0) {
+  const res = stepEnemies(
+    world.enemies,
+    world.enemyHash,
+    p.pos.x,
+    p.pos.y,
+    world.stats.radius,
+    world.time,
+  )
+  // 무적 중에는 접촉 피해를 받지 않는다. 대시·궁극기가 성립하는 근거다.
+  if (res.contactDamage > 0 && world.time >= p.invulnUntil) {
     // 클래스별 피해 감소를 여기 한 곳에서만 적용한다.
     p.hp = Math.max(0, p.hp - res.contactDamage * world.stats.damageTakenMul)
     if (p.hp <= 0) world.outcome = 'dead'
   }
 
-  const xp = stepAutoAttack(world, world.enemies, world.enemyHash, world.tracers)
-  if (xp > 0) grantXp(world, xp)
+  // 근접 패시브 게이지는 적을 센 뒤에 돌려야 이번 틱 배치를 반영한다.
+  stepGauge(world, DT)
+  stepKits(world)
+  stepZones(world)
+  stepAutoAttack(world, world.enemies, world.enemyHash, world.tracers)
+
+  // 사망 처리는 모든 판정이 끝난 뒤 한 번만. 질의 도중에 배열을 흔들면
+  // 아직 방문하지 않은 적이 처리된 인덱스로 옮겨와 중복·누락이 생긴다.
+  sweepDead(world)
 
   world.tick += 1
   world.time = world.tick * DT
@@ -99,6 +134,7 @@ export function drainEvents(world: World): void {
   world.deaths.length = 0
   world.tracers.length = 0
   world.rings.length = 0
+  world.casts.length = 0
 }
 
 /**

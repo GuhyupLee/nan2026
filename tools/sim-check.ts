@@ -252,10 +252,15 @@ console.log('\nsim smoke check\n')
     m.stats.atkRange < r.stats.atkRange / 3,
     `${m.stats.atkRange} vs ${r.stats.atkRange}`,
   )
-  check(
-    '근딜 실효 체력이 원딜의 1.5배 이상',
-    m.stats.maxHp / m.stats.damageTakenMul > (r.stats.maxHp / r.stats.damageTakenMul) * 1.5,
-  )
+  // 근딜이 더 단단해야 하지만 격차가 벌어지면 원딜이 전멸한다.
+  // 처음 1.94배로 뒀더니 8시드에서 원딜 0/8, 근딜 8/8이었다.
+  // 상한을 테스트로 못박아 다시 벌어지지 않게 한다.
+  {
+    const ratio =
+      m.stats.maxHp / m.stats.damageTakenMul / (r.stats.maxHp / r.stats.damageTakenMul)
+    check('근딜이 원딜보다 단단하다', ratio > 1.1, `${ratio.toFixed(2)}배`)
+    check('다만 격차가 1.5배를 넘지 않는다', ratio < 1.5, `${ratio.toFixed(2)}배`)
+  }
   check('시작 체력은 최대 체력과 같다', m.player.hp === m.stats.maxHp && r.player.hp === r.stats.maxHp)
 
   // 강화가 실제로 스탯을 바꿀 수 있어야 한다 — world.stats 도입의 목적

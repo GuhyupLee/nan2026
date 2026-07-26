@@ -3,9 +3,11 @@ import type { DeathEvent, EnemyPool } from './enemies.ts'
 import type { Progression } from './progression.ts'
 import type { Rng } from './rng.ts'
 import type { SkillBook } from './skills.ts'
+import type { SkillId } from './skills.ts'
 import type { SpatialHash } from './spatial.ts'
 import type { Stats } from './stats.ts'
 import type { Vec2 } from './vec.ts'
+import type { PendingBlast, Zone } from './zones.ts'
 
 /**
  * 한 틱 분량의 플레이어 입력.
@@ -56,6 +58,24 @@ export interface Player {
   attackCooldown: number
   /** 이동속도 증가가 끝나는 시각(월드 시간). 회복(D)이 설정한다. */
   speedBoostUntil: number
+  /** 무적이 끝나는 시각. 대시·궁극기가 설정한다. */
+  invulnUntil: number
+  /**
+   * 근접 패시브 「참흔」 게이지 0~100.
+   * 원거리 클래스에서는 쓰이지 않는다.
+   */
+  gauge: number
+  /** 다음 평타가 「월참」(광역)으로 승격되는가. */
+  empowered: boolean
+}
+
+/** 지속되는 궁극기 상태. 지금은 근접 「만월난무」만 쓴다. */
+export interface UltState {
+  active: boolean
+  /** 다음 타격 시각. */
+  nextHitAt: number
+  /** 남은 타격 수. */
+  hitsLeft: number
 }
 
 /** 자동 공격 한 발의 궤적. 렌더러가 예광선을 그리고 비운다. */
@@ -64,6 +84,17 @@ export interface TracerEvent {
   y0: number
   x1: number
   y1: number
+  /** 굵기 배수. 궁극기 빔처럼 굵은 것을 같은 큐로 그린다. */
+  width: number
+  /** 0=평타(청백) 1=스킬(시안) 2=궁극기(금백) 3=참격(크림슨) */
+  kind: number
+}
+
+/** 스킬이 발동한 순간. 캐릭터 시전 모션이 이걸 보고 재생된다. */
+export interface CastEvent {
+  slot: SkillId
+  /** 시전 방향(라디안). 모션이 이 방향을 향한다. */
+  angle: number
 }
 
 export interface World {
@@ -99,9 +130,17 @@ export interface World {
    * 렌더 전용 출력. 시뮬은 push만 하고 렌더러가 소비 후 비운다.
    * 헤드리스 밸런싱에서는 아무도 비우지 않으므로 상한을 두고 버린다.
    */
+  /** 지속 장판. */
+  zones: Zone[]
+  /** 지연 폭발 대기열. */
+  blasts: PendingBlast[]
+  ult: UltState
+
   deaths: DeathEvent[]
   tracers: TracerEvent[]
   rings: RingEvent[]
+  /** 스킬 시전 이벤트. 렌더러가 모션·이펙트에 쓰고 비운다. */
+  casts: CastEvent[]
 
   /**
    * 레벨업 선택 대기 중인가.

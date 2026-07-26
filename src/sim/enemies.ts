@@ -1,6 +1,7 @@
 import { ARENA_RADIUS, DT } from './constants.ts'
 import { randRange, type Rng } from './rng.ts'
 import { SpatialHash } from './spatial.ts'
+import { integrateImpulse, speedMultiplier } from './status.ts'
 
 /**
  * 적 — 구조체 배열(SoA)로 관리한다.
@@ -23,6 +24,11 @@ export interface EnemyTypeDef {
   /** 접촉 시 플레이어에게 주는 피해. */
   contactDamage: number
   xp: number
+  /**
+   * 넉백 저항 0~1. 큰 적일수록 덜 밀린다.
+   * 없으면 브루트가 잡몹처럼 날아가서 무게감이 사라진다.
+   */
+  knockbackResist: number
 }
 
 /**
@@ -36,9 +42,9 @@ export interface EnemyTypeDef {
  * 실수 한 번으로 즉사하지는 않는 선으로 낮춘다.
  */
 export const ENEMY_TYPES: readonly EnemyTypeDef[] = [
-  { id: 'walker', name: '워커', hp: 20, speed: 3.4, radius: 0.42, contactDamage: 3, xp: 1 },
-  { id: 'rusher', name: '러셔', hp: 12, speed: 6.4, radius: 0.33, contactDamage: 4, xp: 1 },
-  { id: 'brute', name: '브루트', hp: 90, speed: 2.1, radius: 0.62, contactDamage: 9, xp: 4 },
+  { id: 'walker', name: '워커', hp: 20, speed: 3.4, radius: 0.42, contactDamage: 3, xp: 1, knockbackResist: 0 },
+  { id: 'rusher', name: '러셔', hp: 12, speed: 6.4, radius: 0.33, contactDamage: 4, xp: 1, knockbackResist: 0 },
+  { id: 'brute', name: '브루트', hp: 90, speed: 2.1, radius: 0.62, contactDamage: 9, xp: 4, knockbackResist: 0.55 },
 ]
 
 export const TYPE_WALKER = 0
@@ -60,10 +66,50 @@ export interface EnemyPool {
   type: Uint8Array
   /** 피격 점멸 남은 시간(초). 렌더가 흰색 보간에 쓴다. */
   flash: Float32Array
+
+  // --- 상태 (전부 "만료 시각" 방식) ---
+  // 남은 시간을 매 틱 감산하면 적 수백 마리에 대해 매번 써야 한다.
+  // 만료 시각은 쓰기가 1회뿐이고 판정은 비교 하나다.
+
+  /** 점등 만료 시각. 원거리 패시브가 이 하나만 읽는다. */
+  markExpire: Float32Array
+  /** 둔화 만료 시각과 배수. */
+  slowUntil: Float32Array
+  slowMul: Float32Array
+  /** 속박 만료 시각. 이동이 완전히 멈춘다. */
+  rootUntil: Float32Array
+
+  // --- 임펄스: 밀어냄·넉백. 지수 감쇠한다 ---
+  pushVx: Float32Array
+  pushVy: Float32Array
+
+  // --- 견인: 지정 지점으로 끌려간다. AI 조향과 분리를 무시한다 ---
+  pullX: Float32Array
+  pullY: Float32Array
+  pullUntil: Float32Array
+  /** 견인 목표 링 반경. 이 반경까지만 접근한다(겹침 폭발 방지). */
+  pullRing: Float32Array
+  /** 견인 속도(초당). */
+  pullSpeed: Float32Array
+
+  /**
+   * 한 시전이 같은 적을 두 번 때리지 않게 하는 토큰.
+   * 링 확장처럼 여러 틱에 걸친 판정이 이걸 쓴다.
+   */
+  hitToken: Int32Array
+
+  /**
+   * swap-remove가 순회할 타입 배열 목록.
+   *
+   * 손으로 복사문을 쓰면 필드를 추가할 때마다 하나씩 빠뜨리고, 그러면
+   * 죽은 적의 둔화·점등이 새로 스폰된 적에게 상속되는 유령 버그가 생긴다.
+   * 생성 시점에 자동으로 모아 그 경로를 없앤다.
+   */
+  readonly views: ArrayBufferView[]
 }
 
 export function createEnemyPool(): EnemyPool {
-  return {
+  const pool: EnemyPool = {
     count: 0,
     x: new Float32Array(MAX_ENEMIES),
     y: new Float32Array(MAX_ENEMIES),
@@ -75,7 +121,31 @@ export function createEnemyPool(): EnemyPool {
     maxHp: new Float32Array(MAX_ENEMIES),
     type: new Uint8Array(MAX_ENEMIES),
     flash: new Float32Array(MAX_ENEMIES),
+
+    markExpire: new Float32Array(MAX_ENEMIES),
+    slowUntil: new Float32Array(MAX_ENEMIES),
+    slowMul: new Float32Array(MAX_ENEMIES).fill(1),
+    rootUntil: new Float32Array(MAX_ENEMIES),
+
+    pushVx: new Float32Array(MAX_ENEMIES),
+    pushVy: new Float32Array(MAX_ENEMIES),
+
+    pullX: new Float32Array(MAX_ENEMIES),
+    pullY: new Float32Array(MAX_ENEMIES),
+    pullUntil: new Float32Array(MAX_ENEMIES),
+    pullRing: new Float32Array(MAX_ENEMIES),
+    pullSpeed: new Float32Array(MAX_ENEMIES),
+
+    hitToken: new Int32Array(MAX_ENEMIES),
+    views: [],
   }
+
+  // 타입 배열을 전부 모은다. 필드를 추가해도 자동으로 따라온다.
+  const views = pool.views as ArrayBufferView[]
+  for (const v of Object.values(pool)) {
+    if (ArrayBuffer.isView(v)) views.push(v as ArrayBufferView)
+  }
+  return pool
 }
 
 /** 사망 이벤트. 렌더러가 소멸 연출에 쓰고 비운다. */
@@ -177,22 +247,30 @@ export function spawnEnemy(pool: EnemyPool, rng: Rng, px: number, py: number, ty
   pool.maxHp[i] = def.hp
   pool.type[i] = type
   pool.flash[i] = 0
+
+  // 슬롯 재사용이므로 상태를 반드시 초기화한다.
+  // 안 그러면 죽은 적의 둔화·점등이 새로 스폰된 적에게 상속된다.
+  pool.markExpire[i] = -1
+  pool.slowUntil[i] = -1
+  pool.slowMul[i] = 1
+  pool.rootUntil[i] = -1
+  pool.pushVx[i] = 0
+  pool.pushVy[i] = 0
+  pool.pullUntil[i] = -1
+  pool.pullRing[i] = 0
+  pool.pullSpeed[i] = 0
+  pool.hitToken[i] = 0
 }
 
 /** swap-remove. 배열을 조밀하게 유지한다. */
 export function removeEnemy(pool: EnemyPool, i: number): void {
   const last = --pool.count
-  if (i !== last) {
-    pool.x[i] = pool.x[last]!
-    pool.y[i] = pool.y[last]!
-    pool.prevX[i] = pool.prevX[last]!
-    pool.prevY[i] = pool.prevY[last]!
-    pool.vx[i] = pool.vx[last]!
-    pool.vy[i] = pool.vy[last]!
-    pool.hp[i] = pool.hp[last]!
-    pool.maxHp[i] = pool.maxHp[last]!
-    pool.type[i] = pool.type[last]!
-    pool.flash[i] = pool.flash[last]!
+  if (i === last) return
+  for (const v of pool.views) {
+    // 모든 배열이 같은 레이아웃(인덱스 = 적 슬롯)이라 한 줄로 끝난다.
+    ;(v as unknown as { [k: number]: number })[i] = (
+      v as unknown as { [k: number]: number }
+    )[last]!
   }
 }
 
@@ -218,6 +296,7 @@ const SEPARATION = 14
 const MAX_CONTACT_ATTACKERS = 4
 
 const neighborBuf = new Int32Array(96)
+const impulseOut = { x: 0, y: 0 }
 
 export interface EnemyStepResult {
   /** 이번 틱에 플레이어가 받은 접촉 피해 합계(캡 적용 후). */
@@ -239,9 +318,12 @@ export function stepEnemies(
   px: number,
   py: number,
   playerRadius: number,
+  now: number,
 ): EnemyStepResult {
+  // 격자는 여기서 만들지 않는다. 스킬이 stepEnemies보다 먼저 돌기 때문에
+  // 여기서 재구축하면 스킬 질의가 항상 한 틱 낡은(또는 첫 틱엔 빈) 격자를 본다.
+  // stepWorld가 틱 맨 앞에서 rebuildEnemyHash를 부른다.
   const n = pool.count
-  hash.rebuild(n, pool.x, pool.y)
 
   let contactDamage = 0
   let contactCount = 0
@@ -258,46 +340,77 @@ export function stepEnemies(
     const ex = pool.x[i]!
     const ey = pool.y[i]!
 
-    // --- 조향: 플레이어 추적 ---
-    let dx = px - ex
-    let dy = py - ey
-    const dl = Math.hypot(dx, dy)
-    if (dl > 1e-6) {
-      dx /= dl
-      dy /= dl
-    }
+    const pulled = pool.pullUntil[i]! > now
+    let targetVx: number
+    let targetVy: number
 
-    // --- 분리: 겹쳐 쌓이는 것을 막는다 ---
-    // 이게 없으면 적이 한 점에 뭉쳐 한 마리처럼 보이고 타격감이 죽는다.
-    const reach = def.radius * 2 + 0.6
-    const cnt = hash.query(ex, ey, reach, neighborBuf)
-    let sx = 0
-    let sy = 0
-    for (let k = 0; k < cnt; k++) {
-      const j = neighborBuf[k]!
-      if (j === i) continue
-      const ox = ex - pool.x[j]!
-      const oy = ey - pool.y[j]!
-      const d2 = ox * ox + oy * oy
-      const min = def.radius + ENEMY_TYPES[pool.type[j]!]!.radius
-      if (d2 > 1e-8 && d2 < min * min) {
-        const d = Math.sqrt(d2)
-        const push = (min - d) / min
-        sx += (ox / d) * push
-        sy += (oy / d) * push
+    if (pulled) {
+      // --- 견인: AI 조향과 분리를 통째로 끈다 ---
+      // 그래야 빽빽한 기둥으로 뭉치고 지터가 사라진다. 연출이 공짜로 좋아진다.
+      let gx = pool.pullX[i]! - ex
+      let gy = pool.pullY[i]! - ey
+      const gd = Math.hypot(gx, gy)
+      const ring = pool.pullRing[i]!
+      if (gd <= ring + 0.05 || gd < 1e-6) {
+        targetVx = 0
+        targetVy = 0
+      } else {
+        gx /= gd
+        gy /= gd
+        // 링을 지나치지 않게 이번 틱 이동량을 잘라낸다.
+        const speed = Math.min(pool.pullSpeed[i]!, (gd - ring) / DT)
+        targetVx = gx * speed
+        targetVy = gy * speed
       }
-    }
+    } else {
+      // --- 조향: 플레이어 추적 ---
+      let dx = px - ex
+      let dy = py - ey
+      const dl = Math.hypot(dx, dy)
+      if (dl > 1e-6) {
+        dx /= dl
+        dy /= dl
+      }
 
-    const targetVx = dx * def.speed + sx * SEPARATION
-    const targetVy = dy * def.speed + sy * SEPARATION
+      // --- 분리: 겹쳐 쌓이는 것을 막는다 ---
+      // 이게 없으면 적이 한 점에 뭉쳐 한 마리처럼 보이고 타격감이 죽는다.
+      const reach = def.radius * 2 + 0.6
+      const cnt = hash.query(ex, ey, reach, neighborBuf)
+      let sx = 0
+      let sy = 0
+      for (let k = 0; k < cnt; k++) {
+        const j = neighborBuf[k]!
+        if (j === i || j >= n) continue
+        const ox = ex - pool.x[j]!
+        const oy = ey - pool.y[j]!
+        const d2 = ox * ox + oy * oy
+        const min = def.radius + ENEMY_TYPES[pool.type[j]!]!.radius
+        if (d2 > 1e-8 && d2 < min * min) {
+          const d = Math.sqrt(d2)
+          const push = (min - d) / min
+          sx += (ox / d) * push
+          sy += (oy / d) * push
+        }
+      }
+
+      // 둔화·속박은 추적 속도에만 걸린다. 분리 밀어냄까지 막으면
+      // 속박된 적들이 서로 겹쳐 한 덩어리가 된다.
+      const mul = speedMultiplier(pool, i, now)
+      targetVx = dx * def.speed * mul + sx * SEPARATION
+      targetVy = dy * def.speed * mul + sy * SEPARATION
+    }
 
     // 즉시 목표 속도로 가지 않고 감쇠시켜야 무리가 유체처럼 흐른다.
-    const k = 1 - Math.exp(-12 * DT)
+    // 견인 중에는 즉각 반응해야 "빨려든다"가 읽힌다.
+    const k = pulled ? 1 : 1 - Math.exp(-12 * DT)
     pool.vx[i] = pool.vx[i]! + (targetVx - pool.vx[i]!) * k
     pool.vy[i] = pool.vy[i]! + (targetVy - pool.vy[i]!) * k
 
-    let nx = ex + pool.vx[i]! * DT
-    let ny = ey + pool.vy[i]! * DT
+    // --- 임펄스: 조향과 별개로 더해진다. 속박 중에도 밀린다 ---
+    integrateImpulse(pool, i, impulseOut)
+
+    let nx = ex + pool.vx[i]! * DT + impulseOut.x
+    let ny = ey + pool.vy[i]! * DT + impulseOut.y
 
     // --- 아레나 경계 ---
     const dist = Math.hypot(nx, ny)
@@ -350,6 +463,16 @@ export function updateSpawner(
   for (let k = 0; k < budget; k++) {
     spawnEnemy(pool, rng, px, py, rollType(rng, time))
   }
+}
+
+/**
+ * 공간 격자를 현재 위치로 다시 만든다.
+ *
+ * 반드시 틱 맨 앞에서 부른다. 스킬 시전이 이동보다 먼저 처리되므로,
+ * 격자 재구축이 뒤로 밀리면 스킬이 빈 격자를 질의해 아무것도 못 맞힌다.
+ */
+export function rebuildEnemyHash(pool: EnemyPool, hash: SpatialHash): void {
+  hash.rebuild(pool.count, pool.x, pool.y)
 }
 
 export function createEnemyHash(): SpatialHash {

@@ -1,5 +1,6 @@
 import { ARENA_RADIUS } from './constants.ts'
-import { consumeCooldown, SKILL_D, SKILL_F } from './skills.ts'
+import { castSkill } from './kits.ts'
+import { consumeCooldown, SKILL_D, SKILL_E, SKILL_F, SKILL_Q, SKILL_R, SKILL_W } from './skills.ts'
 import type { Input, World } from './types.ts'
 
 /**
@@ -99,8 +100,14 @@ export function stepAbilities(world: World, input: Input): void {
   const pressed = input.skillsPressed
   if (pressed === 0) return
 
+  // 소환사 주문이 먼저다. 위기에서 점멸이 스킬 뒤로 밀리면 안 된다.
   if (pressed & SKILL_F) tryFlash(world)
   if (pressed & SKILL_D) tryHeal(world)
+
+  if (pressed & SKILL_Q) castSkill(world, 'q')
+  if (pressed & SKILL_W) castSkill(world, 'w')
+  if (pressed & SKILL_E) castSkill(world, 'e')
+  if (pressed & SKILL_R) castSkill(world, 'r')
 }
 
 /** 회복 버프가 적용된 현재 이동 속도. */
