@@ -1,0 +1,165 @@
+/* ---------------------------------------------------------------------------
+   스킬바 — 화면 하단 6슬롯 (Q W E R D F)
+   PC에서는 키보드와 클릭 둘 다, 모바일에서는 이것이 유일한 입력 수단이다.
+   쿨다운 부채꼴이 도는 이 UI가 곧 롤/이터널 리턴 룩 그 자체다.
+--------------------------------------------------------------------------- */
+
+.skillbar {
+  position: fixed;
+  left: 50%;
+  bottom: calc(1.1rem + env(safe-area-inset-bottom, 0px));
+  transform: translateX(-50%);
+  display: flex;
+  gap: 0.5rem;
+  z-index: 6;
+  /* 슬롯 바깥의 빈 공간으로는 클릭이 통과해야 이동이 끊기지 않는다. */
+  pointer-events: none;
+}
+
+.slot {
+  --p: 0; /* 쿨다운 진행률 0..1 */
+  position: relative;
+  width: 3.4rem;
+  height: 3.4rem;
+  border-radius: 0.7rem;
+  background: linear-gradient(180deg, #16202f 0%, #0c1420 100%);
+  border: 1px solid #2b3d55;
+  display: grid;
+  place-items: center;
+  pointer-events: auto;
+  cursor: pointer;
+  user-select: none;
+  -webkit-tap-highlight-color: transparent;
+  transition:
+    border-color 0.15s ease,
+    transform 0.08s ease;
+  overflow: hidden;
+}
+
+.slot:active {
+  transform: translateY(2px);
+}
+
+/* 소환사 주문(D·F)은 주력 스킬과 시각적으로 구분한다. 롤에서도 별개 슬롯이다. */
+.slot[data-kind='summoner'] {
+  width: 2.9rem;
+  height: 2.9rem;
+  border-radius: 50%;
+  align-self: center;
+}
+
+.slot .glyph {
+  font-size: 1.15rem;
+  font-weight: 700;
+  color: #cfe4f7;
+  letter-spacing: 0.02em;
+  line-height: 1;
+}
+
+.slot .key {
+  position: absolute;
+  right: 0.28rem;
+  bottom: 0.16rem;
+  font-size: 0.62rem;
+  font-weight: 700;
+  color: #7f94ad;
+  letter-spacing: 0.04em;
+}
+
+/* 쿨다운 부채꼴. 12시 방향에서 시계방향으로 줄어든다. */
+.slot .cd {
+  position: absolute;
+  inset: 0;
+  background: conic-gradient(
+    rgba(4, 8, 15, 0.8) calc(var(--p) * 360deg),
+    transparent calc(var(--p) * 360deg)
+  );
+  pointer-events: none;
+}
+
+/* 남은 초. 1초 미만이면 소수점 한 자리까지 — 롤과 같은 관습. */
+.slot .cdtext {
+  position: absolute;
+  inset: 0;
+  display: grid;
+  place-items: center;
+  font-size: 0.9rem;
+  font-weight: 700;
+  color: #eaf3ff;
+  text-shadow: 0 1px 3px rgba(0, 0, 0, 0.9);
+  pointer-events: none;
+}
+
+/* --- 상태 --- */
+
+.slot[data-state='ready'] {
+  border-color: #3c6f97;
+}
+.slot[data-state='ready']:hover {
+  border-color: #4dd0ff;
+}
+.slot[data-state='ready'] .glyph {
+  color: #e8f6ff;
+}
+
+.slot[data-state='cooling'] {
+  border-color: #24374d;
+}
+
+.slot[data-state='locked'] {
+  cursor: default;
+  border-style: dashed;
+  border-color: #22303f;
+  background: #0a111b;
+}
+.slot[data-state='locked'] .glyph,
+.slot[data-state='locked'] .key {
+  color: #3a4a5e;
+}
+
+/* 쿨다운이 막 끝난 순간의 번쩍임. 준비됐다는 신호를 눈으로 준다. */
+@keyframes slot-ready-flash {
+  0% {
+    box-shadow: 0 0 0 0 rgba(77, 208, 255, 0.75);
+  }
+  100% {
+    box-shadow: 0 0 0 0.7rem rgba(77, 208, 255, 0);
+  }
+}
+.slot.flash {
+  animation: slot-ready-flash 0.42s ease-out;
+}
+
+/* 모바일에서는 터치 타겟을 키운다. 손가락은 마우스보다 뭉툭하다. */
+@media (pointer: coarse) {
+  .skillbar {
+    gap: 0.6rem;
+    bottom: calc(1.4rem + env(safe-area-inset-bottom, 0px));
+  }
+  .slot {
+    width: 4.1rem;
+    height: 4.1rem;
+  }
+  .slot[data-kind='summoner'] {
+    width: 3.5rem;
+    height: 3.5rem;
+  }
+  .slot .glyph {
+    font-size: 1.3rem;
+  }
+}
+
+/* 아주 좁은 화면에서 6칸이 넘치지 않게 */
+@media (max-width: 420px) {
+  .slot {
+    width: 3.2rem;
+    height: 3.2rem;
+  }
+  .slot[data-kind='summoner'] {
+    width: 2.8rem;
+    height: 2.8rem;
+  }
+  .skillbar {
+    gap: 0.35rem;
+  }
+}

@@ -3,6 +3,8 @@ import { Renderer } from './render/renderer.ts'
 import { ARENA_RADIUS, DT, MAX_TICKS_PER_FRAME } from './sim/constants.ts'
 import { createInput } from './sim/types.ts'
 import { createWorld, stepWorld } from './sim/world.ts'
+import { DEFAULT_SLOTS, SkillBar, assertSlotsCoverAllSkills } from './ui/skillbar.ts'
+import './ui/ui.css'
 
 const app = document.getElementById('app')!
 const boot = document.getElementById('boot')!
@@ -46,10 +48,15 @@ const world = createWorld(resolveSeed())
 const input = new InputState(app)
 const simInput = createInput()
 
+if (import.meta.env.DEV) assertSlotsCoverAllSkills(DEFAULT_SLOTS)
+// 스킬바는 body에 붙인다. 캔버스 컨테이너 밖이어야 슬롯 클릭이
+// 이동 입력으로 새어 들어가지 않는다.
+const skillBar = new SkillBar(document.body, DEFAULT_SLOTS, (id) => input.pressSkill(id))
+
 // 개발 중에만 콘솔에서 상태를 들여다보고 프레임을 강제로 돌릴 수 있게 열어둔다.
 // 프로덕션 번들에는 포함되지 않는다.
 if (import.meta.env.DEV) {
-  Object.assign(window, { __game: { world, renderer, input } })
+  Object.assign(window, { __game: { world, renderer, input, skillBar } })
 }
 
 let accumulator = 0
@@ -84,6 +91,7 @@ function frame(now: number): void {
   }
 
   renderer.render(world, accumulator / DT)
+  skillBar.update(world.skills)
 
   // --- HUD ---
   if (rawDt > 0) {
