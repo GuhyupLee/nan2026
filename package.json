@@ -8,6 +8,7 @@
     "build": "tsc --noEmit && vite build",
     "preview": "vite preview",
     "check": "tsx tools/sim-check.ts",
+    "art": "tsx tools/optimize-art.ts",
     "balance": "tsx tools/balance/run.ts"
   },
   "dependencies": {
@@ -16,6 +17,7 @@
   "devDependencies": {
     "@types/node": "^26.1.1",
     "@types/three": "^0.185.1",
+    "sharp": "^0.35.3",
     "tsx": "^4.23.1",
     "typescript": "^7.0.2",
     "vite": "^8.1.5"
