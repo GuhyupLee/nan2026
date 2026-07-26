@@ -1,13 +1,25 @@
 import * as THREE from 'three'
 
-import type { World } from '../sim/types.ts'
+import type { PlayerClass, World } from '../sim/types.ts'
 import type { Vec2 } from '../sim/vec.ts'
-import { lerp, lerpAngle } from '../sim/vec.ts'
+import { length, lerp, lerpAngle } from '../sim/vec.ts'
 import { createArena } from './arena.ts'
-import { createPlayerRig } from './player.ts'
+import { type CharacterRig, createCharacterRig } from './characters.ts'
 
-/** 쿼터뷰 카메라 오프셋. 피치 ≈ atan(22/17) ≈ 52°. LoL·이터널 리턴 계열 각도. */
-const CAM_OFFSET = new THREE.Vector3(0, 22, 17)
+/**
+ * 쿼터뷰 카메라 오프셋. 피치 ≈ atan(14/10.8) ≈ 52°. LoL·이터널 리턴 계열 각도.
+ *
+ * 거리는 계측해서 정했다. 처음에는 (0,22,17)이었는데 그 거리에서 캐릭터가
+ * 화면 세로의 7%밖에 안 됐다 — 파츠를 8개로 만들든 49개로 만들든 구분이
+ * 안 되는 크기다. 당겨서 약 14%로 맞췄다. 이터널 리턴 프레이밍에 가깝다.
+ *
+ * 부수 효과가 더 크다: 시야가 좁아지면 적이 위협적으로 느껴지고,
+ * "화면을 가득 채운 적" 장면이 250마리가 아니라 100마리로 나온다(성능 이득).
+ */
+const CAM_OFFSET = new THREE.Vector3(0, 14, 10.8)
+
+/** 시야각. 좁을수록 원근 왜곡이 줄어 MOBA다운 평면적 화면이 된다. */
+const CAM_FOV = 40
 
 /** 카메라 추적 반응 속도. 클수록 즉각적. */
 const CAM_FOLLOW = 14
@@ -25,8 +37,9 @@ export class Renderer {
   readonly camera: THREE.PerspectiveCamera
 
   private readonly gl: THREE.WebGLRenderer
-  private readonly playerRig: THREE.Group
   private readonly lightRig: THREE.Group
+  private charRig: CharacterRig
+  private charClass: PlayerClass = 'ranged'
 
   private readonly camTarget = new THREE.Vector3()
   private readonly raycaster = new THREE.Raycaster()
@@ -53,14 +66,16 @@ export class Renderer {
 
     this.scene = new THREE.Scene()
     this.scene.background = new THREE.Color(BG_COLOR)
-    this.scene.fog = new THREE.Fog(BG_COLOR, 34, 96)
+    // 카메라가 가까워진 만큼 안개도 당긴다. 아레나 가장자리가 어둠에
+    // 잠겨야 좁은 시야가 답답함이 아니라 분위기로 읽힌다.
+    this.scene.fog = new THREE.Fog(BG_COLOR, 20, 58)
 
-    this.camera = new THREE.PerspectiveCamera(45, 1, 0.5, 240)
+    this.camera = new THREE.PerspectiveCamera(CAM_FOV, 1, 0.5, 240)
 
     this.scene.add(createArena(arenaRadius))
 
-    this.playerRig = createPlayerRig()
-    this.scene.add(this.playerRig)
+    this.charRig = createCharacterRig(this.charClass)
+    this.scene.add(this.charRig.group)
 
     // --- 조명 ---
     this.scene.add(new THREE.HemisphereLight(0x7093c8, 0x0a0e18, 0.85))
@@ -118,9 +133,15 @@ export class Renderer {
     const pz = lerp(p.prevPos.y, p.pos.y, alpha)
     const facing = lerpAngle(p.prevFacing, p.facing, alpha)
 
-    this.playerRig.position.set(px, 0, pz)
+    // 클래스가 바뀌면 리그를 갈아끼운다. 캐릭터 선택 직후 한 번 일어난다.
+    if (world.playerClass !== this.charClass) this.swapCharacter(world.playerClass)
+
+    this.charRig.group.position.set(px, 0, pz)
     // sim의 facing(+X 기준, XZ 평면)을 three의 Y축 회전으로 옮기면 부호가 뒤집힌다.
-    this.playerRig.rotation.y = -facing
+    this.charRig.group.rotation.y = -facing
+    // 절차적 애니메이션은 시뮬 시간이 아니라 벽시계로 돈다 —
+    // 레벨업으로 시뮬이 멈춘 동안에도 캐릭터는 숨을 쉬어야 한다.
+    this.charRig.update(performance.now() / 1000, length(p.vel))
 
     this.lightRig.position.set(px, 0, pz)
 
@@ -152,6 +173,14 @@ export class Renderer {
       out.y = this.hit.z
     }
     return out
+  }
+
+  private swapCharacter(cls: PlayerClass): void {
+    this.scene.remove(this.charRig.group)
+    this.charRig.dispose()
+    this.charClass = cls
+    this.charRig = createCharacterRig(cls)
+    this.scene.add(this.charRig.group)
   }
 
   get drawCalls(): number {
