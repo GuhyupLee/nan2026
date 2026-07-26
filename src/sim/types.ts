@@ -26,6 +26,14 @@ export function createInput(): Input {
   }
 }
 
+/**
+ * 플레이어 클래스. 시작 화면에서 고른다.
+ *
+ * QWER 세트가 통째로 다르다. 이게 리플레이의 축이다 —
+ * 5분 게임에서 심사자가 두 번째 판을 돌릴 이유가 여기서 나온다.
+ */
+export type PlayerClass = 'ranged' | 'melee'
+
 export interface Player {
   pos: Vec2
   /** 직전 틱 위치. 렌더러의 프레임 보간에 쓴다. */
@@ -48,6 +56,7 @@ export interface World {
   time: number
   rng: Rng
   arenaRadius: number
+  playerClass: PlayerClass
   player: Player
   progression: Progression
   skills: SkillBook

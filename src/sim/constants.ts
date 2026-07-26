@@ -24,3 +24,15 @@ export const PLAYER_MAX_HP = 100
 
 /** 이동 응답성. 값이 클수록 즉각적. 서바이버류는 즉각적인 쪽이 손맛이 좋다. */
 export const PLAYER_ACCEL = 90
+
+/**
+ * 소환사 주문 쿨다운(초). 시작부터 보유한다.
+ *
+ * 롤의 점멸은 300초지만 그건 30분 게임 기준이다. 5분 판에서 그 비율이면
+ * 한 번밖에 못 쓴다. 판당 6~7회 쓰이도록 낮춰 잡고 D9 밸런싱에서 조정한다.
+ */
+export const FLASH_COOLDOWN = 40
+export const HEAL_COOLDOWN = 45
+
+/** 점멸 사거리(월드 단위). 롤과 비슷하게 "한 벽 넘는" 감각. */
+export const FLASH_RANGE = 8

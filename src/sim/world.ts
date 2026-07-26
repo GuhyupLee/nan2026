@@ -1,6 +1,8 @@
 import {
   ARENA_RADIUS,
   DT,
+  FLASH_COOLDOWN,
+  HEAL_COOLDOWN,
   PLAYER_ACCEL,
   PLAYER_MAX_HP,
   PLAYER_RADIUS,
@@ -8,11 +10,11 @@ import {
 } from './constants.ts'
 import { addXp, consumeLevelUp, createProgression } from './progression.ts'
 import { createRng } from './rng.ts'
-import { createSkillBook, tickSkills } from './skills.ts'
-import type { Input, Player, World } from './types.ts'
+import { createSkillBook, tickSkills, unlockSkill } from './skills.ts'
+import type { Input, Player, PlayerClass, World } from './types.ts'
 import { length, lerpAngle, normalize, vec2 } from './vec.ts'
 
-export function createWorld(seed: number): World {
+export function createWorld(seed: number, playerClass: PlayerClass = 'ranged'): World {
   const player: Player = {
     pos: vec2(0, 0),
     prevPos: vec2(0, 0),
@@ -25,15 +27,22 @@ export function createWorld(seed: number): World {
     maxHp: PLAYER_MAX_HP,
   }
 
+  const skills = createSkillBook()
+  // 소환사 주문은 시작부터 보유한다. QWER 슬롯은 잠긴 채 스킬바에 보여서
+  // "앞으로 4개가 더 열린다"는 깊이를 첫 화면부터 광고한다.
+  unlockSkill(skills, 'f', FLASH_COOLDOWN)
+  unlockSkill(skills, 'd', HEAL_COOLDOWN)
+
   return {
     seed,
     tick: 0,
     time: 0,
     rng: createRng(seed),
     arenaRadius: ARENA_RADIUS,
+    playerClass,
     player,
     progression: createProgression(),
-    skills: createSkillBook(),
+    skills,
     awaitingChoice: false,
   }
 }

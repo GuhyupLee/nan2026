@@ -1,4 +1,4 @@
-import { InputState } from './input.ts'
+import { InputState, applyPointerMove } from './input.ts'
 import { Renderer } from './render/renderer.ts'
 import { ARENA_RADIUS, DT, MAX_TICKS_PER_FRAME } from './sim/constants.ts'
 import { createInput } from './sim/types.ts'
@@ -43,7 +43,7 @@ try {
 }
 
 const world = createWorld(resolveSeed())
-const input = new InputState()
+const input = new InputState(app)
 const simInput = createInput()
 
 // 개발 중에만 콘솔에서 상태를 들여다보고 프레임을 강제로 돌릴 수 있게 열어둔다.
@@ -75,7 +75,9 @@ function frame(now: number): void {
   let ticks = 0
   while (accumulator >= DT && ticks < MAX_TICKS_PER_FRAME) {
     input.sample(simInput)
-    renderer.screenToGround(input.mouseX, input.mouseY, simInput.aim)
+    // 조준점(월드 좌표)을 먼저 구해야 포인터 이동 방향을 계산할 수 있다.
+    renderer.screenToGround(input.pointerX, input.pointerY, simInput.aim)
+    applyPointerMove(input, simInput, world.player.pos)
     stepWorld(world, simInput)
     accumulator -= DT
     ticks += 1
@@ -106,7 +108,7 @@ function frame(now: number): void {
     booted = true
     boot.classList.add('hidden')
   }
-  if (input.hasMoved) {
+  if (input.hasActed) {
     hint.classList.add('hidden')
   }
 }

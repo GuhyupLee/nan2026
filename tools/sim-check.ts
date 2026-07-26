@@ -7,7 +7,7 @@
  *
  *   npx tsx tools/sim-check.ts
  */
-import { ARENA_RADIUS, DT } from '../src/sim/constants.ts'
+import { ARENA_RADIUS, DT, FLASH_COOLDOWN } from '../src/sim/constants.ts'
 import {
   MAX_LEVEL,
   TARGET_LEVEL_TIMES,
@@ -19,6 +19,7 @@ import {
 import { createRng } from '../src/sim/rng.ts'
 import {
   consumeCooldown,
+  cooldownProgress,
   createSkillBook,
   isReady,
   lockedChoosableSkills,
@@ -216,22 +217,56 @@ console.log('\nsim smoke check\n')
 // --- 스킬 런타임 ---
 {
   const book = createSkillBook()
-  check('처음에는 전부 잠겨 있다', unlockedCount(book) === 0)
-  check('선택 가능한 스킬은 3개', lockedChoosableSkills(book).length === 3)
-  check('궁극기는 선택 대상이 아니다', !lockedChoosableSkills(book).includes('ult'))
+  check('맨 처음에는 전부 잠겨 있다', unlockedCount(book) === 0)
+  check('선택 가능한 주력 스킬은 Q/W/E 3개', lockedChoosableSkills(book).length === 3)
+  check('궁극기 R은 선택 대상이 아니다', !lockedChoosableSkills(book).includes('r'))
+  check(
+    '소환사 주문 D/F도 선택 대상이 아니다',
+    !lockedChoosableSkills(book).includes('d') && !lockedChoosableSkills(book).includes('f'),
+  )
 
-  unlockSkill(book, 'dash', 3)
-  check('해금 즉시 사용 가능', isReady(book, 'dash'))
-  check('해금하면 후보에서 빠진다', !lockedChoosableSkills(book).includes('dash'))
-  check('해금 안 된 스킬은 못 쓴다', !isReady(book, 'area'))
+  unlockSkill(book, 'w', 3)
+  check('해금 즉시 사용 가능', isReady(book, 'w'))
+  check('해금하면 후보에서 빠진다', !lockedChoosableSkills(book).includes('w'))
+  check('해금 안 된 스킬은 못 쓴다', !isReady(book, 'e'))
 
-  check('사용하면 쿨다운이 걸린다', consumeCooldown(book, 'dash') && !isReady(book, 'dash'))
-  check('쿨다운 중에는 재사용 실패', !consumeCooldown(book, 'dash'))
+  check('사용하면 쿨다운이 걸린다', consumeCooldown(book, 'w') && !isReady(book, 'w'))
+  check('쿨다운 중에는 재사용 실패', !consumeCooldown(book, 'w'))
+  check('쿨다운 진행률이 1에서 시작', Math.abs(cooldownProgress(book, 'w') - 1) < 1e-9)
   tickSkills(book, 1.5)
-  check('쿨다운이 절반 남았을 때는 아직 못 쓴다', !isReady(book, 'dash'))
+  check('쿨다운이 절반 남았을 때는 아직 못 쓴다', !isReady(book, 'w'))
+  check(
+    '쿨다운 진행률이 절반',
+    Math.abs(cooldownProgress(book, 'w') - 0.5) < 1e-9,
+    `${cooldownProgress(book, 'w')}`,
+  )
   tickSkills(book, 1.6)
-  check('쿨다운이 끝나면 다시 쓸 수 있다', isReady(book, 'dash'))
-  check('쿨다운은 음수로 내려가지 않는다', book.dash.cooldown === 0)
+  check('쿨다운이 끝나면 다시 쓸 수 있다', isReady(book, 'w'))
+  check('쿨다운은 음수로 내려가지 않는다', book.w.cooldown === 0)
+  check('사용 가능하면 진행률 0', cooldownProgress(book, 'w') === 0)
+}
+
+// --- 소환사 주문은 시작부터 보유 ---
+{
+  const w = createWorld(1)
+  check('점멸 F는 시작부터 사용 가능', isReady(w.skills, 'f'))
+  check('회복 D는 시작부터 사용 가능', isReady(w.skills, 'd'))
+  check('QWER은 시작 시 전부 잠김', !w.skills.q.unlocked && !w.skills.r.unlocked)
+  check('시작 해금 수는 2개', unlockedCount(w.skills) === 2)
+  check(
+    '점멸 쿨다운이 상수와 일치',
+    w.skills.f.maxCooldown === FLASH_COOLDOWN,
+    `${w.skills.f.maxCooldown}`,
+  )
+}
+
+// --- 클래스 ---
+{
+  check('기본 클래스는 원딜', createWorld(1).playerClass === 'ranged')
+  check('근딜로도 만들 수 있다', createWorld(1, 'melee').playerClass === 'melee')
+  const a = createWorld(42, 'ranged')
+  const b = createWorld(42, 'melee')
+  check('클래스가 달라도 시드 상태는 같다', a.rng.state() === b.rng.state())
 }
 
 console.log('')
