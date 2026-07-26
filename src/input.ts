@@ -1,10 +1,5 @@
-import {
-  SKILL_AREA,
-  SKILL_DASH,
-  SKILL_PRIMARY,
-  SKILL_ULT,
-  type Input,
-} from './sim/types.ts'
+import { SKILL_AREA, SKILL_DASH, SKILL_PRIMARY, SKILL_ULT } from './sim/skills.ts'
+import type { Input } from './sim/types.ts'
 
 /**
  * 키/마우스 상태를 시뮬레이션 Input으로 변환한다.

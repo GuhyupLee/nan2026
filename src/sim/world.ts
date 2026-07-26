@@ -6,7 +6,9 @@ import {
   PLAYER_RADIUS,
   PLAYER_SPEED,
 } from './constants.ts'
+import { addXp, consumeLevelUp, createProgression } from './progression.ts'
 import { createRng } from './rng.ts'
+import { createSkillBook, tickSkills } from './skills.ts'
 import type { Input, Player, World } from './types.ts'
 import { length, lerpAngle, normalize, vec2 } from './vec.ts'
 
@@ -30,6 +32,9 @@ export function createWorld(seed: number): World {
     rng: createRng(seed),
     arenaRadius: ARENA_RADIUS,
     player,
+    progression: createProgression(),
+    skills: createSkillBook(),
+    awaitingChoice: false,
   }
 }
 
@@ -39,10 +44,33 @@ export function createWorld(seed: number): World {
  * 항상 고정 DT로만 호출된다. 가변 델타를 받지 않는 것이 결정론의 핵심이다.
  */
 export function stepWorld(world: World, input: Input): void {
+  // 레벨업 선택이 걸려 있으면 게임이 통째로 멈춘다. 5분 시계도 멈춘다 —
+  // 카드를 읽는 시간이 생존 시간에 섞이면 비트 시트 검증이 무의미해진다.
+  if (world.awaitingChoice) return
+
+  tickSkills(world.skills, DT)
   stepPlayer(world, input)
 
   world.tick += 1
   world.time = world.tick * DT
+}
+
+/**
+ * XP를 지급하고 레벨업 대기 상태를 갱신한다.
+ * XP는 반드시 이 함수를 통해서만 들어온다 — awaitingChoice 동기화를 놓치지 않기 위해서다.
+ */
+export function grantXp(world: World, amount: number): void {
+  addXp(world.progression, amount, world.time)
+  world.awaitingChoice = world.progression.pendingLevelUps > 0
+}
+
+/**
+ * 레벨업 선택 하나를 처리 완료로 표시한다.
+ * 선택 효과 적용은 호출부가 먼저 끝내고 이걸 부른다.
+ */
+export function resolveLevelUp(world: World): void {
+  consumeLevelUp(world.progression)
+  world.awaitingChoice = world.progression.pendingLevelUps > 0
 }
 
 const moveDir = vec2()

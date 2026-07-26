@@ -1,17 +1,7 @@
+import type { Progression } from './progression.ts'
 import type { Rng } from './rng.ts'
+import type { SkillBook } from './skills.ts'
 import type { Vec2 } from './vec.ts'
-
-/**
- * 스킬 슬롯 비트마스크.
- *
- * 키 이름이 아니라 "역할"로 정의한다. WASD 이동의 W와 MOBA의 W가 충돌하므로
- * 실제 바인딩은 Q / Space / E / R 이고, 그 매핑은 src/input.ts 가 전담한다.
- * 시뮬은 어떤 키가 눌렸는지 알 필요도, 알아서도 안 된다.
- */
-export const SKILL_PRIMARY = 1 << 0 // Q  — 주력기
-export const SKILL_DASH = 1 << 1 // Space — 대시 (0:50 획득)
-export const SKILL_AREA = 1 << 2 // E  — 광역기 (1:40 획득)
-export const SKILL_ULT = 1 << 3 // R  — 궁극기 (3:20 획득)
 
 /**
  * 한 틱 분량의 플레이어 입력.
@@ -59,4 +49,13 @@ export interface World {
   rng: Rng
   arenaRadius: number
   player: Player
+  progression: Progression
+  skills: SkillBook
+  /**
+   * 레벨업 선택 대기 중인가.
+   *
+   * true면 게임플레이가 멈춘다. 판정은 progression.pendingLevelUps 가 하지만,
+   * 호출부가 매번 계산하지 않도록 여기에 캐시한다.
+   */
+  awaitingChoice: boolean
 }
