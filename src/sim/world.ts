@@ -1,33 +1,24 @@
-import {
-  ARENA_RADIUS,
-  DT,
-  FLASH_COOLDOWN,
-  HEAL_COOLDOWN,
-  PLAYER_ACCEL,
-  PLAYER_MAX_HP,
-  PLAYER_RADIUS,
-  PLAYER_SPEED,
-} from './constants.ts'
+import { ARENA_RADIUS, DT, PLAYER_ACCEL } from './constants.ts'
 import { currentSpeed, stepAbilities } from './abilities.ts'
 import { stepAutoAttack } from './combat.ts'
 import { createEnemyHash, createEnemyPool, stepEnemies, updateSpawner } from './enemies.ts'
 import { addXp, consumeLevelUp, createProgression } from './progression.ts'
 import { createRng } from './rng.ts'
 import { createSkillBook, tickSkills, unlockSkill } from './skills.ts'
+import { createStats } from './stats.ts'
 import type { Input, Player, PlayerClass, World } from './types.ts'
 import { length, lerpAngle, normalize, vec2 } from './vec.ts'
 
 export function createWorld(seed: number, playerClass: PlayerClass = 'ranged'): World {
+  const stats = createStats(playerClass)
+
   const player: Player = {
     pos: vec2(0, 0),
     prevPos: vec2(0, 0),
     vel: vec2(0, 0),
     facing: 0,
     prevFacing: 0,
-    radius: PLAYER_RADIUS,
-    speed: PLAYER_SPEED,
-    hp: PLAYER_MAX_HP,
-    maxHp: PLAYER_MAX_HP,
+    hp: stats.maxHp,
     attackCooldown: 0,
     speedBoostUntil: -1,
   }
@@ -35,8 +26,8 @@ export function createWorld(seed: number, playerClass: PlayerClass = 'ranged'): 
   const skills = createSkillBook()
   // 소환사 주문은 시작부터 보유한다. QWER 슬롯은 잠긴 채 스킬바에 보여서
   // "앞으로 4개가 더 열린다"는 깊이를 첫 화면부터 광고한다.
-  unlockSkill(skills, 'f', FLASH_COOLDOWN)
-  unlockSkill(skills, 'd', HEAL_COOLDOWN)
+  unlockSkill(skills, 'f', stats.flashCooldown)
+  unlockSkill(skills, 'd', stats.healCooldown)
 
   return {
     seed,
@@ -45,9 +36,11 @@ export function createWorld(seed: number, playerClass: PlayerClass = 'ranged'): 
     rng: createRng(seed),
     arenaRadius: ARENA_RADIUS,
     playerClass,
+    stats,
     player,
     progression: createProgression(),
     skills,
+    upgradesTaken: new Set(),
     lastAim: vec2(1, 0),
     enemies: createEnemyPool(),
     enemyHash: createEnemyHash(),
@@ -84,9 +77,10 @@ export function stepWorld(world: World, input: Input): void {
     updateSpawner(world.enemies, world.rng, world.time, p.pos.x, p.pos.y)
   }
 
-  const res = stepEnemies(world.enemies, world.enemyHash, p.pos.x, p.pos.y, p.radius)
+  const res = stepEnemies(world.enemies, world.enemyHash, p.pos.x, p.pos.y, world.stats.radius)
   if (res.contactDamage > 0) {
-    p.hp = Math.max(0, p.hp - res.contactDamage)
+    // 클래스별 피해 감소를 여기 한 곳에서만 적용한다.
+    p.hp = Math.max(0, p.hp - res.contactDamage * world.stats.damageTakenMul)
     if (p.hp <= 0) world.outcome = 'dead'
   }
 
@@ -154,7 +148,7 @@ function stepPlayer(world: World, input: Input): void {
   p.pos.y += p.vel.y * DT
 
   // --- 아레나 경계 ---
-  const maxDist = world.arenaRadius - p.radius
+  const maxDist = world.arenaRadius - world.stats.radius
   const dist = length(p.pos)
   if (dist > maxDist && dist > 1e-9) {
     const s = maxDist / dist

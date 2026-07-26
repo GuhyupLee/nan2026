@@ -1,4 +1,4 @@
-import { ARENA_RADIUS, FLASH_RANGE, HEAL_AMOUNT, HEAL_SPEED_BOOST, HEAL_BOOST_TIME } from './constants.ts'
+import { ARENA_RADIUS } from './constants.ts'
 import { consumeCooldown, SKILL_D, SKILL_F } from './skills.ts'
 import type { Input, World } from './types.ts'
 
@@ -42,7 +42,8 @@ function tryFlash(world: World): boolean {
   }
 
   // 롤과 같다 — 커서까지 가되 최대 사거리를 넘지 않는다.
-  const dist = Math.min(d < 1e-4 ? FLASH_RANGE : d, FLASH_RANGE)
+  const range = world.stats.flashRange
+  const dist = Math.min(d < 1e-4 ? range : d, range)
 
   const fromX = p.pos.x
   const fromY = p.pos.y
@@ -51,7 +52,7 @@ function tryFlash(world: World): boolean {
 
   // 아레나 밖으로 나가면 경계 안쪽으로 접는다
   const outer = Math.hypot(nx, ny)
-  const limit = ARENA_RADIUS - p.radius
+  const limit = ARENA_RADIUS - world.stats.radius
   if (outer > limit && outer > 1e-6) {
     const s = limit / outer
     nx *= s
@@ -77,10 +78,10 @@ function tryHeal(world: World): boolean {
   const p = world.player
   if (!consumeCooldown(world.skills, 'd')) return false
 
-  p.hp = Math.min(p.maxHp, p.hp + HEAL_AMOUNT)
+  p.hp = Math.min(world.stats.maxHp, p.hp + world.stats.healAmount)
   // 롤의 회복처럼 짧은 이동속도 증가가 붙는다. 회복만 있으면
   // "맞으면서 회복"이 되지만, 이속이 붙으면 "빠져나오면서 회복"이 된다.
-  p.speedBoostUntil = world.time + HEAL_BOOST_TIME
+  p.speedBoostUntil = world.time + world.stats.healBoostTime
 
   pushRing(world, p.pos.x, p.pos.y, 3.2, 1)
   return true
@@ -104,6 +105,6 @@ export function stepAbilities(world: World, input: Input): void {
 
 /** 회복 버프가 적용된 현재 이동 속도. */
 export function currentSpeed(world: World): number {
-  const p = world.player
-  return world.time < p.speedBoostUntil ? p.speed * HEAL_SPEED_BOOST : p.speed
+  const s = world.stats
+  return world.time < world.player.speedBoostUntil ? s.speed * s.healSpeedBoost : s.speed
 }

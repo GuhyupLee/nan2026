@@ -1,7 +1,10 @@
 /**
- * 시뮬레이션 상수.
+ * 시뮬레이션 초기값 테이블.
  *
- * 여기 있는 값은 전부 헤드리스 밸런싱(tools/balance)에서 그대로 쓰인다.
+ * 아래 값들은 "상수"가 아니라 world.stats의 초기값이다. 강화 카드가
+ * 런타임에 바꾸는 대상이므로 게임 코드는 이 상수가 아니라 world.stats를 읽는다.
+ * (진짜 상수는 SIM_HZ / DT / MAX_TICKS_PER_FRAME / ARENA_RADIUS / PLAYER_ACCEL 뿐이다.)
+ *
  * 렌더링·연출용 수치는 절대 여기 두지 않는다.
  */
 
@@ -42,3 +45,15 @@ export const HEAL_AMOUNT = 35
 /** 회복에 딸린 이동속도 배수와 지속 시간. */
 export const HEAL_SPEED_BOOST = 1.45
 export const HEAL_BOOST_TIME = 1.6
+
+/**
+ * 자동 공격 초기값(원거리 기준).
+ *
+ * 이 네 값은 헤드리스 8시드 실측으로 XP 곡선을 맞춰둔 상태라
+ * 함부로 건드리면 비트 시트의 레벨업 타이밍이 통째로 어긋난다.
+ */
+export const ATK_INTERVAL = 0.28
+export const ATK_DAMAGE = 13
+export const ATK_RANGE = 15
+/** 관통 수. 선 위의 적을 몇 명까지 뚫는가. */
+export const ATK_PIERCE = 3

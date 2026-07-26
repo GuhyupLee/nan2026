@@ -3,8 +3,10 @@ import { Renderer } from './render/renderer.ts'
 import { ARENA_RADIUS, DT, MAX_TICKS_PER_FRAME } from './sim/constants.ts'
 import { createInput } from './sim/types.ts'
 import type { World } from './sim/types.ts'
-import { createWorld, drainEvents, stepWorld } from './sim/world.ts'
+import { createWorld, drainEvents, resolveLevelUp, stepWorld } from './sim/world.ts'
 import { showCharacterSelect } from './ui/charselect.ts'
+import { Hud } from './ui/hud.ts'
+import { showLevelUp } from './ui/levelup.ts'
 import { DEFAULT_SLOTS, SkillBar, assertSlotsCoverAllSkills } from './ui/skillbar.ts'
 import './ui/ui.css'
 
@@ -56,6 +58,16 @@ if (import.meta.env.DEV) assertSlotsCoverAllSkills(DEFAULT_SLOTS)
 const skillBar = new SkillBar(document.body, DEFAULT_SLOTS, (id) => input.pressSkill(id))
 skillBar.setVisible(false)
 
+const hud = new Hud(document.body)
+const project = renderer.worldToScreen.bind(renderer)
+
+/**
+ * 레벨업 카드가 떠 있는 동안 중복 호출을 막는다.
+ * awaitingChoice는 선택을 처리할 때까지 계속 true이므로
+ * 이 플래그가 없으면 매 프레임 새 카드 화면이 쌓인다.
+ */
+let choiceOpen = false
+
 /**
  * 캐릭터 선택 중에도 렌더 루프는 돈다 — 셰이더 컴파일과 첫 프레임 비용을
  * 선택 화면 뒤에서 미리 치러야 "고르자마자 즉시 시작"이 된다.
@@ -88,6 +100,10 @@ if (import.meta.env.DEV) {
       createInput,
       createWorld,
       drainEvents,
+      hud,
+      project,
+      showLevelUp,
+      resolveLevelUp,
       setWorld(w: World) {
         world = w
       },
@@ -122,8 +138,23 @@ function frame(now: number): void {
 
   renderer.render(world, accumulator / DT)
   skillBar.update(world.skills)
+  hud.update(world, project, Math.min(rawDt, 0.1))
   // 렌더러가 사망·예광선 이벤트를 소비했으므로 비운다.
   drainEvents(world)
+
+  // 레벨업 카드. 시뮬은 awaitingChoice 동안 한 틱도 진행하지 않으므로
+  // 여기서 화면을 띄우지 않으면 게임이 영영 멈춘다.
+  if (running && world.awaitingChoice && !choiceOpen) {
+    choiceOpen = true
+    const target = world
+    void showLevelUp(document.body, target).then(() => {
+      resolveLevelUp(target)
+      choiceOpen = false
+      // 카드를 읽던 시간이 다음 프레임 델타로 밀려들지 않게 시계를 다시 맞춘다.
+      lastTime = performance.now()
+      accumulator = 0
+    })
+  }
 
   // --- HUD ---
   if (rawDt > 0) {
@@ -153,6 +184,7 @@ async function start(): Promise<void> {
 
   world = createWorld(seed, playerClass)
   skillBar.setVisible(true)
+  hud.setVisible(true)
   hint.classList.remove('hidden')
   // 선택 화면에 머문 시간이 첫 프레임 델타로 밀려들지 않게 시계를 다시 맞춘다.
   lastTime = performance.now()

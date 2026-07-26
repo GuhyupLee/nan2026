@@ -4,6 +4,7 @@ import type { Progression } from './progression.ts'
 import type { Rng } from './rng.ts'
 import type { SkillBook } from './skills.ts'
 import type { SpatialHash } from './spatial.ts'
+import type { Stats } from './stats.ts'
 import type { Vec2 } from './vec.ts'
 
 /**
@@ -45,10 +46,12 @@ export interface Player {
   /** 바라보는 각도(라디안). XZ 평면에서 +X가 0. */
   facing: number
   prevFacing: number
-  radius: number
-  speed: number
+  /**
+   * 현재 체력.
+   * 최대치·이동속도·반지름은 강화로 바뀌므로 world.stats가 들고 있다.
+   * 여기에는 "지금 값"만 남긴다.
+   */
   hp: number
-  maxHp: number
   /** 자동 공격까지 남은 시간(초). */
   attackCooldown: number
   /** 이동속도 증가가 끝나는 시각(월드 시간). 회복(D)이 설정한다. */
@@ -72,9 +75,13 @@ export interface World {
   rng: Rng
   arenaRadius: number
   playerClass: PlayerClass
+  /** 강화 카드가 건드리는 런타임 스탯. 게임 코드는 상수가 아니라 이걸 읽는다. */
+  stats: Stats
   player: Player
   progression: Progression
   skills: SkillBook
+  /** 이미 획득한 강화 id. 같은 카드가 다시 뜨지 않게 한다. */
+  upgradesTaken: Set<string>
 
   /** 직전 틱의 조준 지점(월드 좌표). 자동 공격과 조준 표시가 읽는다. */
   lastAim: Vec2

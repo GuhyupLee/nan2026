@@ -160,13 +160,20 @@ export interface UpgradeCandidate {
  *
  * 반드시 rng만 쓴다. 정렬·순회 순서가 입력 배열 순서에만 의존하므로
  * 같은 시드 + 같은 상태면 항상 같은 카드가 나온다.
+ *
+ * @param taken 이미 획득한 강화 id. 5분에 강화는 5번뿐인데 이미 가진 카드가
+ *              다시 뜨면 선택이 아니라 낭비가 되고, 하필 그게 심사자가
+ *              마지막으로 보는 화면(Lv10)이 될 수 있다.
  */
 export function rollUpgrades(
   rng: Rng,
   pool: readonly UpgradeCandidate[],
   count: number,
+  taken?: ReadonlySet<string>,
 ): LevelChoice[] {
-  const bag = pool.filter((c) => c.available && c.weight > 0)
+  const bag = pool.filter(
+    (c) => c.available && c.weight > 0 && !(taken !== undefined && taken.has(c.id)),
+  )
   const picked: LevelChoice[] = []
 
   // 후보가 모자라면 있는 만큼만 낸다. 카드가 2장이어도 게임은 굴러가야 한다.
@@ -174,12 +181,12 @@ export function rollUpgrades(
   let totalWeight = 0
   for (const c of bag) totalWeight += c.weight
 
-  const taken = new Set<number>()
+  const usedIndices = new Set<number>()
   for (let k = 0; k < n; k++) {
     let r = rng.next() * totalWeight
     let chosen = -1
     for (let i = 0; i < bag.length; i++) {
-      if (taken.has(i)) continue
+      if (usedIndices.has(i)) continue
       r -= bag[i]!.weight
       if (r <= 0) {
         chosen = i
@@ -189,7 +196,7 @@ export function rollUpgrades(
     // 부동소수 오차로 못 고르면 남은 것 중 첫 번째를 집는다.
     if (chosen < 0) {
       for (let i = 0; i < bag.length; i++) {
-        if (!taken.has(i)) {
+        if (!usedIndices.has(i)) {
           chosen = i
           break
         }
@@ -197,7 +204,7 @@ export function rollUpgrades(
     }
     if (chosen < 0) break
 
-    taken.add(chosen)
+    usedIndices.add(chosen)
     totalWeight -= bag[chosen]!.weight
     picked.push({ id: bag[chosen]!.id, kind: 'upgrade' })
   }

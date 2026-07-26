@@ -28,6 +28,7 @@ import {
   unlockSkill,
   unlockedCount,
 } from '../src/sim/skills.ts'
+import { effectiveAtkDamage, effectiveAtkInterval } from '../src/sim/stats.ts'
 import { createInput } from '../src/sim/types.ts'
 import { length } from '../src/sim/vec.ts'
 import { createWorld, grantXp, resolveLevelUp, stepWorld } from '../src/sim/world.ts'
@@ -89,7 +90,7 @@ console.log('\nsim smoke check\n')
   // 대각선으로 오래 밀어붙여도 절대 밖으로 못 나가야 한다.
   const w = run(1, 3600, 1, 1)
   const d = length(w.player.pos)
-  const limit = ARENA_RADIUS - w.player.radius
+  const limit = ARENA_RADIUS - w.stats.radius
   check(
     '아레나 밖으로 나가지 않는다',
     d <= limit + 1e-6,
@@ -220,6 +221,48 @@ console.log('\nsim smoke check\n')
 
   const none = rollUpgrades(createRng(1), [], 3)
   check('후보가 없어도 터지지 않는다', none.length === 0)
+
+  // 이미 뽑은 카드는 다시 나오면 안 된다 — 5분에 강화는 5번뿐이다
+  const taken = new Set(['a', 'b'])
+  const excluded = rollUpgrades(createRng(3), pool, 3, taken)
+  check(
+    '이미 획득한 강화는 제외된다',
+    excluded.every((c) => !taken.has(c.id)),
+    excluded.map((c) => c.id).join(','),
+  )
+  check(
+    '제외 후 남은 후보만큼만 나온다',
+    excluded.length === 2,
+    `${excluded.length}`,
+  )
+
+  const w = createWorld(1)
+  check('월드가 획득 강화 집합을 들고 있다', w.upgradesTaken instanceof Set && w.upgradesTaken.size === 0)
+}
+
+// --- 클래스 스탯 분기 ---
+{
+  const r = createWorld(1, 'ranged')
+  const m = createWorld(1, 'melee')
+
+  check('근딜이 체력이 높다', m.stats.maxHp > r.stats.maxHp, `${m.stats.maxHp} vs ${r.stats.maxHp}`)
+  check('근딜이 피해를 덜 받는다', m.stats.damageTakenMul < r.stats.damageTakenMul)
+  check(
+    '근딜 사거리가 훨씬 짧다 — 파고들어야 한다',
+    m.stats.atkRange < r.stats.atkRange / 3,
+    `${m.stats.atkRange} vs ${r.stats.atkRange}`,
+  )
+  check(
+    '근딜 실효 체력이 원딜의 1.5배 이상',
+    m.stats.maxHp / m.stats.damageTakenMul > (r.stats.maxHp / r.stats.damageTakenMul) * 1.5,
+  )
+  check('시작 체력은 최대 체력과 같다', m.player.hp === m.stats.maxHp && r.player.hp === r.stats.maxHp)
+
+  // 강화가 실제로 스탯을 바꿀 수 있어야 한다 — world.stats 도입의 목적
+  r.stats.atkDamageMul = 1.5
+  check('공격력 배수가 실효 공격력에 반영된다', effectiveAtkDamage(r.stats) === r.stats.atkDamage * 1.5)
+  r.stats.atkIntervalMul = 0.0001
+  check('공격 간격에 하한이 있다', effectiveAtkInterval(r.stats) >= 0.06)
 }
 
 // --- 스킬 런타임 ---

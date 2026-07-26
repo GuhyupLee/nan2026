@@ -1,6 +1,7 @@
 import { DT } from './constants.ts'
 import { ENEMY_TYPES, type EnemyPool, removeEnemy } from './enemies.ts'
 import type { SpatialHash } from './spatial.ts'
+import { effectiveAtkDamage, effectiveAtkInterval } from './stats.ts'
 import type { TracerEvent, World } from './types.ts'
 
 /**
@@ -17,11 +18,6 @@ import type { TracerEvent, World } from './types.ts'
  * 커서는 계속 의미를 갖되(콘 안이 항상 이긴다) 헛발은 구조적으로 0이다.
  */
 
-export const ATTACK_INTERVAL = 0.28
-export const ATTACK_DAMAGE = 13
-export const ATTACK_RANGE = 15
-/** 관통 수. 선 위의 적을 몇 명까지 뚫는가. */
-export const ATTACK_PIERCE = 3
 /** 히트스캔 선의 두께(반경). */
 const ATTACK_WIDTH = 0.35
 /** 커서 방향 우선 판정 각도(반각, 라디안). 55도. */
@@ -42,6 +38,7 @@ function pickTarget(
   py: number,
   aimX: number,
   aimY: number,
+  range: number,
 ): number {
   let ax = aimX - px
   let ay = aimY - py
@@ -61,7 +58,7 @@ function pickTarget(
   let anyNear = -1
   let anyDist = Infinity
 
-  const r2 = ATTACK_RANGE * ATTACK_RANGE
+  const r2 = range * range
 
   for (let i = 0; i < pool.count; i++) {
     const dx = pool.x[i]! - px
@@ -127,13 +124,14 @@ export function stepAutoAttack(
   tracers: TracerEvent[],
 ): number {
   const p = world.player
+  const s = world.stats
   p.attackCooldown -= DT
   if (p.attackCooldown > 0 || pool.count === 0) return 0
 
-  const target = pickTarget(pool, p.pos.x, p.pos.y, world.lastAim.x, world.lastAim.y)
+  const target = pickTarget(pool, p.pos.x, p.pos.y, world.lastAim.x, world.lastAim.y, s.atkRange)
   if (target < 0) return 0
 
-  p.attackCooldown = ATTACK_INTERVAL
+  p.attackCooldown = effectiveAtkInterval(s)
 
   // 타겟 방향으로 사거리 끝까지 뻗는 선분
   const tx = pool.x[target]!
@@ -145,8 +143,8 @@ export function stepAutoAttack(
   dx /= dl
   dy /= dl
 
-  const ex = p.pos.x + dx * ATTACK_RANGE
-  const ey = p.pos.y + dy * ATTACK_RANGE
+  const ex = p.pos.x + dx * s.atkRange
+  const ey = p.pos.y + dy * s.atkRange
 
   if (tracers.length < 64) {
     tracers.push({ x0: p.pos.x, y0: p.pos.y, x1: ex, y1: ey })
@@ -168,12 +166,13 @@ export function stepAutoAttack(
   })
 
   let xp = 0
-  const n = Math.min(hitBuf.length, ATTACK_PIERCE)
+  const dmg = effectiveAtkDamage(s)
+  const n = Math.min(hitBuf.length, s.atkPierce)
   // 뒤에서부터 지워야 swap-remove가 앞쪽 인덱스를 흔들지 않는다.
   const killed: number[] = []
   for (let k = 0; k < n; k++) {
     const i = hitBuf[k]!
-    pool.hp[i] = pool.hp[i]! - ATTACK_DAMAGE
+    pool.hp[i] = pool.hp[i]! - dmg
     pool.flash[i] = 0.08
     if (pool.hp[i]! <= 0) killed.push(i)
   }
