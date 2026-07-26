@@ -1,4 +1,299 @@
 /* ---------------------------------------------------------------------------
+   HUD — 캐릭터 위 체력바 + 하단 경험치 바
+   이터널 리턴 문법: 레벨 뱃지 + 분절된 체력바가 캐릭터를 따라다닌다.
+--------------------------------------------------------------------------- */
+
+.floatbar {
+  position: fixed;
+  left: 0;
+  top: 0;
+  display: flex;
+  align-items: center;
+  gap: 0.22rem;
+  transform: translate(-50%, -100%);
+  pointer-events: none;
+  z-index: 4;
+  will-change: transform;
+}
+
+.floatbar .lv {
+  min-width: 1.05rem;
+  height: 1.05rem;
+  padding: 0 0.15rem;
+  display: grid;
+  place-items: center;
+  font-size: 0.62rem;
+  font-weight: 700;
+  color: #06202c;
+  background: #79dcff;
+  border-radius: 0.18rem;
+  font-variant-numeric: tabular-nums;
+}
+
+.floatbar .track {
+  position: relative;
+  width: 5.4rem;
+  height: 0.5rem;
+  background: #0a0f18;
+  border: 1px solid #2b3a4d;
+  border-radius: 0.12rem;
+  overflow: hidden;
+}
+
+.floatbar .fill {
+  position: absolute;
+  inset: 0 auto 0 0;
+  width: 100%;
+  background: linear-gradient(180deg, #5df08a 0%, #2fbf63 100%);
+  transition: width 0.12s linear;
+}
+
+/* 피해를 입은 만큼이 붉게 남았다가 천천히 줄어든다 — 얼마나 맞았는지 보인다. */
+.floatbar .ghost {
+  position: absolute;
+  inset: 0 auto 0 0;
+  width: 100%;
+  background: #d0424f;
+  transition: width 0.5s ease-out 0.18s;
+}
+
+/* 체력이 낮으면 색이 바뀐다. 숫자를 읽지 않아도 위험이 전달된다. */
+.floatbar[data-danger='warn'] .fill {
+  background: linear-gradient(180deg, #ffd45e 0%, #e0a531 100%);
+}
+.floatbar[data-danger='crit'] .fill {
+  background: linear-gradient(180deg, #ff7a6e 0%, #d63a2c 100%);
+}
+
+/* 분절선 — 통짜 바보다 남은 양이 눈에 잘 잡힌다 */
+.floatbar .track::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  background: repeating-linear-gradient(
+    90deg,
+    transparent 0,
+    transparent calc(12.5% - 1px),
+    rgba(4, 8, 14, 0.85) calc(12.5% - 1px),
+    rgba(4, 8, 14, 0.85) 12.5%
+  );
+}
+
+.xpbar {
+  position: fixed;
+  left: 50%;
+  transform: translateX(-50%);
+  bottom: calc(5.4rem + env(safe-area-inset-bottom, 0px));
+  width: min(23rem, 74vw);
+  height: 0.28rem;
+  background: #0d1523;
+  border-radius: 999px;
+  overflow: hidden;
+  z-index: 5;
+  pointer-events: none;
+}
+.xpbar .fill {
+  height: 100%;
+  width: 0;
+  background: linear-gradient(90deg, #3aa9ff, #79dcff);
+  transition: width 0.16s ease-out;
+}
+
+.clock {
+  position: fixed;
+  left: 50%;
+  top: 0.7rem;
+  transform: translateX(-50%);
+  font-size: 1.05rem;
+  font-weight: 700;
+  letter-spacing: 0.06em;
+  color: #cfe0f2;
+  font-variant-numeric: tabular-nums;
+  text-shadow: 0 2px 8px rgba(0, 0, 0, 0.8);
+  z-index: 5;
+  pointer-events: none;
+}
+
+/* ---------------------------------------------------------------------------
+   레벨업 카드 — 뱀서 문법의 3택
+--------------------------------------------------------------------------- */
+
+.levelup {
+  position: fixed;
+  inset: 0;
+  z-index: 15;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 1.3rem;
+  padding: 1.2rem;
+  background: rgba(4, 7, 13, 0.86);
+  backdrop-filter: blur(3px);
+  animation: levelup-in 0.16s ease-out;
+}
+@keyframes levelup-in {
+  from {
+    opacity: 0;
+  }
+  to {
+    opacity: 1;
+  }
+}
+
+.levelup .banner {
+  text-align: center;
+}
+.levelup .banner .lv {
+  font-size: 0.76rem;
+  letter-spacing: 0.24em;
+  color: #79dcff;
+  font-weight: 700;
+}
+.levelup .banner h2 {
+  margin-top: 0.25rem;
+  font-size: clamp(1.3rem, 4vw, 1.8rem);
+  font-weight: 700;
+  letter-spacing: 0.05em;
+  color: #f0f6ff;
+}
+
+.levelup .cards {
+  display: flex;
+  gap: 0.85rem;
+  flex-wrap: wrap;
+  justify-content: center;
+}
+
+.lvcard {
+  --accent: #4dd0ff;
+  position: relative;
+  width: min(15rem, 84vw);
+  min-height: 12.5rem;
+  padding: 1.05rem 1rem 1rem;
+  border-radius: 0.85rem;
+  background: linear-gradient(170deg, #131c2c 0%, #0a1119 100%);
+  border: 1px solid #253449;
+  cursor: pointer;
+  text-align: left;
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+  transition:
+    transform 0.15s cubic-bezier(0.2, 0.9, 0.3, 1),
+    border-color 0.15s ease,
+    box-shadow 0.15s ease;
+  -webkit-tap-highlight-color: transparent;
+}
+.lvcard:hover,
+.lvcard:focus-visible {
+  transform: translateY(-5px);
+  border-color: var(--accent);
+  box-shadow: 0 12px 34px -12px var(--accent);
+  outline: none;
+}
+
+/* 신규 해금은 강화와 시각적으로 달라야 한다. 새 장난감이 도착한 순간이다. */
+.lvcard[data-kind='unlock'] {
+  background: linear-gradient(170deg, #1b2740 0%, #0c1420 100%);
+  border-color: var(--accent);
+}
+.lvcard[data-kind='unlock']::before {
+  content: '';
+  position: absolute;
+  inset: -1px;
+  border-radius: 0.85rem;
+  border: 1px solid var(--accent);
+  opacity: 0.35;
+  animation: unlock-pulse 1.5s ease-in-out infinite;
+  pointer-events: none;
+}
+@keyframes unlock-pulse {
+  0%,
+  100% {
+    opacity: 0.2;
+  }
+  50% {
+    opacity: 0.7;
+  }
+}
+
+.lvcard .top {
+  display: flex;
+  align-items: center;
+  gap: 0.55rem;
+}
+.lvcard .icon {
+  width: 2.5rem;
+  height: 2.5rem;
+  flex: none;
+  display: grid;
+  place-items: center;
+  border-radius: 0.5rem;
+  background: #0a121d;
+  border: 1px solid #2c3d54;
+  font-size: 1.15rem;
+  color: var(--accent);
+}
+.lvcard .slot {
+  font-size: 0.66rem;
+  font-weight: 700;
+  letter-spacing: 0.12em;
+  color: #05070d;
+  background: var(--accent);
+  padding: 0.1rem 0.4rem;
+  border-radius: 0.22rem;
+}
+.lvcard .tag {
+  font-size: 0.66rem;
+  letter-spacing: 0.1em;
+  color: #93a6bd;
+}
+.lvcard h3 {
+  font-size: 1.08rem;
+  font-weight: 700;
+  color: #f2f7ff;
+  letter-spacing: 0.02em;
+}
+.lvcard p {
+  font-size: 0.8rem;
+  line-height: 1.65;
+  color: #9fb2c8;
+  flex: 1;
+}
+.lvcard .hotkey {
+  position: absolute;
+  top: 0.6rem;
+  right: 0.6rem;
+  width: 1.35rem;
+  height: 1.35rem;
+  display: grid;
+  place-items: center;
+  border-radius: 0.32rem;
+  background: rgba(5, 9, 16, 0.8);
+  border: 1px solid #2c3f57;
+  font-size: 0.7rem;
+  font-weight: 700;
+  color: #cfe4f7;
+}
+
+@media (max-width: 760px) {
+  .levelup .cards {
+    flex-direction: column;
+    gap: 0.55rem;
+    overflow-y: auto;
+    max-height: 70vh;
+  }
+  .lvcard {
+    min-height: auto;
+    width: min(20rem, 88vw);
+  }
+  .lvcard p {
+    display: none;
+  }
+}
+
+/* ---------------------------------------------------------------------------
    캐릭터 선택 — 심사자가 보는 첫 화면
    두 클래스의 색 대비(시안 vs 크림슨)가 곧 정체성이므로 UI가 그걸 증폭한다.
 --------------------------------------------------------------------------- */

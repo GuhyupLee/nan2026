@@ -36,3 +36,9 @@ export const HEAL_COOLDOWN = 45
 
 /** 점멸 사거리(월드 단위). 롤과 비슷하게 "한 벽 넘는" 감각. */
 export const FLASH_RANGE = 8
+
+/** 회복량. 최대 체력의 35%. */
+export const HEAL_AMOUNT = 35
+/** 회복에 딸린 이동속도 배수와 지속 시간. */
+export const HEAL_SPEED_BOOST = 1.45
+export const HEAL_BOOST_TIME = 1.6

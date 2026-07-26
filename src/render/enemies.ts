@@ -63,12 +63,27 @@ interface Pop {
 const POP_DURATION = 0.16
 const MAX_POPS = 64
 const MAX_TRACERS = 48
+const MAX_RINGS = 24
+const RING_DURATION = 0.42
+
+/** 지면 원형 연출 하나. 점멸·회복이 쓰고, 앞으로 스킬들이 공유한다. */
+interface Ring {
+  x: number
+  y: number
+  radius: number
+  kind: number
+  t: number
+}
+
+const RING_COLORS = [0x8fe6ff, 0x7df0a0]
 
 export class EnemyRenderer {
   private readonly batches: TypeBatch[] = []
   private readonly pops: Pop[] = []
+  private readonly rings: Ring[] = []
   private readonly popMesh: THREE.InstancedMesh
   private readonly tracerMesh: THREE.InstancedMesh
+  private readonly ringMesh: THREE.InstancedMesh
 
   private readonly m = new THREE.Matrix4()
   private readonly q = new THREE.Quaternion()
@@ -125,6 +140,25 @@ export class EnemyRenderer {
     this.tracerMesh.count = 0
     this.tracerMesh.frustumCulled = false
     scene.add(this.tracerMesh)
+
+    // 지면 링 — 바닥 평면의 변화가 쿼터뷰에서 가장 잘 읽힌다.
+    // 반지름 1의 얇은 링을 스케일해 재사용한다.
+    const ringGeo = new THREE.RingGeometry(0.86, 1, 32)
+    ringGeo.rotateX(-Math.PI / 2)
+    this.ringMesh = new THREE.InstancedMesh(
+      ringGeo,
+      new THREE.MeshBasicMaterial({
+        transparent: true,
+        depthWrite: false,
+        blending: THREE.AdditiveBlending,
+        side: THREE.DoubleSide,
+      }),
+      MAX_RINGS,
+    )
+    this.ringMesh.instanceMatrix.setUsage(THREE.DynamicDrawUsage)
+    this.ringMesh.count = 0
+    this.ringMesh.frustumCulled = false
+    scene.add(this.ringMesh)
   }
 
   /**
@@ -135,6 +169,41 @@ export class EnemyRenderer {
     this.drawEnemies(world.enemies, alpha)
     this.drawPops(world, dt)
     this.drawTracers(world)
+    this.drawRings(world, dt)
+  }
+
+  private drawRings(world: World, dt: number): void {
+    for (const r of world.rings) {
+      if (this.rings.length >= MAX_RINGS) break
+      this.rings.push({ x: r.x, y: r.y, radius: r.radius, kind: r.kind, t: 0 })
+    }
+
+    let n = 0
+    for (let i = this.rings.length - 1; i >= 0; i--) {
+      const r = this.rings[i]!
+      r.t += dt / RING_DURATION
+      if (r.t >= 1) {
+        this.rings.splice(i, 1)
+        continue
+      }
+      if (n >= MAX_RINGS) continue
+
+      // 빠르게 퍼졌다가 서서히 사라진다 — ease-out
+      const grow = 1 - (1 - r.t) * (1 - r.t)
+      const s = 0.3 + r.radius * grow
+      this.pos.set(r.x, 0.06, r.y)
+      this.q.identity()
+      this.scl.set(s, 1, s)
+      this.m.compose(this.pos, this.q, this.scl)
+      this.ringMesh.setMatrixAt(n, this.m)
+      this.color.set(RING_COLORS[r.kind] ?? RING_COLORS[0]!).multiplyScalar(1 - r.t)
+      this.ringMesh.setColorAt(n, this.color)
+      n++
+    }
+
+    this.ringMesh.count = n
+    this.ringMesh.instanceMatrix.needsUpdate = true
+    if (this.ringMesh.instanceColor) this.ringMesh.instanceColor.needsUpdate = true
   }
 
   private drawEnemies(pool: EnemyPool, alpha: number): void {

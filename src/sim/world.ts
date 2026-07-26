@@ -8,6 +8,7 @@ import {
   PLAYER_RADIUS,
   PLAYER_SPEED,
 } from './constants.ts'
+import { currentSpeed, stepAbilities } from './abilities.ts'
 import { stepAutoAttack } from './combat.ts'
 import { createEnemyHash, createEnemyPool, stepEnemies, updateSpawner } from './enemies.ts'
 import { addXp, consumeLevelUp, createProgression } from './progression.ts'
@@ -28,6 +29,7 @@ export function createWorld(seed: number, playerClass: PlayerClass = 'ranged'): 
     hp: PLAYER_MAX_HP,
     maxHp: PLAYER_MAX_HP,
     attackCooldown: 0,
+    speedBoostUntil: -1,
   }
 
   const skills = createSkillBook()
@@ -52,6 +54,7 @@ export function createWorld(seed: number, playerClass: PlayerClass = 'ranged'): 
     spawnEnabled: true,
     deaths: [],
     tracers: [],
+    rings: [],
     awaitingChoice: false,
     outcome: 'alive',
   }
@@ -71,6 +74,9 @@ export function stepWorld(world: World, input: Input): void {
   world.lastAim.y = input.aim.y
 
   tickSkills(world.skills, DT)
+  // 스킬은 이동보다 먼저 처리한다. 점멸이 위치를 바꾸므로
+  // 같은 틱의 이동이 그 새 위치에서 이어져야 순간이동이 매끄럽다.
+  stepAbilities(world, input)
   stepPlayer(world, input)
 
   const p = world.player
@@ -98,6 +104,7 @@ export function stepWorld(world: World, input: Input): void {
 export function drainEvents(world: World): void {
   world.deaths.length = 0
   world.tracers.length = 0
+  world.rings.length = 0
 }
 
 /**
@@ -133,8 +140,9 @@ function stepPlayer(world: World, input: Input): void {
   moveDir.y = input.move.y
   normalize(moveDir)
 
-  const targetVx = moveDir.x * p.speed
-  const targetVy = moveDir.y * p.speed
+  const speed = currentSpeed(world)
+  const targetVx = moveDir.x * speed
+  const targetVy = moveDir.y * speed
 
   // 프레임레이트 독립 지수 감쇠. DT가 고정이라 사실상 상수지만,
   // 상수를 바꿔 손맛을 튜닝할 때 의미가 직관적으로 유지된다.

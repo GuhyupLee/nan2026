@@ -1,3 +1,4 @@
+import type { RingEvent } from './abilities.ts'
 import type { DeathEvent, EnemyPool } from './enemies.ts'
 import type { Progression } from './progression.ts'
 import type { Rng } from './rng.ts'
@@ -50,6 +51,8 @@ export interface Player {
   maxHp: number
   /** 자동 공격까지 남은 시간(초). */
   attackCooldown: number
+  /** 이동속도 증가가 끝나는 시각(월드 시간). 회복(D)이 설정한다. */
+  speedBoostUntil: number
 }
 
 /** 자동 공격 한 발의 궤적. 렌더러가 예광선을 그리고 비운다. */
@@ -91,6 +94,7 @@ export interface World {
    */
   deaths: DeathEvent[]
   tracers: TracerEvent[]
+  rings: RingEvent[]
 
   /**
    * 레벨업 선택 대기 중인가.

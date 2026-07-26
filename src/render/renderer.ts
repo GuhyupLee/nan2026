@@ -50,6 +50,7 @@ export class Renderer {
   private readonly groundPlane = new THREE.Plane(new THREE.Vector3(0, 1, 0), 0)
   private readonly ndc = new THREE.Vector2()
   private readonly hit = new THREE.Vector3()
+  private readonly proj = new THREE.Vector3()
 
   private readonly container: HTMLElement
   private width = 1
@@ -186,6 +187,18 @@ export class Renderer {
       out.y = this.hit.z
     }
     return out
+  }
+
+  /**
+   * 월드 좌표를 화면 픽셀로 투영한다.
+   * 캐릭터 머리 위 체력바처럼 3D를 따라다니는 DOM 요소가 쓴다.
+   */
+  worldToScreen(x: number, y: number, z: number, out: { x: number; y: number }): boolean {
+    this.proj.set(x, y, z).project(this.camera)
+    out.x = (this.proj.x * 0.5 + 0.5) * this.width
+    out.y = (-this.proj.y * 0.5 + 0.5) * this.height
+    // z가 1을 넘으면 카메라 뒤쪽이다
+    return this.proj.z < 1
   }
 
   private swapCharacter(cls: PlayerClass): void {
