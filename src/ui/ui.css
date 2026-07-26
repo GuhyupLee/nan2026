@@ -1,4 +1,180 @@
 /* ---------------------------------------------------------------------------
+   캐릭터 선택 — 심사자가 보는 첫 화면
+   두 클래스의 색 대비(시안 vs 크림슨)가 곧 정체성이므로 UI가 그걸 증폭한다.
+--------------------------------------------------------------------------- */
+
+.charselect {
+  position: fixed;
+  inset: 0;
+  z-index: 20;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 1.6rem;
+  padding: 1.5rem;
+  background: radial-gradient(ellipse at 50% 40%, #0a1424 0%, #05070d 70%);
+  transition: opacity 0.4s ease;
+}
+.charselect.closing {
+  opacity: 0;
+  pointer-events: none;
+}
+
+.charselect .title {
+  text-align: center;
+}
+.charselect .title h2 {
+  font-size: clamp(1.1rem, 3vw, 1.5rem);
+  font-weight: 700;
+  letter-spacing: 0.18em;
+  color: #e8eef8;
+}
+.charselect .title p {
+  margin-top: 0.4rem;
+  font-size: 0.8rem;
+  letter-spacing: 0.1em;
+  color: #6d7f97;
+}
+
+.charselect .cards {
+  display: flex;
+  gap: 1.1rem;
+  align-items: stretch;
+  max-width: 100%;
+}
+
+.charcard {
+  --accent: #4dd0ff;
+  position: relative;
+  width: min(21rem, 40vw);
+  border-radius: 1rem;
+  overflow: hidden;
+  cursor: pointer;
+  background: #0b1220;
+  border: 1px solid #1e2c40;
+  transition:
+    transform 0.18s cubic-bezier(0.2, 0.9, 0.3, 1),
+    border-color 0.18s ease,
+    box-shadow 0.18s ease;
+  -webkit-tap-highlight-color: transparent;
+}
+.charcard:hover,
+.charcard:focus-visible {
+  transform: translateY(-6px);
+  border-color: var(--accent);
+  box-shadow: 0 14px 44px -12px var(--accent);
+  outline: none;
+}
+
+.charcard .portrait {
+  display: block;
+  width: 100%;
+  aspect-ratio: 2 / 3;
+  object-fit: cover;
+  object-position: 50% 12%;
+}
+
+/* 초상 하단을 어둡게 덮어 글자가 항상 읽히게 한다. */
+.charcard .veil {
+  position: absolute;
+  inset: auto 0 0 0;
+  height: 62%;
+  background: linear-gradient(180deg, rgba(6, 10, 18, 0) 0%, rgba(6, 10, 18, 0.94) 62%);
+  pointer-events: none;
+}
+
+.charcard .info {
+  position: absolute;
+  inset: auto 0 0 0;
+  padding: 1rem 1.1rem 1.15rem;
+}
+.charcard .role {
+  display: inline-block;
+  font-size: 0.66rem;
+  font-weight: 700;
+  letter-spacing: 0.14em;
+  color: #05070d;
+  background: var(--accent);
+  padding: 0.16rem 0.5rem;
+  border-radius: 0.25rem;
+}
+.charcard h3 {
+  margin-top: 0.5rem;
+  font-size: 1.5rem;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  color: #f2f7ff;
+}
+.charcard .epithet {
+  font-size: 0.82rem;
+  color: var(--accent);
+  letter-spacing: 0.06em;
+}
+.charcard .tagline {
+  margin-top: 0.5rem;
+  font-size: 0.8rem;
+  line-height: 1.6;
+  color: #93a6bd;
+}
+.charcard .traits {
+  margin-top: 0.7rem;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.32rem;
+}
+.charcard .traits span {
+  font-size: 0.66rem;
+  letter-spacing: 0.06em;
+  color: #b9cbe0;
+  border: 1px solid #2a3c53;
+  border-radius: 999px;
+  padding: 0.16rem 0.5rem;
+}
+
+.charcard .hotkey {
+  position: absolute;
+  top: 0.7rem;
+  left: 0.7rem;
+  width: 1.55rem;
+  height: 1.55rem;
+  display: grid;
+  place-items: center;
+  border-radius: 0.4rem;
+  background: rgba(5, 9, 16, 0.72);
+  border: 1px solid #2c3f57;
+  font-size: 0.76rem;
+  font-weight: 700;
+  color: #cfe4f7;
+}
+
+.charselect .footnote {
+  font-size: 0.74rem;
+  letter-spacing: 0.08em;
+  color: #5e6f86;
+  text-align: center;
+}
+
+@media (max-width: 720px) {
+  .charselect .cards {
+    flex-direction: column;
+    gap: 0.8rem;
+    overflow-y: auto;
+  }
+  .charcard {
+    width: min(20rem, 82vw);
+  }
+  /* 세로로 쌓이면 초상 전체를 보여줄 공간이 없다. 얼굴 위주로 자른다. */
+  .charcard .portrait {
+    aspect-ratio: 16 / 11;
+    object-position: 50% 14%;
+  }
+  .charcard .veil {
+    height: 78%;
+  }
+}
+
+/* ---------------------------------------------------------------------------
    스킬바 — 화면 하단 6슬롯 (Q W E R D F)
    PC에서는 키보드와 클릭 둘 다, 모바일에서는 이것이 유일한 입력 수단이다.
    쿨다운 부채꼴이 도는 이 UI가 곧 롤/이터널 리턴 룩 그 자체다.
