@@ -8,6 +8,7 @@
  *   npx tsx tools/sim-check.ts
  */
 import { ARENA_RADIUS, DT, FLASH_COOLDOWN } from '../src/sim/constants.ts'
+import { targetAliveCount } from '../src/sim/enemies.ts'
 import {
   MAX_LEVEL,
   TARGET_LEVEL_TIMES,
@@ -42,9 +43,14 @@ function check(name: string, ok: boolean, detail = ''): void {
   }
 }
 
-/** 월드를 ticks만큼 진행시킨다. */
+/**
+ * 월드를 ticks만큼 진행시킨다.
+ * 이동·시간 같은 성질을 격리해 보기 위해 스폰을 끈다 —
+ * 켜두면 적이 플레이어를 죽여서 무엇을 재는지 알 수 없게 된다.
+ */
 function run(seed: number, ticks: number, moveX: number, moveY: number) {
   const world = createWorld(seed)
+  world.spawnEnabled = false
   const input = createInput()
   input.move.x = moveX
   input.move.y = moveY
@@ -142,6 +148,7 @@ console.log('\nsim smoke check\n')
 // --- 레벨업 ---
 {
   const w = createWorld(1)
+  w.spawnEnabled = false
   const idle = createInput()
   for (let i = 0; i < 600; i++) stepWorld(w, idle) // 정확히 10초
 
@@ -162,6 +169,7 @@ console.log('\nsim smoke check\n')
 // --- 선택 대기 중에는 게임이 멈춘다 ---
 {
   const w = createWorld(1)
+  w.spawnEnabled = false
   grantXp(w, 100000) // 한 번에 만렙까지
   check('큰 XP 한 번에 여러 레벨이 오른다', w.progression.level === MAX_LEVEL)
   check('레벨업이 밀려 있으면 선택 대기', w.awaitingChoice)
@@ -267,6 +275,66 @@ console.log('\nsim smoke check\n')
   const a = createWorld(42, 'ranged')
   const b = createWorld(42, 'melee')
   check('클래스가 달라도 시드 상태는 같다', a.rng.state() === b.rng.state())
+}
+
+// --- 적 시스템 ---
+{
+  const w = createWorld(7)
+  const input = createInput()
+  input.aim.x = 10
+  input.aim.y = 0
+
+  for (let i = 0; i < 60; i++) stepWorld(w, input)
+  check('스폰이 돌아간다', w.enemies.count > 0, `count=${w.enemies.count}`)
+  check(
+    '적이 아레나 밖으로 나가지 않는다',
+    Array.from({ length: w.enemies.count }).every((_, i) =>
+      Math.hypot(w.enemies.x[i]!, w.enemies.y[i]!) <= ARENA_RADIUS + 1e-3,
+    ),
+  )
+
+  // 초반 목표 마릿수는 4. 스폰이 폭주하지 않아야 한다.
+  check('목표 마릿수를 크게 넘지 않는다', w.enemies.count <= 8, `count=${w.enemies.count}`)
+
+  // 적이 접근하면 자동 공격이 잡기 시작한다
+  for (let i = 0; i < 60 * 20; i++) stepWorld(w, input)
+  check('20초 후에도 살아있다', w.outcome === 'alive', `outcome=${w.outcome} hp=${w.player.hp.toFixed(1)}`)
+  check('자동 공격이 적을 잡아 XP가 오른다', w.progression.totalXp > 0, `xp=${w.progression.totalXp}`)
+  check('레벨이 올랐다', w.progression.level >= 2, `lv=${w.progression.level}`)
+}
+
+// --- 스폰 커브가 비트 시트와 맞는가 ---
+{
+  check('0초 목표는 4마리', Math.round(targetAliveCount(0)) === 4)
+  check('3:20 목표가 최대(100)', Math.round(targetAliveCount(200)) === 100)
+  check(
+    '보스 등장(3:30)에 잡몹이 줄어든다',
+    targetAliveCount(210) < targetAliveCount(200),
+    `${targetAliveCount(210)} vs ${targetAliveCount(200)}`,
+  )
+  check('커브가 음수로 가지 않는다', [0, 60, 120, 180, 240, 300].every((t) => targetAliveCount(t) > 0))
+}
+
+// --- 결정론: 적이 있어도 유지되는가 ---
+{
+  const play = (seed: number) => {
+    const w = createWorld(seed)
+    const input = createInput()
+    input.move.x = 1
+    input.aim.x = 8
+    for (let i = 0; i < 60 * 15; i++) stepWorld(w, input)
+    return w
+  }
+  const a = play(2024)
+  const b = play(2024)
+  check(
+    '적·전투가 돌아도 같은 시드면 같은 결과',
+    a.enemies.count === b.enemies.count &&
+      a.player.hp === b.player.hp &&
+      a.progression.totalXp === b.progression.totalXp &&
+      a.rng.state() === b.rng.state(),
+    `${a.enemies.count}/${b.enemies.count} hp ${a.player.hp}/${b.player.hp}`,
+  )
 }
 
 console.log('')

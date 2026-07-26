@@ -5,6 +5,7 @@ import type { Vec2 } from '../sim/vec.ts'
 import { length, lerp, lerpAngle } from '../sim/vec.ts'
 import { createArena } from './arena.ts'
 import { type CharacterRig, createCharacterRig } from './characters.ts'
+import { EnemyRenderer } from './enemies.ts'
 
 /**
  * 쿼터뷰 카메라 오프셋. 피치 ≈ atan(14/10.8) ≈ 52°. LoL·이터널 리턴 계열 각도.
@@ -38,8 +39,11 @@ export class Renderer {
 
   private readonly gl: THREE.WebGLRenderer
   private readonly lightRig: THREE.Group
+  private readonly enemyRenderer: EnemyRenderer
   private charRig: CharacterRig
   private charClass: PlayerClass = 'ranged'
+  /** 렌더 프레임 간격(초). 이벤트 수명 애니메이션에 쓴다. */
+  private lastFrameTime = 0
 
   private readonly camTarget = new THREE.Vector3()
   private readonly raycaster = new THREE.Raycaster()
@@ -76,6 +80,8 @@ export class Renderer {
 
     this.charRig = createCharacterRig(this.charClass)
     this.scene.add(this.charRig.group)
+
+    this.enemyRenderer = new EnemyRenderer(this.scene)
 
     // --- 조명 ---
     this.scene.add(new THREE.HemisphereLight(0x7093c8, 0x0a0e18, 0.85))
@@ -127,6 +133,11 @@ export class Renderer {
    *              시뮬 60Hz / 화면 144Hz 조합에서도 매끄럽게 유지된다.
    */
   render(world: World, alpha: number): void {
+    const now = performance.now() / 1000
+    // 첫 프레임과 탭 복귀 시 dt가 튀지 않게 막는다.
+    const dt = this.lastFrameTime === 0 ? 1 / 60 : Math.min(now - this.lastFrameTime, 0.1)
+    this.lastFrameTime = now
+
     const p = world.player
 
     const px = lerp(p.prevPos.x, p.pos.x, alpha)
@@ -141,7 +152,9 @@ export class Renderer {
     this.charRig.group.rotation.y = -facing
     // 절차적 애니메이션은 시뮬 시간이 아니라 벽시계로 돈다 —
     // 레벨업으로 시뮬이 멈춘 동안에도 캐릭터는 숨을 쉬어야 한다.
-    this.charRig.update(performance.now() / 1000, length(p.vel))
+    this.charRig.update(now, length(p.vel))
+
+    this.enemyRenderer.update(world, alpha, dt)
 
     this.lightRig.position.set(px, 0, pz)
 

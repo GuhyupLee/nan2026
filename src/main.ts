@@ -3,7 +3,7 @@ import { Renderer } from './render/renderer.ts'
 import { ARENA_RADIUS, DT, MAX_TICKS_PER_FRAME } from './sim/constants.ts'
 import { createInput } from './sim/types.ts'
 import type { World } from './sim/types.ts'
-import { createWorld, stepWorld } from './sim/world.ts'
+import { createWorld, drainEvents, stepWorld } from './sim/world.ts'
 import { showCharacterSelect } from './ui/charselect.ts'
 import { DEFAULT_SLOTS, SkillBar, assertSlotsCoverAllSkills } from './ui/skillbar.ts'
 import './ui/ui.css'
@@ -75,7 +75,23 @@ let fps = 0
 
 if (import.meta.env.DEV) {
   Object.assign(window, {
-    __game: { get world() { return world }, renderer, input, skillBar },
+    __game: {
+      get world() {
+        return world
+      },
+      renderer,
+      input,
+      skillBar,
+      // rAF가 멈춘 환경(백그라운드 탭)에서도 시뮬을 손으로 돌려
+      // 렌더 결과를 검증할 수 있게 열어둔다.
+      stepWorld,
+      createInput,
+      createWorld,
+      drainEvents,
+      setWorld(w: World) {
+        world = w
+      },
+    },
   })
 }
 
@@ -106,6 +122,8 @@ function frame(now: number): void {
 
   renderer.render(world, accumulator / DT)
   skillBar.update(world.skills)
+  // 렌더러가 사망·예광선 이벤트를 소비했으므로 비운다.
+  drainEvents(world)
 
   // --- HUD ---
   if (rawDt > 0) {

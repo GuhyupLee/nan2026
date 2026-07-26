@@ -8,6 +8,8 @@ import {
   PLAYER_RADIUS,
   PLAYER_SPEED,
 } from './constants.ts'
+import { stepAutoAttack } from './combat.ts'
+import { createEnemyHash, createEnemyPool, stepEnemies, updateSpawner } from './enemies.ts'
 import { addXp, consumeLevelUp, createProgression } from './progression.ts'
 import { createRng } from './rng.ts'
 import { createSkillBook, tickSkills, unlockSkill } from './skills.ts'
@@ -25,6 +27,7 @@ export function createWorld(seed: number, playerClass: PlayerClass = 'ranged'): 
     speed: PLAYER_SPEED,
     hp: PLAYER_MAX_HP,
     maxHp: PLAYER_MAX_HP,
+    attackCooldown: 0,
   }
 
   const skills = createSkillBook()
@@ -43,7 +46,14 @@ export function createWorld(seed: number, playerClass: PlayerClass = 'ranged'): 
     player,
     progression: createProgression(),
     skills,
+    lastAim: vec2(1, 0),
+    enemies: createEnemyPool(),
+    enemyHash: createEnemyHash(),
+    spawnEnabled: true,
+    deaths: [],
+    tracers: [],
     awaitingChoice: false,
+    outcome: 'alive',
   }
 }
 
@@ -55,13 +65,39 @@ export function createWorld(seed: number, playerClass: PlayerClass = 'ranged'): 
 export function stepWorld(world: World, input: Input): void {
   // 레벨업 선택이 걸려 있으면 게임이 통째로 멈춘다. 5분 시계도 멈춘다 —
   // 카드를 읽는 시간이 생존 시간에 섞이면 비트 시트 검증이 무의미해진다.
-  if (world.awaitingChoice) return
+  if (world.awaitingChoice || world.outcome !== 'alive') return
+
+  world.lastAim.x = input.aim.x
+  world.lastAim.y = input.aim.y
 
   tickSkills(world.skills, DT)
   stepPlayer(world, input)
 
+  const p = world.player
+  if (world.spawnEnabled) {
+    updateSpawner(world.enemies, world.rng, world.time, p.pos.x, p.pos.y)
+  }
+
+  const res = stepEnemies(world.enemies, world.enemyHash, p.pos.x, p.pos.y, p.radius)
+  if (res.contactDamage > 0) {
+    p.hp = Math.max(0, p.hp - res.contactDamage)
+    if (p.hp <= 0) world.outcome = 'dead'
+  }
+
+  const xp = stepAutoAttack(world, world.enemies, world.enemyHash, world.tracers)
+  if (xp > 0) grantXp(world, xp)
+
   world.tick += 1
   world.time = world.tick * DT
+}
+
+/**
+ * 렌더 전용 이벤트 큐를 비운다.
+ * 렌더러가 소비한 뒤, 헤드리스에서는 매 프레임 상당 주기로 호출한다.
+ */
+export function drainEvents(world: World): void {
+  world.deaths.length = 0
+  world.tracers.length = 0
 }
 
 /**

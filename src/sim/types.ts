@@ -1,6 +1,8 @@
+import type { DeathEvent, EnemyPool } from './enemies.ts'
 import type { Progression } from './progression.ts'
 import type { Rng } from './rng.ts'
 import type { SkillBook } from './skills.ts'
+import type { SpatialHash } from './spatial.ts'
 import type { Vec2 } from './vec.ts'
 
 /**
@@ -46,6 +48,16 @@ export interface Player {
   speed: number
   hp: number
   maxHp: number
+  /** 자동 공격까지 남은 시간(초). */
+  attackCooldown: number
+}
+
+/** 자동 공격 한 발의 궤적. 렌더러가 예광선을 그리고 비운다. */
+export interface TracerEvent {
+  x0: number
+  y0: number
+  x1: number
+  y1: number
 }
 
 export interface World {
@@ -60,6 +72,26 @@ export interface World {
   player: Player
   progression: Progression
   skills: SkillBook
+
+  /** 직전 틱의 조준 지점(월드 좌표). 자동 공격과 조준 표시가 읽는다. */
+  lastAim: Vec2
+
+  enemies: EnemyPool
+  enemyHash: SpatialHash
+  /**
+   * 스폰을 돌릴 것인가.
+   * 단위 테스트에서 이동·시간 같은 성질만 격리해 보려면 꺼야 한다.
+   * 밸런싱 실험에서 특정 구간만 재현할 때도 쓴다.
+   */
+  spawnEnabled: boolean
+
+  /**
+   * 렌더 전용 출력. 시뮬은 push만 하고 렌더러가 소비 후 비운다.
+   * 헤드리스 밸런싱에서는 아무도 비우지 않으므로 상한을 두고 버린다.
+   */
+  deaths: DeathEvent[]
+  tracers: TracerEvent[]
+
   /**
    * 레벨업 선택 대기 중인가.
    *
@@ -67,4 +99,7 @@ export interface World {
    * 호출부가 매번 계산하지 않도록 여기에 캐시한다.
    */
   awaitingChoice: boolean
+
+  /** 판이 끝났는가. 'alive'가 아니면 시뮬이 멈춘다. */
+  outcome: 'alive' | 'dead' | 'victory'
 }
