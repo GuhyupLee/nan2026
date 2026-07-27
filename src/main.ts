@@ -1,6 +1,7 @@
 import { GameAudio } from './audio.ts'
 import { InputState, applyPointerMove } from './input.ts'
 import { Renderer } from './render/renderer.ts'
+import { ensureVrm, startVrmPreload } from './render/vrm-rig.ts'
 import { ARENA_RADIUS, DT, MAX_TICKS_PER_FRAME } from './sim/constants.ts'
 import { createInput } from './sim/types.ts'
 import type { PlayerClass, World } from './sim/types.ts'
@@ -341,6 +342,9 @@ function beginRun(playerClass: PlayerClass): void {
 async function start(): Promise<void> {
   activeRun = false
   pauseButton.setVisible(false)
+  // 캐릭터 모델(각 20MB 안팎)을 메뉴가 떠 있는 동안 미리 받는다. 심사자가
+  // 메뉴와 캐릭터 선택을 넘기는 데 보통 몇 초가 걸리므로 대개 그 안에 끝난다.
+  startVrmPreload()
   await showMainMenu(document.body, () => showSettings(document.body, audio, input))
   await audio.unlock()
   audio.ui('select')
@@ -349,7 +353,37 @@ async function start(): Promise<void> {
   )
   await audio.unlock()
   audio.ui('select')
+
+  // 아직 안 받았으면 여기서 기다린다. 실패해도 false가 올 뿐이고,
+  // createCharacterRig가 프로시저럴 모델로 폴백하므로 판은 그대로 시작된다.
+  if (!(await withLoadingScreen(ensureVrm(playerClass)))) {
+    console.warn('[vrm] 모델을 못 받아 프로시저럴 캐릭터로 시작합니다')
+  }
+
   beginRun(playerClass)
+}
+
+/**
+ * 약속이 200ms 안에 끝나면 아무것도 띄우지 않는다.
+ * 캐시가 살아 있는 두 번째 실행에서 로딩 화면이 깜빡이는 것이 더 나쁘다.
+ */
+async function withLoadingScreen<T>(promise: Promise<T>): Promise<T> {
+  let shown = false
+  const timer = window.setTimeout(() => {
+    shown = true
+    bootEl.innerHTML = '<h1>캐릭터를 불러오는 중…</h1>'
+    bootEl.classList.remove('hidden')
+    bootEl.removeAttribute('aria-hidden')
+  }, 200)
+  try {
+    return await promise
+  } finally {
+    window.clearTimeout(timer)
+    if (shown) {
+      bootEl.classList.add('hidden')
+      bootEl.setAttribute('aria-hidden', 'true')
+    }
+  }
 }
 
 // 브라우저의 사용자 제스처 정책을 만족시키기 위해 첫 입력에서 오디오를 연다.

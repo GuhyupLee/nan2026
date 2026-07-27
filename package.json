@@ -12,6 +12,7 @@
     "balance": "tsx tools/balance/run.ts"
   },
   "dependencies": {
+    "@pixiv/three-vrm": "^3.5.5",
     "three": "^0.185.1"
   },
   "devDependencies": {
