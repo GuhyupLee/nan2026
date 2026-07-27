@@ -44,8 +44,8 @@ export const CLASS_OPTIONS: ClassOption[] = [
     role: '원거리',
     tagline: '거리를 두고 빛으로 지운다. 몰려드는 적을 한 점에 모아 터뜨린다.',
     traits: ['안전한 거리', '광역 섬멸', '느린 시작'],
-    portrait: 'magic-girl-hero.webp',
-    accent: '#4dd0ff',
+    portrait: 'lumen-portrait-v2.webp',
+    accent: '#b8d2cf',
     hotkey: '1',
   },
   {
@@ -55,8 +55,8 @@ export const CLASS_OPTIONS: ClassOption[] = [
     role: '근접',
     tagline: '파고들어 베어낸다. 벨수록 빨라지고, 멈추면 죽는다.',
     traits: ['높은 체력', '연속 처치', '높은 위험'],
-    portrait: 'samurai-girl-hero.webp',
-    accent: '#ff5a6e',
+    portrait: 'wola-portrait-v2.webp',
+    accent: '#c47870',
     hotkey: '2',
   },
 ]
@@ -83,6 +83,7 @@ export function showCharacterSelect(
     const titleCopy = document.createElement('div')
     titleCopy.className = 'title-copy'
     titleCopy.innerHTML =
+      `<span class="charselect-kicker">CHARACTER SELECT</span>` +
       `<h2 id="charselect-title">캐릭터 선택</h2>` +
       `<p>5분 안에 보스를 쓰러뜨리면 승리.</p>`
     title.appendChild(titleCopy)
@@ -136,11 +137,12 @@ export function showCharacterSelect(
       resolve(id)
     }
 
-    for (const opt of options) {
+    for (const [index, opt] of options.entries()) {
       const card = document.createElement('button')
       card.className = 'charcard'
       card.type = 'button'
       card.style.setProperty('--accent', opt.accent)
+      card.dataset.class = opt.id
       card.setAttribute('aria-label', `${opt.name} — ${opt.epithet}`)
 
       const img = document.createElement('img')
@@ -157,7 +159,9 @@ export function showCharacterSelect(
 
       const hotkey = document.createElement('div')
       hotkey.className = 'hotkey'
-      hotkey.textContent = opt.hotkey
+      hotkey.innerHTML =
+        `<small>0${index + 1}</small>` +
+        `<span>${opt.hotkey}</span>`
       card.appendChild(hotkey)
 
       const info = document.createElement('div')
@@ -169,6 +173,11 @@ export function showCharacterSelect(
         `<div class="tagline">${opt.tagline}</div>` +
         `<div class="traits">${opt.traits.map((t) => `<span>${t}</span>`).join('')}</div>`
       card.appendChild(info)
+
+      const selectLabel = document.createElement('div')
+      selectLabel.className = 'select-label'
+      selectLabel.innerHTML = '선택 <span aria-hidden="true">↗</span>'
+      card.appendChild(selectLabel)
 
       card.addEventListener('click', () => choose(opt.id))
       cards.appendChild(card)

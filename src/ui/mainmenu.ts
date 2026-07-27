@@ -1,8 +1,8 @@
 /**
  * 키아트를 전면에 둔 메인 메뉴.
  *
- * 별도 카드나 대시보드 껍데기 없이, 왼쪽 선택지와 오른쪽 인물 구도를
- * 한 화면에 고정해 게임의 첫 인상을 바로 전달한다.
+ * 월식 포스터 위에 얇은 편집선과 활자만 얹는다. 정보 패널을 따로 만들지
+ * 않아 새 키아트가 첫인상을 주도하도록 한다.
  */
 export function showMainMenu(
   parent: HTMLElement,
@@ -17,7 +17,7 @@ export function showMainMenu(
 
     const keyart = document.createElement('img')
     keyart.className = 'mainmenu-keyart'
-    keyart.src = `${import.meta.env.BASE_URL}art/main-menu-keyart.webp`
+    keyart.src = `${import.meta.env.BASE_URL}art/main-menu-keyart-v2.webp`
     keyart.alt = ''
     keyart.decoding = 'async'
     keyart.fetchPriority = 'high'
@@ -46,12 +46,11 @@ export function showMainMenu(
     mark.src = `${import.meta.env.BASE_URL}art/myeongwol-mark.webp`
     mark.alt = ''
     mark.decoding = 'async'
-    titleRow.appendChild(mark)
-
     const title = document.createElement('h1')
     title.id = 'mainmenu-title'
     title.textContent = '명월'
     titleRow.appendChild(title)
+    titleRow.appendChild(mark)
 
     const tagline = document.createElement('p')
     tagline.className = 'mainmenu-tagline'
@@ -61,6 +60,7 @@ export function showMainMenu(
     const rule = document.createElement('div')
     rule.className = 'mainmenu-rule'
     rule.setAttribute('aria-hidden', 'true')
+    rule.innerHTML = '<span>FIVE MINUTES</span><i></i>'
     content.appendChild(rule)
 
     const actions = document.createElement('div')
@@ -70,13 +70,19 @@ export function showMainMenu(
     const start = document.createElement('button')
     start.className = 'mainmenu-action primary'
     start.type = 'button'
-    start.innerHTML = '<span>게임 시작</span><small>ENTER</small>'
+    start.innerHTML =
+      '<span class="action-index">01</span>' +
+      '<span class="action-copy"><b>게임 시작</b><small>ENTER</small></span>' +
+      '<span class="action-arrow" aria-hidden="true">↗</span>'
     actions.appendChild(start)
 
     const settings = document.createElement('button')
     settings.className = 'mainmenu-action'
     settings.type = 'button'
-    settings.innerHTML = '<span>설정</span><small>오디오 · 조작</small>'
+    settings.innerHTML =
+      '<span class="action-index">02</span>' +
+      '<span class="action-copy"><b>설정</b><small>오디오 · 조작</small></span>' +
+      '<span class="action-arrow" aria-hidden="true">＋</span>'
     actions.appendChild(settings)
 
     let done = false
