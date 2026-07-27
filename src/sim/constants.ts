@@ -26,8 +26,8 @@ export const ARENA_RADIUS = 30
 
 /** 플레이어 기본 스탯. */
 export const PLAYER_RADIUS = 0.55
-export const PLAYER_SPEED = 10
-export const PLAYER_MAX_HP = 100
+export const PLAYER_SPEED = 10.7
+export const PLAYER_MAX_HP = 110
 
 /** 이동 응답성. 값이 클수록 즉각적. 서바이버류는 즉각적인 쪽이 손맛이 좋다. */
 export const PLAYER_ACCEL = 90
@@ -45,7 +45,7 @@ export const HEAL_COOLDOWN = 45
 export const FLASH_RANGE = 8
 
 /** 회복량. 최대 체력의 35%. */
-export const HEAL_AMOUNT = 35
+export const HEAL_AMOUNT = 42
 
 /**
  * 처치 회복 예산이 차는 속도(초당 HP)와 최대치.
@@ -60,11 +60,11 @@ export const HEAL_AMOUNT = 35
  * 전멸한다. 그 사이가 이 값이다 — 조용한 구간을 버는 데는 충분하고
  * 몰린 상태를 버티는 데는 모자라다.
  *
- * 최대치 4는 약 7초치. 한 번 크게 쓸어담았을 때 목돈으로 돌아오되,
+ * 최대치 12는 약 3초치. 한 번 크게 쓸어담았을 때 목돈으로 돌아오되,
  * 계속 쓸어담는다고 계속 돌아오지는 않는다.
  */
-export const KILL_HEAL_RATE = 0.55
-export const KILL_HEAL_CAP = 4
+export const KILL_HEAL_RATE = 4
+export const KILL_HEAL_CAP = 12
 /** 회복에 딸린 이동속도 배수와 지속 시간. */
 export const HEAL_SPEED_BOOST = 1.45
 export const HEAL_BOOST_TIME = 1.6

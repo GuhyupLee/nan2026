@@ -3712,3 +3712,685 @@ button {
     transition: none;
   }
 }
+
+/* --------------------------------------------------------------------------
+   Combat information pass
+
+   선택 화면의 로드아웃, 인게임 패시브, 상세 툴팁을 같은 얇은 프레임과
+   숫자 규칙으로 묶는다. 전장 위에는 작은 상태만 두고 긴 설명은 툴팁에 둔다.
+   -------------------------------------------------------------------------- */
+
+/* 두 캐릭터는 같은 선택지다. 의도적인 단차는 한쪽이 덜 중요한 카드처럼
+   읽히므로 모든 해상도에서 프레임과 기준선을 완전히 맞춘다. */
+.charselect .cards {
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  align-items: stretch;
+}
+
+.charcard,
+.charcard:nth-child(2) {
+  width: auto;
+  height: 100%;
+  margin: 0;
+  transform: none;
+}
+
+.charcard:hover,
+.charcard:focus-visible,
+.charcard:nth-child(2):hover,
+.charcard:nth-child(2):focus-visible {
+  transform: none;
+}
+
+.charcard .info {
+  width: 100%;
+}
+
+.charcard .select-label {
+  top: clamp(0.8rem, 1.6vw, 1.35rem);
+  right: clamp(0.8rem, 1.6vw, 1.35rem);
+  bottom: auto;
+  z-index: 5;
+}
+
+.kit-preview {
+  width: 100%;
+  margin-top: 0.72rem;
+  padding-top: 0.58rem;
+  border-top: 1px solid rgba(228, 222, 210, 0.18);
+}
+
+.kit-label {
+  display: block;
+  margin-bottom: 0.35rem;
+  color: color-mix(in srgb, var(--accent) 78%, #a49d91);
+  font-family: Georgia, 'Times New Roman', serif;
+  font-size: max(9px, 0.44rem);
+  font-weight: 600;
+  line-height: 1;
+  letter-spacing: 0.22em;
+}
+
+.kit-row {
+  display: grid;
+  gap: 0.24rem;
+}
+
+.kit-core {
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+}
+
+.kit-utility {
+  width: 50%;
+  margin-top: 0.24rem;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+}
+
+.kit-skill {
+  min-width: 0;
+  min-height: 2rem;
+  padding: 0.2rem 0.28rem;
+  display: flex;
+  align-items: center;
+  gap: 0.3rem;
+  overflow: hidden;
+  border: 1px solid rgba(228, 222, 210, 0.18);
+  background: rgba(5, 7, 8, 0.68);
+}
+
+.kit-skill img {
+  width: 1.42rem;
+  height: 1.42rem;
+  flex: none;
+  object-fit: cover;
+  filter: saturate(0.86) contrast(1.05);
+}
+
+.kit-skill > span {
+  min-width: 0;
+}
+
+.kit-skill b,
+.kit-skill small {
+  display: block;
+  overflow: hidden;
+  line-height: 1.1;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.kit-skill b {
+  color: var(--accent);
+  font-size: max(10px, 0.48rem);
+  font-weight: 800;
+}
+
+.kit-skill small {
+  margin-top: 0.12rem;
+  color: rgba(228, 222, 210, 0.72);
+  font-size: max(9px, 0.48rem);
+  font-weight: 600;
+}
+
+.kit-utility-copy {
+  margin-top: 0.32rem;
+  display: -webkit-box;
+  overflow: hidden;
+  color: rgba(228, 222, 210, 0.56);
+  font-size: max(9px, 0.49rem);
+  line-height: 1.45;
+  word-break: keep-all;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
+}
+
+.passive-preview {
+  position: relative;
+  margin-top: 0.42rem;
+  padding: 0.42rem 0.52rem 0.46rem 0.68rem;
+  border-left: 2px solid var(--accent);
+  background:
+    linear-gradient(90deg, color-mix(in srgb, var(--accent) 10%, transparent), transparent),
+    rgba(5, 7, 8, 0.66);
+}
+
+.passive-preview > span,
+.passive-preview strong {
+  display: block;
+}
+
+.passive-preview > span {
+  color: color-mix(in srgb, var(--accent) 72%, #969188);
+  font-family: Georgia, 'Times New Roman', serif;
+  font-size: max(9px, 0.41rem);
+  letter-spacing: 0.16em;
+}
+
+.passive-preview strong {
+  margin-top: 0.16rem;
+  color: #eee8dc;
+  font-size: max(11px, 0.62rem);
+  line-height: 1.15;
+}
+
+.passive-preview p {
+  margin-top: 0.18rem;
+  display: -webkit-box;
+  overflow: hidden;
+  color: rgba(228, 222, 210, 0.62);
+  font-size: max(9px, 0.51rem);
+  line-height: 1.42;
+  word-break: keep-all;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
+}
+
+/* 인게임 패시브는 스킬바의 왼쪽 날개처럼 붙는다. 상태가 바뀌어도 전투
+   중앙을 덮지 않고, 모바일에서는 경험치 바 위 한 줄로 접힌다. */
+.passive-hud {
+  --passive-accent: var(--ui-cyan);
+  position: fixed;
+  left: 50%;
+  bottom: var(--ui-safe-bottom);
+  z-index: 6;
+  width: 10.8rem;
+  min-height: 3.98rem;
+  padding: 0.42rem 0.52rem;
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  transform: translateX(calc(-50% - 16.8rem));
+  border-block: var(--ui-hairline) solid #3f4651;
+  border-left: 2px solid var(--passive-accent);
+  color: #e7ebef;
+  background:
+    linear-gradient(90deg, color-mix(in srgb, var(--passive-accent) 9%, transparent), transparent 62%),
+    rgba(8, 11, 16, 0.9);
+  box-shadow: 0 0.28rem 0 rgba(0, 0, 0, 0.34);
+  pointer-events: none;
+}
+
+.passive-hud[data-class='melee'] {
+  --passive-accent: var(--ui-crimson);
+}
+
+.passive-emblem {
+  width: 2rem;
+  height: 2rem;
+  flex: none;
+  display: grid;
+  place-items: center;
+  border: 1px solid color-mix(in srgb, var(--passive-accent) 66%, #505966);
+  color: var(--passive-accent);
+  background: rgba(5, 8, 12, 0.86);
+  box-shadow: inset 0 0 0 0.2rem rgba(255, 255, 255, 0.025);
+}
+
+.passive-emblem span {
+  font-family: Georgia, 'Times New Roman', serif;
+  font-size: 0.82rem;
+  font-weight: 700;
+}
+
+.passive-copy {
+  min-width: 0;
+  flex: 1;
+}
+
+.passive-heading {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 0.35rem;
+}
+
+.passive-heading strong {
+  overflow: hidden;
+  color: #edf0f3;
+  font-size: 0.65rem;
+  font-weight: 800;
+  letter-spacing: 0.04em;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.passive-heading b {
+  flex: none;
+  color: var(--passive-accent);
+  font-size: 0.58rem;
+  font-variant-numeric: tabular-nums;
+}
+
+.passive-copy small {
+  margin-top: 0.12rem;
+  display: block;
+  overflow: hidden;
+  color: #7f8995;
+  font-size: 0.47rem;
+  line-height: 1.35;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.passive-track {
+  height: 2px;
+  margin-top: 0.32rem;
+  overflow: hidden;
+  background: #252c35;
+}
+
+.passive-fill {
+  width: 0;
+  height: 100%;
+  background: var(--passive-accent);
+  transition: width 0.1s linear;
+}
+
+.passive-hud[data-ready='true'] .passive-emblem {
+  color: #fff;
+  background: color-mix(in srgb, var(--passive-accent) 28%, #0a0e13);
+  box-shadow: 0 0 0.7rem color-mix(in srgb, var(--passive-accent) 26%, transparent);
+}
+
+.damage-vignette {
+  --damage-alpha: 0;
+  position: fixed;
+  inset: 0;
+  z-index: 4;
+  opacity: var(--damage-alpha);
+  background:
+    radial-gradient(ellipse at center, transparent 48%, rgba(108, 5, 21, 0.12) 68%, rgba(210, 22, 49, 0.72) 100%);
+  mix-blend-mode: screen;
+  pointer-events: none;
+  will-change: opacity;
+}
+
+.damage-vignette[data-critical='true'] {
+  background:
+    radial-gradient(ellipse at center, transparent 43%, rgba(92, 3, 17, 0.16) 65%, rgba(232, 25, 55, 0.78) 100%);
+}
+
+/* 하나의 공용 툴팁을 슬롯 사이에서 옮긴다. fixed 좌표라 F 슬롯과 375px
+   화면에서도 뷰포트 밖으로 잘리지 않는다. */
+.skill-tooltip {
+  --tooltip-accent: var(--ui-cyan);
+  position: fixed;
+  z-index: 28;
+  width: min(21.5rem, calc(100vw - 16px));
+  padding: 0.72rem 0.78rem 0.7rem;
+  overflow: hidden;
+  border: var(--ui-hairline) solid #48525f;
+  border-top: 2px solid var(--tooltip-accent);
+  color: #e8edf2;
+  background:
+    linear-gradient(135deg, color-mix(in srgb, var(--tooltip-accent) 9%, transparent), transparent 42%),
+    rgba(9, 13, 19, 0.97);
+  box-shadow: 0 0.65rem 1.6rem rgba(0, 0, 0, 0.52);
+  pointer-events: none;
+  animation: skill-tooltip-in 0.1s ease-out;
+}
+
+.skill-tooltip[hidden] {
+  display: none;
+}
+
+.skill-tooltip[data-class='melee'] {
+  --tooltip-accent: var(--ui-crimson);
+}
+
+.skill-tooltip-head {
+  display: flex;
+  align-items: center;
+  gap: 0.58rem;
+}
+
+.skill-tooltip-key {
+  width: 1.75rem;
+  height: 1.75rem;
+  flex: none;
+  display: grid;
+  place-items: center;
+  border: 1px solid var(--tooltip-accent);
+  color: var(--tooltip-accent);
+  background: #070a0f;
+  font-size: 0.72rem;
+  font-weight: 850;
+}
+
+.skill-tooltip-name,
+.skill-tooltip-tag {
+  display: block;
+}
+
+.skill-tooltip-name {
+  color: #f3f5f7;
+  font-size: max(15px, 0.92rem);
+  line-height: 1.15;
+}
+
+.skill-tooltip-tag {
+  margin-top: 0.16rem;
+  color: var(--tooltip-accent);
+  font-size: max(10px, 0.5rem);
+  font-weight: 700;
+  letter-spacing: 0.12em;
+}
+
+.skill-tooltip-description {
+  margin-top: 0.55rem;
+  color: #c1c9d2;
+  font-size: max(12px, 0.68rem);
+  line-height: 1.55;
+  word-break: keep-all;
+}
+
+.skill-tooltip-detail {
+  margin-top: 0.34rem;
+  color: #7e8b99;
+  font-size: max(11px, 0.58rem);
+  line-height: 1.45;
+  word-break: keep-all;
+}
+
+.skill-tooltip-stats {
+  margin-top: 0.58rem;
+  padding-block: 0.42rem;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.6rem;
+  border-block: 1px solid #2b3440;
+  font-size: max(11px, 0.62rem);
+  font-variant-numeric: tabular-nums;
+}
+
+.skill-tooltip-damage {
+  color: #f1d097;
+  font-weight: 800;
+}
+
+.skill-tooltip-status {
+  color: #9da8b4;
+  font-weight: 700;
+}
+
+.skill-tooltip[data-state='ready'] .skill-tooltip-status {
+  color: #7ad292;
+}
+
+.skill-tooltip[data-state='locked'] .skill-tooltip-status {
+  color: #c56a76;
+}
+
+.skill-tooltip-enhancement {
+  margin-top: 0.42rem;
+  color: color-mix(in srgb, var(--tooltip-accent) 72%, #9aa5b1);
+  font-size: max(10px, 0.55rem);
+  font-weight: 650;
+  line-height: 1.45;
+  word-break: keep-all;
+}
+
+@keyframes skill-tooltip-in {
+  from {
+    opacity: 0;
+    transform: translateY(0.2rem);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+/* 카드의 수치가 늘어도 13px 아래로 떨어지지 않는다. 각성/합성은 프레임과
+   배지만 바꾸고 본문 대비는 그대로 유지해 선택 정보를 장식에 묻지 않는다. */
+.lvcard {
+  min-height: 13rem;
+}
+
+.lvcard h3 {
+  font-size: max(17px, 1.12rem);
+  line-height: 1.28;
+}
+
+.lvcard p {
+  color: #b0bac6;
+  font-size: max(13px, 0.84rem);
+  line-height: 1.58;
+}
+
+.rank-badge {
+  display: inline-flex;
+  align-items: center;
+  min-height: 1.28rem;
+  padding: 0.12rem 0.34rem;
+  border: 1px solid color-mix(in srgb, var(--accent) 62%, #4a535f);
+  color: var(--accent);
+  background: color-mix(in srgb, var(--accent) 9%, #0b0f15);
+  font-size: max(10px, 0.53rem);
+  font-weight: 850;
+  letter-spacing: 0.08em;
+}
+
+.card-badges {
+  min-height: 1.3rem;
+  margin-top: auto;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.24rem;
+}
+
+.card-badge {
+  padding: 0.15rem 0.34rem 0.13rem;
+  border: 1px solid #39434f;
+  color: #9aa7b4;
+  background: #0c1117;
+  font-size: max(10px, 0.5rem);
+  font-weight: 700;
+  line-height: 1;
+}
+
+.lvcard[data-family='optical-device'] {
+  --family-accent: #67d8f2;
+}
+
+.lvcard[data-family='sword-art'] {
+  --family-accent: #ef7685;
+}
+
+.lvcard[data-family='fusion'] {
+  --family-accent: #d3ae67;
+}
+
+.lvcard[data-family] {
+  border-bottom-color: var(--family-accent, var(--accent));
+}
+
+.lvcard[data-rarity='awakening'] {
+  border-color: color-mix(in srgb, var(--accent) 72%, #8e744b);
+  background:
+    radial-gradient(circle at 82% 12%, color-mix(in srgb, var(--accent) 13%, transparent), transparent 36%),
+    #151a21;
+}
+
+.lvcard[data-rarity='awakening']::after {
+  height: 3px;
+  background: linear-gradient(90deg, transparent, var(--accent), transparent);
+}
+
+.lvcard[data-rarity='fusion'] {
+  --accent: #e4bd70;
+  border-color: #9d7b42;
+  background:
+    linear-gradient(145deg, rgba(228, 189, 112, 0.12), transparent 48%),
+    #18160f;
+  box-shadow: 0 0.65rem 1.8rem rgba(85, 59, 20, 0.32);
+}
+
+/* 1280px에서 두 표를 억지로 반으로 나누면 기록일 열이 잘린다. 이 구간은
+   한 열로 쌓아 실제 마지막 열까지 스크롤 없이 보이게 한다. */
+@media (max-width: 1280px) {
+  .record-classes {
+    grid-template-columns: 1fr;
+  }
+
+  .records-panel {
+    width: min(52rem, calc(100vw - var(--ui-safe-left) - var(--ui-safe-right) - 1.6rem));
+  }
+
+  .record-table-viewport {
+    scrollbar-gutter: stable;
+  }
+}
+
+@media (max-width: 820px), (max-aspect-ratio: 3 / 4) {
+  .kit-core {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .kit-utility {
+    width: 100%;
+  }
+
+  .charcard .info {
+    padding: 0.85rem 0.72rem 0.9rem;
+  }
+
+  .charcard .select-label {
+    top: 0.68rem;
+    right: 0.64rem;
+  }
+
+  .passive-hud {
+    left: 50%;
+    bottom: calc(var(--ui-safe-bottom) + 4.85rem);
+    width: min(23rem, calc(100vw - var(--ui-safe-left) - var(--ui-safe-right) - 1rem));
+    min-height: 2.7rem;
+    padding-block: 0.3rem;
+    transform: translateX(-50%);
+  }
+
+  .passive-emblem {
+    width: 1.72rem;
+    height: 1.72rem;
+  }
+
+  .xpbar {
+    bottom: calc(var(--ui-safe-bottom) + 7.85rem);
+  }
+
+  #hint {
+    bottom: calc(var(--ui-safe-bottom) + 8.35rem);
+  }
+
+  .levelup .cards {
+    padding-bottom: 0.6rem;
+  }
+
+  .lvcard {
+    min-height: 0;
+  }
+
+  .lvcard p {
+    margin-right: 1.1rem;
+    -webkit-line-clamp: 3;
+  }
+}
+
+@media (max-width: 480px) {
+  .charselect .cards {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .kit-preview {
+    margin-top: 0.5rem;
+    padding-top: 0.42rem;
+  }
+
+  .kit-skill {
+    min-height: 1.62rem;
+    padding: 0.12rem 0.16rem;
+    gap: 0.18rem;
+  }
+
+  .kit-skill img {
+    width: 1.12rem;
+    height: 1.12rem;
+  }
+
+  .kit-skill small {
+    font-size: 9px;
+  }
+
+  .kit-utility-copy,
+  .passive-preview p {
+    -webkit-line-clamp: 1;
+  }
+
+  .passive-preview {
+    padding: 0.34rem 0.34rem 0.36rem 0.46rem;
+  }
+
+  .passive-preview > span {
+    letter-spacing: 0.08em;
+  }
+
+  .charcard .select-label {
+    top: 0.62rem;
+    right: 0.52rem;
+    font-size: 9px;
+  }
+
+  .skill-tooltip {
+    padding: 0.66rem 0.68rem;
+  }
+
+  .passive-copy small {
+    font-size: 9px;
+  }
+}
+
+@media (max-height: 560px) and (orientation: landscape) {
+  .charselect .cards {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .kit-preview {
+    margin-top: 0.38rem;
+    padding-top: 0.35rem;
+  }
+
+  .kit-skill {
+    min-height: 1.45rem;
+  }
+
+  .kit-skill img {
+    width: 1.05rem;
+    height: 1.05rem;
+  }
+
+  .kit-utility-copy,
+  .passive-preview p {
+    -webkit-line-clamp: 1;
+  }
+
+  .lvcard p {
+    margin-right: 0;
+    display: -webkit-box;
+    -webkit-box-orient: vertical;
+    -webkit-line-clamp: 2;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .records-overlay,
+  .skill-tooltip,
+  .passive-fill,
+  .passive-hud,
+  .passive-emblem,
+  .damage-vignette,
+  .lvcard::after {
+    animation: none;
+    transition: none;
+  }
+}

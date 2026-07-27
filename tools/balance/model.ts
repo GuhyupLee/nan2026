@@ -1,4 +1,9 @@
-import { UPGRADES, getUpgrade } from '../../src/content/upgrades.ts'
+import {
+  UPGRADES,
+  applyUpgrade,
+  getUpgradeRank,
+  getUpgradeRollPriority,
+} from '../../src/content/upgrades.ts'
 import { getSkillDef } from '../../src/content/skills.ts'
 import { DT, RUN_TIME_LIMIT } from '../../src/sim/constants.ts'
 import {
@@ -62,6 +67,10 @@ function upgradeCandidates(world: World) {
     id: upgrade.id,
     available: upgrade.isAvailable ? upgrade.isAvailable(world) : true,
     weight: upgrade.weight,
+    classFilter: upgrade.classFilter,
+    currentRank: getUpgradeRank(world.upgradesTaken, upgrade.id),
+    maxRank: upgrade.ranks.length,
+    priority: getUpgradeRollPriority(world, upgrade),
   }))
 }
 
@@ -95,14 +104,14 @@ function resolveFirstCard(world: World): void {
       world.choiceRng,
       upgradeCandidates(world),
       3,
-      world.upgradesTaken,
+      {
+        playerClass: world.playerClass,
+        taken: world.upgradesTaken,
+        allowRankUps: true,
+      },
     )[0]
     if (choice !== undefined) {
-      const upgrade = getUpgrade(choice.id)
-      if (upgrade) {
-        upgrade.apply(world)
-        world.upgradesTaken.add(upgrade.id)
-      }
+      applyUpgrade(world, choice.id)
     }
   }
 

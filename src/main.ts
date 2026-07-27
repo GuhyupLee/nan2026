@@ -190,7 +190,7 @@ function frame(now: number): void {
   // 그렇고, 특히 저사양 기기에서 이 낭비가 그대로 발열과 프레임으로 온다.
   // 일시정지·레벨업은 반투명이라 계속 그린다.
   if (activeRun) renderer.render(world, accumulator / DT)
-  skillBar.update(world.skills, world.playerClass)
+  skillBar.update(world.skills, world.playerClass, world)
   hud.update(world, project, Math.min(rawDt, 0.1))
   bossBar.update(world)
   // 렌더 전용 전투 이벤트를 비우기 전에 사운드도 같은 이벤트를 읽는다.
@@ -329,7 +329,7 @@ function beginRun(playerClass: PlayerClass): void {
   simInput.skillsPressed = 0
 
   // 숨겨진 동안 새 월드 상태를 먼저 반영해 낡은 쿨다운·체력바가 비치지 않게 한다.
-  skillBar.update(world.skills, world.playerClass)
+  skillBar.update(world.skills, world.playerClass, world)
   hud.update(world, project, 0)
   bossBar.update(world)
   skillBar.setVisible(true)

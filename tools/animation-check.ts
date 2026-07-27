@@ -5,8 +5,11 @@ import { fileURLToPath } from 'node:url'
 import { VRMAnimationLoaderPlugin } from '@pixiv/three-vrm-animation'
 import { Euler, Quaternion } from 'three'
 import { GLTFLoader } from 'three/examples/jsm/loaders/GLTFLoader.js'
+import { applyUpgrade } from '../src/content/upgrades.ts'
 import { playerActionTiming } from '../src/sim/action-timing.ts'
+import { effectiveAtkInterval } from '../src/sim/stats.ts'
 import type { PlayerClass } from '../src/sim/types.ts'
+import { createWorld } from '../src/sim/world.ts'
 import type { CharacterAction } from '../src/render/rig.ts'
 import {
   VRM_ACTION_MOTIONS,
@@ -68,8 +71,44 @@ assert.equal(canStartVrmAction('q', 0.2, 'attack'), false, 'attack cannot interr
 assert.equal(canStartVrmAction('r', 0.17, 'ult'), false, 'ultimate follow-up cannot interrupt R')
 assert.equal(canStartVrmAction('r', 0.85, 'attack'), false, 'attack cannot cut off R recovery')
 assert.equal(canStartVrmAction('q', 0.99, 'attack'), false, 'attack waits for the full Q animation')
-assert.equal(canStartVrmAction('attack', 0.73, 'attack'), false, 'attack does not retrigger in recovery')
+assert.equal(canStartVrmAction('attack', 0.71, 'attack'), false, 'attack keeps its visible contact')
+assert.equal(canStartVrmAction('attack', 0.73, 'attack'), true, 'attack retriggers in recovery')
+assert.equal(canStartVrmAction('empowered', 0.75, 'attack'), true, 'empowered recovery accepts next attack')
 assert.equal(canStartVrmAction('q', 1, 'attack'), true, 'attack starts after Q fully ends')
+
+function acceptedAttackAnimations(interval: number, count = 120): number {
+  let playbackStartedAt = Number.NEGATIVE_INFINITY
+  let accepted = 0
+  for (let shot = 0; shot < count; shot += 1) {
+    const firedAt = shot * interval
+    const progress =
+      playbackStartedAt === Number.NEGATIVE_INFINITY
+        ? 1
+        : (firedAt - playbackStartedAt) /
+          playerActionTiming('ranged', 'attack').duration
+    if (
+      canStartVrmAction(
+        playbackStartedAt === Number.NEGATIVE_INFINITY ? null : 'attack',
+        progress,
+        'attack',
+      )
+    ) {
+      accepted += 1
+      playbackStartedAt = firedAt
+    }
+  }
+  return accepted
+}
+
+const quickenedWorld = createWorld(777, 'ranged')
+for (let rank = 1; rank <= 2; rank += 1) {
+  assert.equal(applyUpgrade(quickenedWorld, 'diffraction-prism')?.rank, rank)
+  assert.equal(
+    acceptedAttackAnimations(effectiveAtkInterval(quickenedWorld.stats)),
+    120,
+    `diffraction prism rank ${rank} keeps every basic-attack animation`,
+  )
+}
 
 assert.equal(view.getUint32(0, true), 0x46546c67, 'GLB magic')
 assert.equal(view.getUint32(4, true), 2, 'GLB version')

@@ -9,6 +9,7 @@ import {
   HEAL_BOOST_TIME,
   HEAL_COOLDOWN,
   HEAL_SPEED_BOOST,
+  PLAYER_MAX_HP,
   PLAYER_RADIUS,
   PLAYER_SPEED,
 } from './constants.ts'
@@ -50,9 +51,8 @@ export interface Stats {
   /**
    * 점등된 적을 처치할 때 회복하는 양.
    *
-   * 실측이 구조적 비대칭을 드러내서 넣었다. 근접은 「월참」이 초당 4,
-   * 궁극기가 58을 회복해 300초에 1200을 회복하는데 원거리는 D(45초 쿨)뿐이라
-   * 0.78/초였다. 5배 격차라 8시드 전부 3:14에 죽었다.
+   * 실측이 구조적 비대칭을 드러내서 넣었다. 근접은 「월참」과 궁극기로
+   * 회복하지만 원거리는 D(45초 쿨)뿐이라 보스 전에 전멸했다.
    * 원거리의 회복은 정체성에 붙인다 — 빛을 머금은 적이 죽으면 그 빛이 돌아온다.
    */
   markKillHeal: number
@@ -79,7 +79,7 @@ export interface Stats {
  * 대신 체력과 피해 감소로 버티게 한다. 위치 게임이 정반대여야 클래스 선택에
  * 의미가 생긴다.
  *
- * 근딜 실효 체력 = 140 / 0.72 ≈ 194. 원딜의 약 2배다.
+ * 근딜 실효 체력 = 130 / 0.80 ≈ 163, 원딜은 110 / 0.84 ≈ 131이다.
  * 근딜 단일 대상 DPS = 22 / 0.42 ≈ 52. 원딜 46보다 높지만 붙어야만 나온다.
  */
 export function createStats(cls: PlayerClass): Stats {
@@ -91,14 +91,13 @@ export function createStats(cls: PlayerClass): Stats {
     // 적 재설계 쪽에 있다 — 러셔가 플레이어보다 빨라지면서 "안 맞으면 된다"가
     // 더 이상 공짜가 아니게 됐고, 그래서 원거리에 진짜 대가를 지울 수 있다.
     // 원거리는 한 번 붙잡히면 위험하고, 근접은 붙어서 버티는 것이 일이다.
-    maxHp: melee ? 130 : 100,
+    maxHp: melee ? 130 : PLAYER_MAX_HP,
     speed: melee ? 10.5 : PLAYER_SPEED,
     radius: melee ? 0.62 : PLAYER_RADIUS,
     // 근접은 붙어 있는 것이 일이라 실제로 맞는 시간이 원거리보다 길다
-    // (계측: 접촉 15% 대 12%, 총피해 560 대 306). 감소율을 0.8로 두니
-    // 실효 체력이 181이 되어 12시드 전부 무사 완주했다 — 근접이 "버틴다"를
-    // 넘어 "안 죽는다"가 되면 위치 게임이 사라진다.
-    damageTakenMul: melee ? 0.88 : 0.9,
+    // (계측: 접촉 약 18%). 실효 체력 차이는 남기되 근접도 보스 패턴을
+    // 무시하면 죽는 선으로 둔다.
+    damageTakenMul: melee ? 0.8 : 0.84,
 
     atkDamage: melee ? 22 : ATK_DAMAGE,
     atkInterval: melee ? 0.42 : ATK_INTERVAL,
@@ -106,7 +105,7 @@ export function createStats(cls: PlayerClass): Stats {
     atkPierce: melee ? 2 : ATK_PIERCE,
     // 원거리는 점등 시 13 → 30 (약 2.3배). 스킬 하나만 맞춰두면 평타가 배 이상 아프다.
     markBonus: melee ? 5 : 17,
-    markKillHeal: melee ? 0 : 0.6,
+    markKillHeal: melee ? 0 : 4,
 
     cooldownMul: 1,
     atkDamageMul: 1,

@@ -55,7 +55,7 @@ export const ENEMY_TYPES: readonly EnemyTypeDef[] = [
   //           대신 종잇장이라 스쳐도 죽는다. 위협의 주된 원천
   //   브루트 — 느리고 단단하고 아프다. 무시하면 누적된다
   { id: 'walker', name: '워커', hp: 26, speed: 7.6, radius: 0.42, contactDamage: 6, xp: 1, knockbackResist: 0.1 },
-  { id: 'rusher', name: '러셔', hp: 14, speed: 11.4, radius: 0.33, contactDamage: 9, xp: 1, knockbackResist: 0 },
+  { id: 'rusher', name: '러셔', hp: 14, speed: 10.9, radius: 0.33, contactDamage: 8.5, xp: 1, knockbackResist: 0 },
   { id: 'brute', name: '브루트', hp: 110, speed: 5.2, radius: 0.62, contactDamage: 17, xp: 4, knockbackResist: 0.6 },
   {
     id: 'rift-sovereign',
@@ -90,6 +90,10 @@ export const BOSS_CYCLE_TIME = 7
 export const BOSS_WINDUP_AT = 3.8
 export const BOSS_CHARGE_AT = 4.6
 export const BOSS_RECOVER_AT = 6.35
+/** 예고를 보고 옆으로 피할 수 있지만 직선 도주로는 따돌릴 수 없는 속도다. */
+export const BOSS_CHARGE_SPEED = 24
+/** 직선 돌진에 맞은 실수가 일반 선회 접촉과 같은 값으로 끝나지 않게 한다. */
+export const BOSS_CHARGE_DAMAGE_MUL = 3.5
 
 export type BossPhase = 'arrival' | 'orbit' | 'windup' | 'charge' | 'recover'
 
@@ -98,6 +102,13 @@ export function bossCycleTime(now: number, spawnedAt = BOSS_SPAWN_TIME): number 
   const cycleTicks = Math.round(BOSS_CYCLE_TIME / DT)
   const elapsedTicks = Math.max(0, Math.round((now - spawnedAt) / DT) - introTicks)
   return (elapsedTicks % cycleTicks) * DT
+}
+
+function bossCycleIndex(now: number, spawnedAt: number): number {
+  const introTicks = Math.round(BOSS_INTRO_DURATION / DT)
+  const cycleTicks = Math.round(BOSS_CYCLE_TIME / DT)
+  const elapsedTicks = Math.max(0, Math.round((now - spawnedAt) / DT) - introTicks)
+  return Math.floor(elapsedTicks / cycleTicks)
 }
 
 /**
@@ -157,6 +168,10 @@ export interface EnemyPool {
   /** 견인 속도(초당). */
   pullSpeed: Float32Array
 
+  /** 예고 중 고정한 돌진 방향과 그 방향이 속한 패턴 주기. */
+  bossChargeDirX: Float32Array
+  bossChargeDirY: Float32Array
+  bossChargeCycle: Int32Array
 
   /**
    * swap-remove가 순회할 타입 배열 목록.
@@ -195,6 +210,10 @@ export function createEnemyPool(): EnemyPool {
     pullUntil: new Float32Array(MAX_ENEMIES),
     pullRing: new Float32Array(MAX_ENEMIES),
     pullSpeed: new Float32Array(MAX_ENEMIES),
+
+    bossChargeDirX: new Float32Array(MAX_ENEMIES),
+    bossChargeDirY: new Float32Array(MAX_ENEMIES),
+    bossChargeCycle: new Int32Array(MAX_ENEMIES).fill(-1),
 
     views: [],
   }
@@ -236,10 +255,10 @@ const SPAWN_CURVE: ReadonlyArray<readonly [number, number]> = [
   [20, 16], // 0:20  첫 스킬 해금
   [50, 30], // 0:50  두번째 해금
   [100, 62], // 1:40  마지막 스킬 → 파워스파이크 시작
-  [160, 118], // 2:40  압박 구간 진입
-  [200, 165], // 3:20  밀도 최대 — 이 구간이 "어? 위험한데"를 만든다
-  [210, 96], // 3:30  보스 등장 — 잡몹을 한 번 정리해 무대를 비운다
-  [300, 130], // 5:00  보스전 내내 압박 유지
+  [160, 95], // 2:40  압박 구간 진입
+  [200, 135], // 3:20  밀도 최대 — 회피 통로 한 줄은 남긴다
+  [210, 70], // 3:30  보스 등장 — 잡몹을 정리해 패턴을 읽게 한다
+  [300, 95], // 5:00  보스전 내내 측면 압박은 유지한다
 ]
 
 export function targetAliveCount(time: number): number {
@@ -351,6 +370,9 @@ export function spawnEnemy(
   pool.pullUntil[i] = -1
   pool.pullRing[i] = 0
   pool.pullSpeed[i] = 0
+  pool.bossChargeDirX[i] = 0
+  pool.bossChargeDirY[i] = 0
+  pool.bossChargeCycle[i] = -1
 }
 
 /**
@@ -537,9 +559,9 @@ export function stepEnemies(
       // 보스 패턴: 등장 → 반시계 선회 → 정지 예고 → 돌진 → 짧은 회복.
       // 별도 난수나 타이머 배열 없이 월드 시간만 써서 결정론적이다.
       if (isBoss) {
-        // 속박·둔화가 패턴을 삭제하지 않게 최소 55% 속도는 보장한다.
-        const mul = Math.max(0.55, speedMultiplier(pool, i, now))
-        if (bossPhase === 'arrival' || bossPhase === 'windup') {
+        // 속박·둔화가 패턴을 삭제하지 않게 최저 속도를 보장한다.
+        const mul = Math.max(0.72, speedMultiplier(pool, i, now))
+        if (bossPhase === 'arrival') {
           targetVx = 0
           targetVy = 0
         } else if (bossPhase === 'orbit') {
@@ -547,10 +569,34 @@ export function stepEnemies(
           const pursue = 0.64
           targetVx = (dx * pursue - dy * orbit) * def.speed * mul + sx * SEPARATION * 0.35
           targetVy = (dy * pursue + dx * orbit) * def.speed * mul + sy * SEPARATION * 0.35
+        } else if (bossPhase === 'windup') {
+          const cycle = bossCycleIndex(now, bossSpawnedAt)
+          if (pool.bossChargeCycle[i] !== cycle) {
+            let chargeX = dx
+            let chargeY = dy
+            if (dl <= 1e-6) {
+              const velocityLength = Math.hypot(pool.vx[i]!, pool.vy[i]!)
+              chargeX = velocityLength > 1e-6 ? pool.vx[i]! / velocityLength : 1
+              chargeY = velocityLength > 1e-6 ? pool.vy[i]! / velocityLength : 0
+            }
+            pool.bossChargeDirX[i] = chargeX
+            pool.bossChargeDirY[i] = chargeY
+            pool.bossChargeCycle[i] = cycle
+          }
+          // 거의 멈춘 채 고정 방향을 바라봐 예고와 실제 궤적이 일치하게 한다.
+          targetVx = pool.bossChargeDirX[i]! * 0.02
+          targetVy = pool.bossChargeDirY[i]! * 0.02
         } else if (bossPhase === 'charge') {
-          const chargeSpeed = def.speed * 2.15 * mul
-          targetVx = dx * chargeSpeed
-          targetVy = dy * chargeSpeed
+          const cycle = bossCycleIndex(now, bossSpawnedAt)
+          if (pool.bossChargeCycle[i] !== cycle) {
+            pool.bossChargeDirX[i] = dl > 1e-6 ? dx : 1
+            pool.bossChargeDirY[i] = dl > 1e-6 ? dy : 0
+            pool.bossChargeCycle[i] = cycle
+          }
+          // 직선 도주보다 빨라야 예고를 보고 옆으로 피하는 문법이 성립한다.
+          // 둔화 배수를 적용하면 최저 0.72에서 다시 플레이어보다 느려진다.
+          targetVx = pool.bossChargeDirX[i]! * BOSS_CHARGE_SPEED
+          targetVy = pool.bossChargeDirY[i]! * BOSS_CHARGE_SPEED
         } else {
           const recoverSpeed = def.speed * 0.28 * mul
           targetVx = dx * recoverSpeed
@@ -596,7 +642,9 @@ export function stepEnemies(
     // 2%였다. 조금의 여유 사거리를 줘야 "둘러싸였다"가 피해로 이어진다.
     const touch = def.radius + playerRadius + CONTACT_REACH
     if (bossPhase !== 'arrival' && cdx * cdx + cdy * cdy < touch * touch) {
-      contactDamage += def.contactDamage * DT
+      const chargeDamageMul =
+        isBoss && bossPhase === 'charge' ? BOSS_CHARGE_DAMAGE_MUL : 1
+      contactDamage += def.contactDamage * chargeDamageMul * DT
       contactCount++
     }
   }

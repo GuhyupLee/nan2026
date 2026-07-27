@@ -27,9 +27,11 @@ import {
 } from './enemies.ts'
 import {
   MELEE_XP_GAIN_MULTIPLIER,
+  RANGED_XP_GAIN_MULTIPLIER,
   addXp,
   consumeLevelUp,
   createProgression,
+  upgradeTraitToken,
 } from './progression.ts'
 import { createRng } from './rng.ts'
 import { createSkillBook, tickSkills, unlockSkill } from './skills.ts'
@@ -75,6 +77,8 @@ export function createWorld(seed: number, playerClass: PlayerClass = 'ranged'): 
     stats,
     player,
     playerAction: null,
+    bufferedSkill: null,
+    basicAttackSequence: 0,
     kills: 0,
     progression: createProgression(),
     skills,
@@ -167,7 +171,38 @@ export function stepWorld(world: World, input: Input): void {
   // 무적 중에는 접촉 피해를 받지 않는다. 대시·궁극기가 성립하는 근거다.
   if (res.contactDamage > 0 && world.time >= p.invulnUntil) {
     // 클래스별 피해 감소를 여기 한 곳에서만 적용한다.
-    p.hp = Math.max(0, p.hp - res.contactDamage * world.stats.damageTakenMul)
+    let incoming = res.contactDamage * world.stats.damageTakenMul
+
+    const photonSpent = 'state:photon-barrier:spent'
+    if (
+      incoming >= p.hp &&
+      world.upgradesTaken.has(upgradeTraitToken('photon-barrier')) &&
+      !world.upgradesTaken.has(photonSpent)
+    ) {
+      world.upgradesTaken.add(photonSpent)
+      p.invulnUntil = world.time + 1.2
+      incoming = 0
+      if (world.rings.length < 32) {
+        world.rings.push({ x: p.pos.x, y: p.pos.y, radius: 3.4, kind: 0 })
+      }
+    }
+
+    const guardSpent = 'state:perfect-guard:spent'
+    if (
+      incoming > 0 &&
+      p.hp - incoming <= world.stats.maxHp * 0.5 &&
+      world.upgradesTaken.has(upgradeTraitToken('perfect-guard')) &&
+      !world.upgradesTaken.has(guardSpent)
+    ) {
+      world.upgradesTaken.add(guardSpent)
+      p.gauge = Math.min(100, p.gauge + 35)
+      incoming = 0
+      if (world.rings.length < 32) {
+        world.rings.push({ x: p.pos.x, y: p.pos.y, radius: 3, kind: 3 })
+      }
+    }
+
+    p.hp = Math.max(0, p.hp - incoming)
     // 같은 틱에 보스를 먼저 쓰러뜨렸다면 승리를 사망으로 덮지 않는다.
     // 반대 순서에서도 damageEnemy가 victory를 설정하므로 동시 판정은 승리 우선이다.
     if (p.hp <= 0 && world.outcome === 'alive') world.outcome = 'dead'
@@ -218,7 +253,10 @@ export function drainEvents(world: World): void {
  * XP는 반드시 이 함수를 통해서만 들어온다 — awaitingChoice 동기화를 놓치지 않기 위해서다.
  */
 export function grantXp(world: World, amount: number): void {
-  const classMultiplier = world.playerClass === 'melee' ? MELEE_XP_GAIN_MULTIPLIER : 1
+  const classMultiplier =
+    world.playerClass === 'melee'
+      ? MELEE_XP_GAIN_MULTIPLIER
+      : RANGED_XP_GAIN_MULTIPLIER
   addXp(world.progression, amount * classMultiplier, world.time)
   world.awaitingChoice = world.progression.pendingLevelUps > 0
 }

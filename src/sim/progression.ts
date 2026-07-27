@@ -1,4 +1,5 @@
 import type { Rng } from './rng.ts'
+import type { PlayerClass } from './types.ts'
 
 /**
  * 진행도 — XP, 레벨, 레벨업 보상.
@@ -86,6 +87,12 @@ export const XP_FOR_NEXT = [
  * 요구 XP는 공통으로 유지하고 획득량만 보정해 두 클래스의 선택 타이밍을 맞춘다.
  */
 export const MELEE_XP_GAIN_MULTIPLIER = 0.54
+
+/**
+ * 원거리는 넓은 Q/E와 관통 평타로 같은 시간에 더 많은 처치를 만든다.
+ * 공통 XP 곡선을 유지하되 획득량을 보정해 두 클래스의 카드 선택 시점을 맞춘다.
+ */
+export const RANGED_XP_GAIN_MULTIPLIER = 0.6
 
 /** 레벨업 시 무엇을 주는가. */
 export type LevelReward =
@@ -196,6 +203,42 @@ export function consumeLevelUp(prog: Progression): void {
 // 선택지 생성
 // ---------------------------------------------------------------------------
 
+export const UPGRADE_RANK_TOKEN_PREFIX = 'upgrade-rank:'
+export const UPGRADE_TRAIT_TOKEN_PREFIX = 'trait:'
+
+export function upgradeRankToken(id: string, rank: number): string {
+  return `${UPGRADE_RANK_TOKEN_PREFIX}${id}:${rank}`
+}
+
+/** 전투 코드는 콘텐츠 테이블을 import하지 않고 이 토큰만 검사한다. */
+export function upgradeTraitToken(trait: string): string {
+  return `${UPGRADE_TRAIT_TOKEN_PREFIX}${trait}`
+}
+
+/**
+ * Set 기반 월드와 리플레이 포맷을 유지하면서 카드 랭크를 복원한다.
+ * 첫 획득은 예전처럼 id 자체이고 II·III만 명시적인 토큰을 더한다.
+ */
+export function getRecordedUpgradeRank(taken: ReadonlySet<string>, id: string): number {
+  if (!taken.has(id)) return 0
+  if (taken.has(upgradeRankToken(id, 3))) return 3
+  if (taken.has(upgradeRankToken(id, 2))) return 2
+  return 1
+}
+
+export function hasRecordedUpgradeRank(
+  taken: ReadonlySet<string>,
+  id: string,
+  rank: number,
+): boolean {
+  return getRecordedUpgradeRank(taken, id) >= rank
+}
+
+export function recordUpgradeRank(taken: Set<string>, id: string, rank: number): void {
+  taken.add(id)
+  for (let value = 2; value <= rank; value++) taken.add(upgradeRankToken(id, value))
+}
+
 /**
  * 레벨업 화면에 뜨는 카드 하나.
  * 시뮬은 id만 알면 되고, 표시 문구는 UI가 콘텐츠에서 가져다 쓴다.
@@ -203,6 +246,8 @@ export function consumeLevelUp(prog: Progression): void {
 export interface LevelChoice {
   id: string
   kind: 'unlock' | 'upgrade'
+  /** 강화 중첩 모드에서 이번에 적용할 랭크. 예전 호출에서는 생략된다. */
+  rank?: number
 }
 
 /**
@@ -216,6 +261,34 @@ export interface UpgradeCandidate {
   available: boolean
   /** 뽑기 가중치. 클수록 자주 등장. */
   weight: number
+  /** 클래스가 맞지 않으면 available 값과 관계없이 추첨기가 제거한다. */
+  classFilter?: readonly PlayerClass[]
+  /** 같은 카드를 다시 뽑는 모드에서 현재·최대 랭크를 비교한다. */
+  currentRank?: number
+  maxRank?: number
+  /**
+   * 빌드 완성 후보의 노출 우선순위. 0은 일반 카드, 1 이상이면 가장 높은
+   * 우선순위 묶음에서 한 장을 먼저 보장한다.
+   */
+  priority?: number
+}
+
+/**
+ * 새 강화 시스템용 추첨 문맥.
+ *
+ * 네 번째 인자에 Set만 넘기는 예전 호출은 "이미 먹은 카드를 완전히 제외"하는
+ * 의미를 보존한다. 이 객체를 넘긴 호출만 랭크 중첩과 클래스 필터를 켠다.
+ */
+export interface UpgradeRollContext {
+  playerClass: PlayerClass
+  taken?: ReadonlySet<string>
+  allowRankUps?: boolean
+}
+
+function isRollContext(
+  value: ReadonlySet<string> | UpgradeRollContext | undefined,
+): value is UpgradeRollContext {
+  return value !== undefined && 'playerClass' in value
 }
 
 /**
@@ -224,32 +297,61 @@ export interface UpgradeCandidate {
  * 반드시 rng만 쓴다. 정렬·순회 순서가 입력 배열 순서에만 의존하므로
  * 같은 시드 + 같은 상태면 항상 같은 카드가 나온다.
  *
- * @param taken 이미 획득한 강화 id. 5분에 강화는 7번뿐인데 이미 가진 카드가
- *              다시 뜨면 선택이 아니라 낭비가 되고, 하필 그게 심사자가
- *              마지막으로 보는 강화 화면(Lv18)이 될 수 있다.
+ * @param takenOrContext Set만 넘기는 레거시 호출에서는 이미 가진 카드를 뺀다.
+ *              새 문맥은 같은 카드를 다음 랭크로 올리고 클래스로 한 번 더 거른다.
  */
 export function rollUpgrades(
   rng: Rng,
   pool: readonly UpgradeCandidate[],
   count: number,
-  taken?: ReadonlySet<string>,
+  takenOrContext?: ReadonlySet<string> | UpgradeRollContext,
 ): LevelChoice[] {
+  const context = isRollContext(takenOrContext) ? takenOrContext : undefined
+  const taken: ReadonlySet<string> | undefined = isRollContext(takenOrContext)
+    ? takenOrContext.taken
+    : takenOrContext
+  const allowRankUps = context?.allowRankUps ?? false
   const bag = pool.filter(
-    (c) => c.available && c.weight > 0 && !(taken !== undefined && taken.has(c.id)),
+    (candidate) =>
+      candidate.available &&
+      candidate.weight > 0 &&
+      (!context ||
+        candidate.classFilter === undefined ||
+        candidate.classFilter.includes(context.playerClass)) &&
+      (allowRankUps
+        ? (candidate.currentRank ?? 0) < (candidate.maxRank ?? 1)
+        : !(taken !== undefined && taken.has(candidate.id))),
   )
   const picked: LevelChoice[] = []
 
   // 후보가 모자라면 있는 만큼만 낸다. 카드가 2장이어도 게임은 굴러가야 한다.
   const n = Math.min(count, bag.length)
-  let totalWeight = 0
-  for (const c of bag) totalWeight += c.weight
 
   const usedIndices = new Set<number>()
   for (let k = 0; k < n; k++) {
-    let r = rng.next() * totalWeight
+    // 진행 중인 장비·각성 조합·합성은 단순 가중치만 높이면 짧은 5분 안에
+    // 못 볼 수 있다. 가장 높은 우선순위 후보를 선택지 한 칸에 먼저 보장해
+    // 플레이어가 의도적으로 빌드를 완성할 수 있게 한다.
+    let eligiblePriority = 0
+    if (k === 0) {
+      for (let i = 0; i < bag.length; i++) {
+        if (usedIndices.has(i)) continue
+        eligiblePriority = Math.max(eligiblePriority, bag[i]!.priority ?? 0)
+      }
+    }
+
+    let eligibleWeight = 0
+    for (let i = 0; i < bag.length; i++) {
+      if (usedIndices.has(i)) continue
+      if (eligiblePriority > 0 && (bag[i]!.priority ?? 0) !== eligiblePriority) continue
+      eligibleWeight += bag[i]!.weight
+    }
+
+    let r = rng.next() * eligibleWeight
     let chosen = -1
     for (let i = 0; i < bag.length; i++) {
       if (usedIndices.has(i)) continue
+      if (eligiblePriority > 0 && (bag[i]!.priority ?? 0) !== eligiblePriority) continue
       r -= bag[i]!.weight
       if (r <= 0) {
         chosen = i
@@ -268,8 +370,12 @@ export function rollUpgrades(
     if (chosen < 0) break
 
     usedIndices.add(chosen)
-    totalWeight -= bag[chosen]!.weight
-    picked.push({ id: bag[chosen]!.id, kind: 'upgrade' })
+    const candidate = bag[chosen]!
+    picked.push({
+      id: candidate.id,
+      kind: 'upgrade',
+      ...(allowRankUps ? { rank: (candidate.currentRank ?? 0) + 1 } : {}),
+    })
   }
 
   return picked

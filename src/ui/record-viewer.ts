@@ -7,6 +7,22 @@ const CLASS_LABEL: Record<PlayerClass, { name: string; role: string }> = {
   melee: { name: '월아', role: '근접' },
 }
 
+function formatRecordDate(at: number): string {
+  try {
+    const date = new Date(at)
+    if (Number.isNaN(date.getTime())) return '날짜 없음'
+    return new Intl.DateTimeFormat('ko-KR', {
+      month: 'numeric',
+      day: 'numeric',
+      hour: '2-digit',
+      minute: '2-digit',
+    }).format(date)
+  } catch {
+    // 한 줄이 손상돼도 나머지 기록과 뒤로 버튼은 반드시 살아 있어야 한다.
+    return '날짜 없음'
+  }
+}
+
 function createRecordRow(record: RunRecord, rank: number): HTMLTableRowElement {
   const row = document.createElement('tr')
 
@@ -17,12 +33,7 @@ function createRecordRow(record: RunRecord, rank: number): HTMLTableRowElement {
     formatTime(record.time),
     `${record.kills}킬`,
     `Lv.${record.level}`,
-    new Intl.DateTimeFormat('ko-KR', {
-      month: 'numeric',
-      day: 'numeric',
-      hour: '2-digit',
-      minute: '2-digit',
-    }).format(record.at),
+    formatRecordDate(record.at),
   ]
 
   for (const [index, value] of values.entries()) {

@@ -148,6 +148,7 @@ export class PostFx {
   private width = 1
   private height = 1
   private pixelRatio = 1
+  private readonly reducedMotion = window.matchMedia('(prefers-reduced-motion: reduce)')
 
   constructor(gl: THREE.WebGLRenderer, scene: THREE.Scene, camera: THREE.Camera) {
     this.gl = gl
@@ -218,6 +219,9 @@ export class PostFx {
    * 드로우콜과 오버드로가 늘어난다.
    */
   flash(color: number, strength: number, durationSec: number): void {
+    const motionScale = this.reducedMotion.matches ? 0.45 : 1
+    strength *= motionScale
+    durationSec *= this.reducedMotion.matches ? 0.6 : 1
     // 진행 중인 틴트보다 약하면 무시한다. 연타로 화면이 계속 물들면
     // 피격 경고가 배경이 되어 오히려 정보를 잃는다.
     const now = this.tintLeft > 0 ? (this.tintLeft / this.tintDur) * this.tintPeak : 0

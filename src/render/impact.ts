@@ -349,6 +349,16 @@ export class ImpactFx {
    */
   private shakePhase = 0
   private shakeScale = 1
+  private qualityShakeScale = 1
+  private readonly reducedMotion = window.matchMedia('(prefers-reduced-motion: reduce)')
+  private readonly onMotionPreference = (): void => {
+    this.applyShakeScale()
+    if (this.reducedMotion.matches) {
+      this.hitstopRemain = 0
+      this.hitstopStrength = 0
+      this.timeScaleValue = 1
+    }
+  }
   private readonly offsetVec = new THREE.Vector3()
   private rollValue = 0
 
@@ -437,12 +447,10 @@ export class ImpactFx {
     this.mesh.renderOrder = 20
     scene.add(this.mesh)
 
-    // OS 접근성 설정을 그대로 존중한다. 흔들림은 멀미를 유발하는 대표적인
-    // 연출이고, 이걸 무시하면 일부 사람에게는 게임이 아예 못 할 물건이 된다.
-    // 0으로 끄지 않고 0.3으로 줄이는 이유는 타격 신호 자체는 남겨야 하기 때문.
-    if (window.matchMedia('(prefers-reduced-motion: reduce)').matches) {
-      this.shakeScale = 0.3
-    }
+    // 렌더 품질 갱신이 뒤에서 setShakeScale(1)을 호출해도 접근성 배율은
+    // 별도로 곱한다. 한 변수에 섞으면 리사이즈 한 번에 설정이 풀린다.
+    this.reducedMotion.addEventListener('change', this.onMotionPreference)
+    this.applyShakeScale()
   }
 
   // -------------------------------------------------------------------------
@@ -461,8 +469,9 @@ export class ImpactFx {
    * 2) 그래도 같은 세기 연타는 막지 못하므로 예산으로 총량을 자른다.
    */
   requestHitstop(strength: number, durationSec: number): void {
-    const s = THREE.MathUtils.clamp(strength, 0, 1)
-    const d = Math.min(Math.max(durationSec, 0), HITSTOP_MAX_DURATION)
+    const motionScale = this.reducedMotion.matches ? 0.25 : 1
+    const s = THREE.MathUtils.clamp(strength * motionScale, 0, 1)
+    const d = Math.min(Math.max(durationSec * motionScale, 0), HITSTOP_MAX_DURATION)
     if (s <= 0 || d <= 0) return
     if (this.hitstopSpent >= HITSTOP_BUDGET) return
     if (this.hitstopRemain > 0 && s < this.hitstopStrength) return
@@ -533,7 +542,12 @@ export class ImpactFx {
    * 히트스톱과 숫자는 건드리지 않는다 — 멀미의 원인은 흔들림이다.
    */
   setShakeScale(scale: number): void {
-    this.shakeScale = THREE.MathUtils.clamp(scale, 0, 1)
+    this.qualityShakeScale = THREE.MathUtils.clamp(scale, 0, 1)
+    this.applyShakeScale()
+  }
+
+  private applyShakeScale(): void {
+    this.shakeScale = this.qualityShakeScale * (this.reducedMotion.matches ? 0.08 : 1)
   }
 
   // -------------------------------------------------------------------------
@@ -756,6 +770,7 @@ export class ImpactFx {
   }
 
   dispose(): void {
+    this.reducedMotion.removeEventListener('change', this.onMotionPreference)
     this.scene.remove(this.mesh)
     this.mesh.geometry.dispose()
     const material = this.mesh.material

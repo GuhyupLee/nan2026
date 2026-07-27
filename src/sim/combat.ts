@@ -3,6 +3,7 @@ import { DT } from './constants.ts'
 import { damageEnemy } from './damage.ts'
 import { ENEMY_TYPES, type EnemyPool } from './enemies.ts'
 import { tryEmpoweredAttack } from './kits.ts'
+import { upgradeTraitToken } from './progression.ts'
 import type { SpatialHash } from './spatial.ts'
 import { effectiveAtkDamage, effectiveAtkInterval } from './stats.ts'
 import { isMarked } from './status.ts'
@@ -12,6 +13,10 @@ const ATTACK_WIDTH = 0.35
 const CONE_HALF = 0.96
 const BIG_TARGET_DISCOUNT = 0.72
 const hitBuf: number[] = []
+
+function hasTrait(world: World, trait: string): boolean {
+  return world.upgradesTaken.has(upgradeTraitToken(trait))
+}
 
 function pickTarget(
   pool: EnemyPool,
@@ -84,6 +89,65 @@ function distSqToSegment(
   return cx * cx + cy * cy
 }
 
+function resolveSplitRay(
+  world: World,
+  tracers: TracerEvent[],
+  angle: number,
+  excluded: ReadonlySet<number>,
+  damaged: Set<number>,
+): void {
+  const p = world.player
+  const pool = world.enemies
+  const dx = Math.cos(angle)
+  const dy = Math.sin(angle)
+  const ex = p.pos.x + dx * world.stats.atkRange
+  const ey = p.pos.y + dy * world.stats.atkRange
+  let target = -1
+  let targetDistance = Number.POSITIVE_INFINITY
+
+  for (let i = 0; i < pool.count; i++) {
+    if (pool.hp[i]! <= 0 || excluded.has(i) || damaged.has(i)) continue
+    const radius = ENEMY_TYPES[pool.type[i]!]!.radius + 0.28
+    if (
+      distSqToSegment(
+        pool.x[i]!,
+        pool.y[i]!,
+        p.pos.x,
+        p.pos.y,
+        ex,
+        ey,
+      ) > radius * radius
+    ) {
+      continue
+    }
+    const distance =
+      (pool.x[i]! - p.pos.x) ** 2 + (pool.y[i]! - p.pos.y) ** 2
+    if (distance < targetDistance) {
+      target = i
+      targetDistance = distance
+    }
+  }
+
+  if (tracers.length < 64) {
+    tracers.push({
+      x0: p.pos.x,
+      y0: p.pos.y,
+      x1: ex,
+      y1: ey,
+      width: 0.65,
+      kind: 0,
+    })
+  }
+  if (target < 0) return
+
+  damaged.add(target)
+  const base = effectiveAtkDamage(world.stats) * 0.5
+  const damage = isMarked(pool, target, world.time)
+    ? base + world.stats.markBonus * 0.5
+    : base
+  damageEnemy(world, target, damage)
+}
+
 function resolveAutoAttack(
   world: World,
   pool: EnemyPool,
@@ -134,10 +198,68 @@ function resolveAutoAttack(
 
   const base = effectiveAtkDamage(s)
   const count = Math.min(hitBuf.length, s.atkPierce)
+  const pierceAmplification = hasTrait(world, 'pierce-amplification')
+  const primaryTargets = new Set<number>()
   for (let k = 0; k < count; k++) {
     const i = hitBuf[k]!
-    const damage = isMarked(pool, i, world.time) ? base + s.markBonus : base
+    primaryTargets.add(i)
+    const markedDamage = isMarked(pool, i, world.time)
+      ? base + s.markBonus
+      : base
+    const damage =
+      markedDamage * (pierceAmplification ? 1 + k * 0.12 : 1)
     damageEnemy(world, i, damage)
+  }
+
+  if (hasTrait(world, 'horizon-focus') && count > 0) {
+    const focusSource = hitBuf[0]!
+    const sourceDistance = Math.hypot(
+      pool.x[focusSource]! - p.pos.x,
+      pool.y[focusSource]! - p.pos.y,
+    )
+    if (sourceDistance >= s.atkRange * 0.65) {
+      const focusX = pool.x[focusSource]! + dx * 2.2
+      const focusY = pool.y[focusSource]! + dy * 2.2
+      const focusRadius = 2.2
+      const focusDamage = base * 0.4
+      for (let i = 0; i < pool.count; i++) {
+        if (pool.hp[i]! <= 0 || primaryTargets.has(i)) continue
+        const ox = pool.x[i]! - focusX
+        const oy = pool.y[i]! - focusY
+        if (ox * ox + oy * oy <= focusRadius * focusRadius) {
+          damageEnemy(world, i, focusDamage)
+        }
+      }
+      if (world.rings.length < 32) {
+        world.rings.push({
+          x: focusX,
+          y: focusY,
+          radius: focusRadius,
+          kind: 0,
+        })
+      }
+    }
+  }
+
+  if (hasTrait(world, 'split-refraction')) {
+    world.basicAttackSequence += 1
+    if (world.basicAttackSequence % 3 === 0) {
+      const splitTargets = new Set<number>()
+      resolveSplitRay(
+        world,
+        tracers,
+        angle + 0.24,
+        primaryTargets,
+        splitTargets,
+      )
+      resolveSplitRay(
+        world,
+        tracers,
+        angle - 0.24,
+        primaryTargets,
+        splitTargets,
+      )
+    }
   }
 }
 

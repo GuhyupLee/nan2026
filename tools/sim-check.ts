@@ -44,6 +44,7 @@ import {
   LEVEL_REWARDS,
   MAX_LEVEL,
   MELEE_XP_GAIN_MULTIPLIER,
+  RANGED_XP_GAIN_MULTIPLIER,
   TARGET_LEVEL_TIMES,
   XP_FOR_NEXT,
   pendingReward,
@@ -52,6 +53,7 @@ import {
 } from '../src/sim/progression.ts'
 import { createRng } from '../src/sim/rng.ts'
 import {
+  SKILL_D,
   SKILL_F,
   SKILL_Q,
   consumeCooldown,
@@ -197,7 +199,13 @@ console.log('\nsim smoke check\n')
     XP_FOR_NEXT.every((xp) => xp > 0),
   )
   // 근접이 원거리보다 1.85배 많이 죽이도록 밸런스가 바뀌어 보정 배율을 다시 잡았다.
-  check('근접 XP 보정 배율이 1 미만이다', MELEE_XP_GAIN_MULTIPLIER < 1 && MELEE_XP_GAIN_MULTIPLIER > 0)
+  check(
+    '클래스 XP 보정 배율이 0과 1 사이다',
+    MELEE_XP_GAIN_MULTIPLIER > 0 &&
+      MELEE_XP_GAIN_MULTIPLIER < 1 &&
+      RANGED_XP_GAIN_MULTIPLIER > 0 &&
+      RANGED_XP_GAIN_MULTIPLIER < 1,
+  )
 }
 
 // --- 레벨업 ---
@@ -207,7 +215,7 @@ console.log('\nsim smoke check\n')
   const idle = createInput()
   for (let i = 0; i < 600; i++) stepWorld(w, idle) // 정확히 10초
 
-  grantXp(w, XP_FOR_NEXT[0]!)
+  grantXp(w, XP_FOR_NEXT[0]! / RANGED_XP_GAIN_MULTIPLIER)
   check('필요 XP를 채우면 레벨업', w.progression.level === 2)
   check(
     '레벨 도달 시각이 기록된다',
@@ -297,7 +305,7 @@ console.log('\nsim smoke check\n')
   w.spawnEnabled = false
   w.progression.level = 5
 
-  grantXp(w, XP_FOR_NEXT[4]!)
+  grantXp(w, XP_FOR_NEXT[4]! / RANGED_XP_GAIN_MULTIPLIER)
   check('Lv6 전술 보상도 선택창을 연다', w.awaitingChoice && w.progression.pendingLevelUps === 1)
   check(
     'Lv6 보상은 반복 가능한 전술 3택이다',
@@ -414,6 +422,134 @@ console.log('\nsim smoke check\n')
   check('공격력 배수가 실효 공격력에 반영된다', effectiveAtkDamage(r.stats) === r.stats.atkDamage * 1.5)
   r.stats.atkIntervalMul = 0.0001
   check('공격 간격에 하한이 있다', effectiveAtkInterval(r.stats) >= 0.06)
+}
+
+// --- 생존 축: 이동·접촉 피해·소환사 주문·점등 회복 ---
+{
+  const distanceAfter = (speed: number): number => {
+    const world = createWorld(130, 'ranged')
+    world.spawnEnabled = false
+    world.stats.speed = speed
+    const input = createInput()
+    input.move.x = 1
+    input.aim.x = 10
+    for (let i = 0; i < 60; i++) stepWorld(world, input)
+    return world.player.pos.x
+  }
+
+  const normalSpeed = createWorld(130, 'ranged').stats.speed
+  const normalDistance = distanceAfter(normalSpeed)
+  const slowDistance = distanceAfter(normalSpeed * 0.5)
+  check(
+    '런타임 이동속도가 실제 이동 거리를 바꾼다',
+    normalDistance > slowDistance * 1.8,
+    `${normalDistance.toFixed(2)} vs ${slowDistance.toFixed(2)}`,
+  )
+
+  const accelerating = createWorld(131, 'ranged')
+  accelerating.spawnEnabled = false
+  const move = createInput()
+  move.move.x = 1
+  move.aim.x = 10
+  stepWorld(accelerating, move)
+  const firstTickSpeed = accelerating.player.vel.x
+  for (let i = 0; i < 30; i++) stepWorld(accelerating, move)
+  check(
+    '가속은 첫 틱에 최고속도로 순간이동하지 않고 점진적으로 수렴한다',
+    firstTickSpeed > 0 &&
+      firstTickSpeed < accelerating.stats.speed &&
+      accelerating.player.vel.x > firstTickSpeed,
+    `${firstTickSpeed.toFixed(2)} -> ${accelerating.player.vel.x.toFixed(2)}`,
+  )
+
+  const contactLoss = (attackers: number, damageTakenMul: number): number => {
+    const world = createWorld(132, 'ranged')
+    world.spawnEnabled = false
+    world.player.attackCooldown = Number.POSITIVE_INFINITY
+    world.stats.damageTakenMul = damageTakenMul
+    for (let n = 0; n < attackers; n++) {
+      spawnEnemy(world.enemies, world.rng, 0, 0, TYPE_WALKER)
+      const i = world.enemies.count - 1
+      world.enemies.x[i] = 0
+      world.enemies.y[i] = 0
+      world.enemies.prevX[i] = 0
+      world.enemies.prevY[i] = 0
+      world.enemies.rootUntil[i] = Number.POSITIVE_INFINITY
+    }
+    const before = world.player.hp
+    stepWorld(world, createInput())
+    return before - world.player.hp
+  }
+
+  const oneHit = contactLoss(1, 1)
+  const halfDamage = contactLoss(1, 0.5)
+  const crowdedHit = contactLoss(20, 1)
+  check('접촉 피해가 실제 체력을 깎는다', oneHit > 0, `${oneHit}`)
+  check(
+    'damageTakenMul이 접촉 피해 관문에 정확히 반영된다',
+    Math.abs(halfDamage - oneHit * 0.5) < 1e-9,
+    `${oneHit} -> ${halfDamage}`,
+  )
+  check(
+    '동시 피격은 6명에서 상한이 걸린다',
+    Math.abs(crowdedHit - oneHit * 6) < 1e-9,
+    `${crowdedHit}`,
+  )
+
+  const lethal = createWorld(133, 'ranged')
+  lethal.spawnEnabled = false
+  lethal.player.attackCooldown = Number.POSITIVE_INFINITY
+  lethal.stats.damageTakenMul = 1
+  lethal.player.hp = oneHit * 0.5
+  spawnEnemy(lethal.enemies, lethal.rng, 0, 0, TYPE_WALKER)
+  lethal.enemies.x[0] = 0
+  lethal.enemies.y[0] = 0
+  lethal.enemies.prevX[0] = 0
+  lethal.enemies.prevY[0] = 0
+  lethal.enemies.rootUntil[0] = Number.POSITIVE_INFINITY
+  stepWorld(lethal, createInput())
+  check('접촉 피해로 플레이어가 실제 사망한다', lethal.outcome === 'dead')
+
+  const heal = createWorld(134, 'ranged')
+  heal.spawnEnabled = false
+  heal.player.hp = heal.stats.maxHp - 40
+  const beforeHeal = heal.player.hp
+  const healInput = createInput()
+  healInput.skillsPressed = SKILL_D
+  stepWorld(heal, healInput)
+  check(
+    '회복 D가 체력·쿨다운·이동 버프를 모두 적용한다',
+    heal.player.hp > beforeHeal &&
+      heal.skills.d.cooldown > 0 &&
+      heal.player.speedBoostUntil > heal.time,
+  )
+
+  const flash = createWorld(135, 'ranged')
+  flash.spawnEnabled = false
+  const flashInput = createInput()
+  flashInput.aim.x = 20
+  flashInput.skillsPressed = SKILL_F
+  stepWorld(flash, flashInput)
+  check(
+    '점멸 F가 실제 위치를 바꾸고 쿨다운을 소비한다',
+    flash.player.pos.x > 1 && flash.skills.f.cooldown > 0,
+    `x=${flash.player.pos.x.toFixed(2)} cd=${flash.skills.f.cooldown.toFixed(2)}`,
+  )
+
+  const sustain = createWorld(136, 'ranged')
+  sustain.spawnEnabled = false
+  sustain.player.hp = sustain.stats.maxHp - 10
+  sustain.player.killHealBudget = 10
+  spawnEnemy(sustain.enemies, sustain.rng, 0, 0, TYPE_WALKER)
+  sustain.enemies.markExpire[0] = sustain.time + 1
+  const beforeSustain = sustain.player.hp
+  const budgetBefore = sustain.player.killHealBudget
+  damageEnemy(sustain, 0, sustain.enemies.hp[0]!)
+  check(
+    '원거리 점등 처치 회복이 체력과 회복 예산을 함께 갱신한다',
+    sustain.player.hp > beforeSustain &&
+      sustain.player.killHealBudget < budgetBefore,
+  )
 }
 
 // --- 스킬 런타임 ---
@@ -627,7 +763,7 @@ console.log('\nsim smoke check\n')
 // --- 스폰 커브가 비트 시트와 맞는가 ---
 {
   check('0초 목표는 5마리', Math.round(targetAliveCount(0)) === 5)
-  check('3:20 목표가 최대(165)', Math.round(targetAliveCount(200)) === 165)
+  check('3:20 목표가 최대(135)', Math.round(targetAliveCount(200)) === 135)
   check(
     '보스 등장(3:30)에 잡몹이 줄어든다',
     targetAliveCount(210) < targetAliveCount(200),
