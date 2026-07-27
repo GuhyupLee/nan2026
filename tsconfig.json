@@ -18,5 +18,8 @@
     "noImplicitOverride": true,
     "exactOptionalPropertyTypes": false
   },
-  "include": ["src", "tools", "vite.config.ts"]
+  "include": ["src", "tools", "vite.config.ts"],
+  // tools/_* 는 일회성 계측·검토 스크립트다. 빌드가 그것 때문에 깨지면 안 된다.
+  // .gitignore 에도 같은 규칙이 있다.
+  "exclude": ["tools/_*"]
 }

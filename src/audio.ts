@@ -1,13 +1,16 @@
+import { GameMusic } from './music.ts'
 import type { AttackEvent, CastEvent, World } from './sim/types.ts'
 
 export interface AudioSettings {
   master: number
   sfx: number
+  /** 배경음 볼륨. 효과음과 따로 조절한다 — 음악만 끄고 싶은 사람이 많다. */
+  music: number
   muted: boolean
 }
 
 const STORAGE_KEY = 'prototype-audio-settings-v1'
-const DEFAULT_SETTINGS: AudioSettings = { master: 0.8, sfx: 0.8, muted: false }
+const DEFAULT_SETTINGS: AudioSettings = { master: 0.8, sfx: 0.8, music: 0.55, muted: false }
 
 type AudioContextConstructor = new () => AudioContext
 type SoundGroup = 'attack' | 'cast' | 'death' | 'level' | 'boss' | 'outcome' | 'ui'
@@ -24,6 +27,7 @@ function loadSettings(): AudioSettings {
     return {
       master: clamp01(Number(parsed.master), DEFAULT_SETTINGS.master),
       sfx: clamp01(Number(parsed.sfx), DEFAULT_SETTINGS.sfx),
+      music: clamp01(Number(parsed.music), DEFAULT_SETTINGS.music),
       muted: typeof parsed.muted === 'boolean' ? parsed.muted : DEFAULT_SETTINGS.muted,
     }
   } catch {
@@ -42,6 +46,8 @@ export class GameAudio {
   private context: AudioContext | null = null
   private masterBus: GainNode | null = null
   private sfxBus: GainNode | null = null
+  private musicBus: GainNode | null = null
+  private readonly music = new GameMusic()
   private noiseBuffer: AudioBuffer | null = null
   private unlockPromise: Promise<void> | null = null
   private readonly activeSources = new Set<AudioScheduledSourceNode>()
@@ -72,6 +78,8 @@ export class GameAudio {
           ? this.settings.master
           : clamp01(patch.master, this.settings.master),
       sfx: patch.sfx === undefined ? this.settings.sfx : clamp01(patch.sfx, this.settings.sfx),
+      music:
+        patch.music === undefined ? this.settings.music : clamp01(patch.music, this.settings.music),
       muted: patch.muted === undefined ? this.settings.muted : Boolean(patch.muted),
     }
     this.applySettings()
@@ -124,6 +132,9 @@ export class GameAudio {
     this.lastLevel = world.progression.level
     this.lastBossActive = world.boss.active
     this.lastOutcome = world.outcome
+
+    // 배경음은 새 판 여부와 무관하게 돌려야 한다. 아래 조기 반환보다 앞에 둔다.
+    this.updateMusic(world)
 
     // update는 자동재생 잠금을 해제하지 않는다.
     if (newWorld || !this.isAudible() || !this.context || this.context.state !== 'running') {
@@ -180,12 +191,34 @@ export class GameAudio {
     this.lastOutcome = 'alive'
   }
 
+  /**
+   * 배경음을 켜고 상태를 흘려보낸다.
+   *
+   * 컨텍스트를 만들거나 resume하지 않는다 — 자동재생 정책 때문에
+   * 오디오를 여는 것은 사용자 제스처 경로(unlock)만 한다.
+   */
+  private updateMusic(world: World): void {
+    const ctx = this.context
+    if (!ctx || ctx.state !== 'running' || !this.musicBus) return
+
+    if (!this.isAudible() || this.settings.music <= 0) {
+      this.music.stop()
+      return
+    }
+
+    // start는 같은 컨텍스트면 재진입해도 아무 일도 하지 않는다.
+    this.music.start(ctx, this.musicBus)
+    this.music.update(world)
+  }
+
   private ensureContext(): AudioContext | null {
     if (this.context?.state === 'closed') {
       this.context = null
       this.masterBus = null
       this.sfxBus = null
+      this.musicBus = null
       this.noiseBuffer = null
+      this.music.stop()
     }
     if (this.context) return this.context
 
@@ -200,11 +233,14 @@ export class GameAudio {
       const context = new Context()
       const master = context.createGain()
       const sfx = context.createGain()
+      const music = context.createGain()
       sfx.connect(master)
+      music.connect(master)
       master.connect(context.destination)
       this.context = context
       this.masterBus = master
       this.sfxBus = sfx
+      this.musicBus = music
       this.applySettings()
       return context
     } catch {
@@ -221,6 +257,7 @@ export class GameAudio {
     this.masterBus.gain.setTargetAtTime(master, now, 0.012)
     this.sfxBus.gain.cancelScheduledValues(now)
     this.sfxBus.gain.setTargetAtTime(this.settings.sfx, now, 0.012)
+    this.musicBus?.gain.setTargetAtTime(this.settings.music, now, 0.05)
   }
 
   private fromGesture(play: () => void): void {
