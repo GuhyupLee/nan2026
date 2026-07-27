@@ -15,10 +15,15 @@ import {
 } from '../src/sim/constants.ts'
 import { damageEnemy } from '../src/sim/damage.ts'
 import {
+  BOSS_CHARGE_AT,
+  BOSS_INTRO_DURATION,
   BOSS_MAX_HP,
+  BOSS_RECOVER_AT,
   BOSS_SPAWN_TIME,
+  BOSS_WINDUP_AT,
   TYPE_BOSS,
   TYPE_WALKER,
+  bossPhaseAt,
   createEnemyPool,
   enemyHealthMultiplier,
   removeEnemy,
@@ -484,6 +489,24 @@ console.log('\nsim smoke check\n')
 
 // --- 보스 스폰·체력 상태·승리 ---
 {
+  check(
+    '보스 페이즈는 등장 → 선회 → 예고 → 돌진 → 경직 순서다',
+    bossPhaseAt(BOSS_SPAWN_TIME) === 'arrival' &&
+      bossPhaseAt(BOSS_SPAWN_TIME + BOSS_INTRO_DURATION) === 'orbit' &&
+      bossPhaseAt(
+        BOSS_SPAWN_TIME + BOSS_INTRO_DURATION + BOSS_WINDUP_AT + DT / 2,
+      ) ===
+        'windup' &&
+      bossPhaseAt(
+        BOSS_SPAWN_TIME + BOSS_INTRO_DURATION + BOSS_CHARGE_AT + DT / 2,
+      ) ===
+        'charge' &&
+      bossPhaseAt(
+        BOSS_SPAWN_TIME + BOSS_INTRO_DURATION + BOSS_RECOVER_AT + DT / 2,
+      ) ===
+        'recover',
+  )
+
   const makeBossWorld = (seed: number) => {
     const w = createWorld(seed)
     // 긴 준비 구간을 돌리지 않고 정확히 3:30 경계에서 한 틱 진행한다.
@@ -507,6 +530,68 @@ console.log('\nsim smoke check\n')
       w.boss.hp === BOSS_MAX_HP &&
       w.boss.maxHp === BOSS_MAX_HP,
     `${w.boss.hp}/${w.boss.maxHp}`,
+  )
+  check(
+    '보스 상태가 실제 등장 시각을 기록한다',
+    w.boss.spawnedAt === BOSS_SPAWN_TIME,
+    `spawnedAt=${w.boss.spawnedAt}`,
+  )
+  check(
+    '보스 등장 틱에 균열 파동 연출 이벤트가 생긴다',
+    w.rings.some((ring) => ring.kind === 3 && ring.radius === 10),
+  )
+
+  const intro = createWorld(811)
+  intro.spawnEnabled = false
+  spawnBoss(intro.enemies, intro.rng, 0, 0)
+  intro.boss.spawned = true
+  intro.boss.spawnedAt = 0
+  intro.boss.active = true
+  intro.boss.hp = BOSS_MAX_HP
+  const introBoss = intro.enemies.count - 1
+  intro.enemies.x[introBoss] = 0
+  intro.enemies.y[introBoss] = 0
+  intro.enemies.prevX[introBoss] = 0
+  intro.enemies.prevY[introBoss] = 0
+  intro.player.attackCooldown = Infinity
+  const introHp = intro.player.hp
+  stepWorld(intro, createInput())
+  check(
+    '등장 연출 중 보스 접촉 피해가 유예된다',
+    intro.player.hp === introHp,
+    `hp=${intro.player.hp}`,
+  )
+
+  const makeCrowdedBossWorld = (seed: number) => {
+    const crowded = createWorld(seed)
+    for (let i = 0; i < 100; i++) {
+      spawnEnemy(
+        crowded.enemies,
+        crowded.rng,
+        crowded.player.pos.x,
+        crowded.player.pos.y,
+        TYPE_WALKER,
+        BOSS_SPAWN_TIME,
+      )
+    }
+    crowded.tick = Math.round(BOSS_SPAWN_TIME / DT)
+    crowded.time = crowded.tick * DT
+    crowded.player.attackCooldown = Infinity
+    crowded.player.invulnUntil = Infinity
+    stepWorld(crowded, createInput())
+    return crowded
+  }
+
+  const crowded = makeCrowdedBossWorld(812)
+  const crowdedBosses = Array.from({ length: crowded.enemies.count }).filter(
+    (_, i) => crowded.enemies.type[i] === TYPE_BOSS,
+  ).length
+  check(
+    '3:30에 살아 있던 잡몹도 목표 수까지 실제로 정리된다',
+    crowded.enemies.count === Math.floor(targetAliveCount(BOSS_SPAWN_TIME)) &&
+      crowdedBosses === 1 &&
+      crowded.kills === 0,
+    `count=${crowded.enemies.count} bosses=${crowdedBosses} kills=${crowded.kills}`,
   )
 
   for (let i = 0; i < 120; i++) stepWorld(w, createInput())
@@ -571,6 +656,38 @@ console.log('\nsim smoke check\n')
     a.enemies.x[ai] === b.enemies.x[bi] &&
       a.enemies.y[ai] === b.enemies.y[bi] &&
       a.rng.state() === b.rng.state(),
+  )
+
+  const runPattern = (seed: number) => {
+    const pattern = makeCrowdedBossWorld(seed)
+    const input = createInput()
+    input.aim.x = 8
+    for (let tick = 0; tick < 60 * 12; tick++) {
+      input.move.x = tick % 240 < 120 ? 1 : -1
+      input.move.y = tick % 180 < 90 ? 0.35 : -0.35
+      stepWorld(pattern, input)
+    }
+    const i = Array.from({ length: pattern.enemies.count }).findIndex(
+      (_, index) => pattern.enemies.type[index] === TYPE_BOSS,
+    )
+    return {
+      time: pattern.time,
+      count: pattern.enemies.count,
+      x: pattern.enemies.x[i],
+      y: pattern.enemies.y[i],
+      vx: pattern.enemies.vx[i],
+      vy: pattern.enemies.vy[i],
+      hp: pattern.boss.hp,
+      rng: pattern.rng.state(),
+    }
+  }
+
+  const patternA = runPattern(913)
+  const patternB = runPattern(913)
+  check(
+    '잡몹 정리와 보스 패턴 12초 전체가 같은 시드에서 결정론적이다',
+    JSON.stringify(patternA) === JSON.stringify(patternB),
+    JSON.stringify(patternA),
   )
 }
 

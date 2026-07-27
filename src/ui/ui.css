@@ -286,12 +286,109 @@ button {
   border-color: #a85a41;
 }
 
+.bossbar[data-phase='windup'] .boss-track {
+  border-color: #d69d54;
+  animation: boss-warning 0.4s ease-in-out infinite alternate;
+}
+
+.bossbar[data-phase='arrival'] .boss-track {
+  border-color: #96596d;
+}
+
 .bossbar[data-phase='charge'] .boss-fill {
   background: var(--ui-warning);
 }
 
+.bossbar[data-phase='windup'] .boss-fill {
+  background: #d69d54;
+}
+
 .bossbar[data-phase='charge'] .boss-phase {
   color: #f2d39a;
+}
+
+.bossbar[data-phase='windup'] .boss-phase {
+  color: #ffe0a8;
+}
+
+@keyframes boss-warning {
+  to {
+    box-shadow: 0 0 1rem rgba(255, 157, 84, 0.5);
+  }
+}
+
+.boss-arrival {
+  position: fixed;
+  inset: 0;
+  z-index: 6;
+  display: grid;
+  place-content: center;
+  justify-items: center;
+  color: #f6e7eb;
+  text-align: center;
+  text-shadow: 0 2px 10px #000;
+  pointer-events: none;
+}
+
+.boss-arrival[hidden] {
+  display: none;
+}
+
+.boss-arrival::before {
+  content: '';
+  position: absolute;
+  left: 50%;
+  top: 50%;
+  width: min(52rem, 90vw);
+  height: 1px;
+  transform: translate(-50%, -50%);
+  background: linear-gradient(90deg, transparent, #c25170, transparent);
+}
+
+.boss-arrival span,
+.boss-arrival strong,
+.boss-arrival small {
+  position: relative;
+}
+
+.boss-arrival span {
+  color: #dc8aa1;
+  font-size: 0.66rem;
+  font-weight: 800;
+  letter-spacing: 0.36em;
+}
+
+.boss-arrival strong {
+  margin: 0.18rem 0 0.32rem;
+  font-size: clamp(1.65rem, 4vw, 3.2rem);
+  font-weight: 760;
+  letter-spacing: 0.16em;
+}
+
+.boss-arrival small {
+  color: #c8cdd4;
+  font-size: 0.68rem;
+  letter-spacing: 0.12em;
+}
+
+.boss-arrival.play {
+  animation: boss-arrival 1.6s ease-out both;
+}
+
+@keyframes boss-arrival {
+  0% {
+    opacity: 0;
+    transform: scale(1.12);
+  }
+  20%,
+  72% {
+    opacity: 1;
+    transform: scale(1);
+  }
+  100% {
+    opacity: 0;
+    transform: scale(0.98);
+  }
 }
 
 /* --------------------------------------------------------------------------
@@ -2407,6 +2504,8 @@ button {
   .xpbar .fill,
   .clock,
   .bossbar .boss-fill,
+  .bossbar[data-phase='windup'] .boss-track,
+  .boss-arrival,
   .levelup,
   .lvcard,
   .charselect,

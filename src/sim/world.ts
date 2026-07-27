@@ -12,6 +12,8 @@ import {
   rebuildEnemyHash,
   spawnBoss,
   stepEnemies,
+  targetAliveCount,
+  thinEnemiesForBoss,
   updateSpawner,
 } from './enemies.ts'
 import {
@@ -69,6 +71,7 @@ export function createWorld(seed: number, playerClass: PlayerClass = 'ranged'): 
     enemyHash: createEnemyHash(),
     boss: {
       spawned: false,
+      spawnedAt: -1,
       active: false,
       hp: 0,
       maxHp: BOSS_MAX_HP,
@@ -117,8 +120,21 @@ export function stepWorld(world: World, input: Input): void {
     if (!world.boss.spawned && world.time >= BOSS_SPAWN_TIME) {
       if (spawnBoss(world.enemies, world.rng, p.pos.x, p.pos.y)) {
         world.boss.spawned = true
+        world.boss.spawnedAt = world.time
         world.boss.active = true
         world.boss.hp = world.boss.maxHp
+
+        // 3:30 비트에서 실제 개체 수를 즉시 낮춘다. 목표치만 낮추면 이미
+        // 살아 있는 잡몹은 남아 보스가 100마리 안에 묻힌다.
+        const bossIndex = world.enemies.count - 1
+        const bx = world.enemies.x[bossIndex]!
+        const by = world.enemies.y[bossIndex]!
+        thinEnemiesForBoss(world.enemies, targetAliveCount(world.time))
+
+        // 렌더 전용 균열 파동. 시뮬 판정에는 관여하지 않는다.
+        if (world.rings.length < 32) {
+          world.rings.push({ x: bx, y: by, radius: 10, kind: 3 })
+        }
       }
     }
     updateSpawner(world.enemies, world.rng, world.time, p.pos.x, p.pos.y)
@@ -131,6 +147,7 @@ export function stepWorld(world: World, input: Input): void {
     p.pos.y,
     world.stats.radius,
     world.time,
+    world.boss.spawnedAt,
   )
   // 무적 중에는 접촉 피해를 받지 않는다. 대시·궁극기가 성립하는 근거다.
   if (res.contactDamage > 0 && world.time >= p.invulnUntil) {
