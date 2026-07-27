@@ -21,7 +21,8 @@ export interface CharacterRig {
    */
   source: 'vrm' | 'procedural'
   update(time: number, speed: number): void
-  playAction(action: CharacterAction, time: number): void
+  /** 재생이 수락됐으면 true. 더 높은 우선순위 모션이 잠갔으면 false. */
+  playAction(action: CharacterAction, time: number): boolean
   /**
    * 발사점의 월드 좌표를 `out`에 채운다. 없으면 false.
    *

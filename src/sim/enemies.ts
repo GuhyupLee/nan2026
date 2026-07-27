@@ -67,13 +67,37 @@ export const TYPE_BOSS = 3
 export const BOSS_SPAWN_TIME = 210
 /** UI와 World 초기 상태가 타입 테이블을 뒤질 필요 없게 한 단일 진실 원천. */
 export const BOSS_MAX_HP = ENEMY_TYPES[TYPE_BOSS]!.hp
-/** 추적/선회 뒤 돌진하는 7초 패턴. 시간만 읽으므로 리플레이 결정론을 해치지 않는다. */
+/** 등장 중에는 공격하지 않고 실루엣과 보스바를 읽을 시간을 준다. */
+export const BOSS_INTRO_DURATION = 1.6
+/** 선회 → 돌진 예고 → 돌진 → 회복으로 이어지는 반복 주기. */
 export const BOSS_CYCLE_TIME = 7
+export const BOSS_WINDUP_AT = 3.8
 export const BOSS_CHARGE_AT = 4.6
+export const BOSS_RECOVER_AT = 6.35
 
-export function bossCycleTime(now: number): number {
-  const elapsed = Math.max(0, now - BOSS_SPAWN_TIME)
-  return elapsed % BOSS_CYCLE_TIME
+export type BossPhase = 'arrival' | 'orbit' | 'windup' | 'charge' | 'recover'
+
+export function bossCycleTime(now: number, spawnedAt = BOSS_SPAWN_TIME): number {
+  const introTicks = Math.round(BOSS_INTRO_DURATION / DT)
+  const cycleTicks = Math.round(BOSS_CYCLE_TIME / DT)
+  const elapsedTicks = Math.max(0, Math.round((now - spawnedAt) / DT) - introTicks)
+  return (elapsedTicks % cycleTicks) * DT
+}
+
+/**
+ * 시뮬레이션·렌더러·보스바가 함께 읽는 보스 페이즈.
+ *
+ * 별도 타이머나 난수를 소비하지 않고 고정 월드 시간만 사용하므로, 같은 시드와
+ * 입력으로 재생하면 돌진 예고와 돌진 시작 틱까지 정확히 일치한다.
+ */
+export function bossPhaseAt(now: number, spawnedAt = BOSS_SPAWN_TIME): BossPhase {
+  const elapsedTicks = Math.max(0, Math.round((now - spawnedAt) / DT))
+  if (elapsedTicks < Math.round(BOSS_INTRO_DURATION / DT)) return 'arrival'
+  const cycle = bossCycleTime(now, spawnedAt)
+  if (cycle < BOSS_WINDUP_AT) return 'orbit'
+  if (cycle < BOSS_CHARGE_AT) return 'windup'
+  if (cycle < BOSS_RECOVER_AT) return 'charge'
+  return 'recover'
 }
 
 export interface EnemyPool {
@@ -321,6 +345,33 @@ export function spawnBoss(pool: EnemyPool, rng: Rng, px: number, py: number): bo
   return pool.count > before
 }
 
+/**
+ * 보스 등장과 동시에 전장을 목표 개체 수까지 비운다.
+ *
+ * 스폰 목표만 낮추면 이미 살아 있는 100마리는 그대로라 3:30 비트가 실제로
+ * 보이지 않는다. 뒤쪽 일반몹부터 제거하면 난수를 추가로 소비하지 않고,
+ * 보스 슬롯이 swap-remove로 이동해도 타입을 기준으로 보호할 수 있다.
+ */
+export function thinEnemiesForBoss(pool: EnemyPool, targetTotal: number): number {
+  const target = Math.max(1, Math.floor(targetTotal))
+  let removed = 0
+
+  while (pool.count > target) {
+    let removeAt = -1
+    for (let i = pool.count - 1; i >= 0; i--) {
+      if (pool.type[i] !== TYPE_BOSS) {
+        removeAt = i
+        break
+      }
+    }
+    if (removeAt < 0) break
+    removeEnemy(pool, removeAt)
+    removed++
+  }
+
+  return removed
+}
+
 /** swap-remove. 배열을 조밀하게 유지한다. */
 export function removeEnemy(pool: EnemyPool, i: number): void {
   const last = --pool.count
@@ -378,6 +429,7 @@ export function stepEnemies(
   py: number,
   playerRadius: number,
   now: number,
+  bossSpawnedAt = BOSS_SPAWN_TIME,
 ): EnemyStepResult {
   // 격자는 여기서 만들지 않는다. 스킬이 stepEnemies보다 먼저 돌기 때문에
   // 여기서 재구축하면 스킬 질의가 항상 한 틱 낡은(또는 첫 틱엔 빈) 격자를 본다.
@@ -398,6 +450,7 @@ export function stepEnemies(
     const type = pool.type[i]!
     const def = ENEMY_TYPES[type]!
     const isBoss = type === TYPE_BOSS
+    const bossPhase = isBoss ? bossPhaseAt(now, bossSpawnedAt) : null
     const ex = pool.x[i]!
     const ey = pool.y[i]!
 
@@ -458,21 +511,27 @@ export function stepEnemies(
 
       // 둔화·속박은 추적 속도에만 걸린다. 분리 밀어냄까지 막으면
       // 속박된 적들이 서로 겹쳐 한 덩어리가 된다.
-      // 보스 패턴: 4.6초 동안 반시계로 선회하며 거리를 좁히고, 2.4초 동안
-      // 직선 돌진한다. 별도 난수나 타이머 배열 없이 월드 시간만 써서 결정론적이다.
+      // 보스 패턴: 등장 → 반시계 선회 → 정지 예고 → 돌진 → 짧은 회복.
+      // 별도 난수나 타이머 배열 없이 월드 시간만 써서 결정론적이다.
       if (isBoss) {
-        const phase = bossCycleTime(now)
         // 속박·둔화가 패턴을 삭제하지 않게 최소 55% 속도는 보장한다.
         const mul = Math.max(0.55, speedMultiplier(pool, i, now))
-        if (phase < BOSS_CHARGE_AT) {
+        if (bossPhase === 'arrival' || bossPhase === 'windup') {
+          targetVx = 0
+          targetVy = 0
+        } else if (bossPhase === 'orbit') {
           const orbit = 0.78
           const pursue = 0.64
           targetVx = (dx * pursue - dy * orbit) * def.speed * mul + sx * SEPARATION * 0.35
           targetVy = (dy * pursue + dx * orbit) * def.speed * mul + sy * SEPARATION * 0.35
-        } else {
+        } else if (bossPhase === 'charge') {
           const chargeSpeed = def.speed * 2.15 * mul
           targetVx = dx * chargeSpeed
           targetVy = dy * chargeSpeed
+        } else {
+          const recoverSpeed = def.speed * 0.28 * mul
+          targetVx = dx * recoverSpeed
+          targetVy = dy * recoverSpeed
         }
       } else {
         const mul = speedMultiplier(pool, i, now)
@@ -509,7 +568,7 @@ export function stepEnemies(
     const cdx = nx - px
     const cdy = ny - py
     const touch = def.radius + playerRadius
-    if (cdx * cdx + cdy * cdy < touch * touch) {
+    if (bossPhase !== 'arrival' && cdx * cdx + cdy * cdy < touch * touch) {
       contactDamage += def.contactDamage * DT
       contactCount++
     }

@@ -158,7 +158,11 @@ function frame(now: number): void {
   if (running) {
     // 탭이 백그라운드에 있다 돌아오면 rawDt가 수 초가 된다.
     // 그대로 누적하면 수백 틱을 한 프레임에 밀어넣어 멈춘 것처럼 보인다.
-    accumulator += Math.min(rawDt, DT * MAX_TICKS_PER_FRAME)
+    //
+    // 히트스톱은 시뮬을 멈추지 않고 **누적되는 시간에 배율만 건다**. 큰 타격
+    // 순간 틱이 덜 도는 형태라 고정 DT 결정론이 그대로 유지된다 —
+    // 헤드리스 밸런싱과 sim-check는 stepWorld를 직접 돌리므로 영향이 없다.
+    accumulator += Math.min(rawDt, DT * MAX_TICKS_PER_FRAME) * renderer.simTimeScale
 
     let ticks = 0
     while (accumulator >= DT && ticks < MAX_TICKS_PER_FRAME) {
@@ -351,12 +355,14 @@ async function start(): Promise<void> {
   // 모바일은 다운로드와 파싱을 건너뛰고 기존 프로시저럴 경량 모델을 쓴다.
   if (useVrmModels) startVrmPreload()
   await showMainMenu(document.body, () => showSettings(document.body, audio, input))
-  await audio.unlock()
+  // 일부 WebView는 AudioContext.resume() Promise를 사용자 제스처가 끝난 뒤에도
+  // 오래 보류한다. 사운드는 best-effort 기능이므로 화면 전환을 막지 않는다.
+  void audio.unlock()
   audio.ui('select')
   const playerClass = await showCharacterSelect(document.body, undefined, () =>
     showSettings(document.body, audio, input),
   )
-  await audio.unlock()
+  void audio.unlock()
   audio.ui('select')
 
   // 아직 안 받았으면 여기서 기다린다. 실패해도 false가 올 뿐이고,

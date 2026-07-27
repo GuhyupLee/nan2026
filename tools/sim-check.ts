@@ -14,11 +14,17 @@ import {
   RUN_TIME_LIMIT,
 } from '../src/sim/constants.ts'
 import { damageEnemy } from '../src/sim/damage.ts'
+import { castSkill } from '../src/sim/kits.ts'
 import {
+  BOSS_CHARGE_AT,
+  BOSS_INTRO_DURATION,
   BOSS_MAX_HP,
+  BOSS_RECOVER_AT,
   BOSS_SPAWN_TIME,
+  BOSS_WINDUP_AT,
   TYPE_BOSS,
   TYPE_WALKER,
+  bossPhaseAt,
   createEnemyPool,
   enemyHealthMultiplier,
   removeEnemy,
@@ -29,6 +35,7 @@ import {
 import {
   LEVEL_REWARDS,
   MAX_LEVEL,
+  MELEE_XP_GAIN_MULTIPLIER,
   TARGET_LEVEL_TIMES,
   XP_FOR_NEXT,
   pendingReward,
@@ -52,6 +59,8 @@ import { createInput } from '../src/sim/types.ts'
 import { length } from '../src/sim/vec.ts'
 import { createWorld, grantXp, resolveLevelUp, stepWorld } from '../src/sim/world.ts'
 import { pushBlast } from '../src/sim/zones.ts'
+import { BALANCE_REGRESSION_SAMPLES } from './balance/baseline.ts'
+import { median, runBalanceScenario } from './balance/model.ts'
 
 let failures = 0
 
@@ -165,6 +174,11 @@ console.log('\nsim smoke check\n')
     `${TARGET_LEVEL_TIMES[MAX_LEVEL - 1]}s`,
   )
   check('최대 레벨은 20이다', MAX_LEVEL === 20, `MAX_LEVEL=${MAX_LEVEL}`)
+  check(
+    'Lv20 누적 요구 XP는 3,807이다',
+    XP_FOR_NEXT.reduce((sum, xp) => sum + xp, 0) === 3807,
+  )
+  check('근접 XP 보정 배율은 0.86이다', MELEE_XP_GAIN_MULTIPLIER === 0.86)
 }
 
 // --- 레벨업 ---
@@ -192,29 +206,62 @@ console.log('\nsim smoke check\n')
   })())
 }
 
-// --- 실제 자동 전투 레벨 페이스 ---
+// --- QWER 실제 처치율을 반영한 5분 레벨 페이스 ---
 {
-  const level20Time = (playerClass: 'ranged' | 'melee', seed: number): number => {
-    const w = createWorld(seed, playerClass)
-    const idle = createInput()
-    // 생존 편차가 아니라 처치 XP 페이스만 측정한다.
-    w.player.invulnUntil = Number.POSITIVE_INFINITY
+  const samples = BALANCE_REGRESSION_SAMPLES.map((expected) => {
+    const qwer = runBalanceScenario(expected.playerClass, expected.seed)
+    const auto = runBalanceScenario(expected.playerClass, expected.seed, { useQwer: false })
+    return { expected, qwer, auto }
+  })
+  const details = samples
+    .map(({ expected, qwer }) => {
+      const time = qwer.levelTimes[MAX_LEVEL - 1]
+      return `${expected.playerClass}:${expected.seed}=${time?.toFixed(1) ?? '--'}s/${qwer.kills}킬`
+    })
+    .join(', ')
 
-    while (w.time < RUN_TIME_LIMIT && w.progression.level < MAX_LEVEL) {
-      while (w.awaitingChoice) resolveLevelUp(w)
-      stepWorld(w, idle)
-    }
-    return w.progression.levelTimes[MAX_LEVEL - 1] ?? Number.POSITIVE_INFINITY
-  }
-
-  const samples = [
-    ...[1, 5, 11].map((seed) => ['ranged', seed, level20Time('ranged', seed)] as const),
-    ...[1, 5, 11].map((seed) => ['melee', seed, level20Time('melee', seed)] as const),
-  ]
   check(
-    '원거리·근거리 여러 시드가 Lv20에 4:30~4:55 도달한다',
-    samples.every(([, , time]) => time >= 270 && time <= 295),
-    samples.map(([cls, seed, time]) => `${cls}:${seed}=${time.toFixed(1)}s`).join(', '),
+    'QWER 포함 대표 시드가 Lv20 목표 4:50의 ±25초 안에 든다',
+    samples.every(({ qwer }) => {
+      const time = qwer.levelTimes[MAX_LEVEL - 1]
+      return time !== null && Math.abs(time - TARGET_LEVEL_TIMES[MAX_LEVEL - 1]!) <= 25
+    }),
+    details,
+  )
+  check(
+    'QWER 포함 클래스별 중앙 레벨 곡선은 전 구간 목표 ±18초다',
+    (['ranged', 'melee'] as const).every((playerClass) =>
+      TARGET_LEVEL_TIMES.every((target, levelIndex) => {
+        const times = samples
+          .filter(({ expected }) => expected.playerClass === playerClass)
+          .map(({ qwer }) => qwer.levelTimes[levelIndex] ?? Number.POSITIVE_INFINITY)
+        return Math.abs(median(times) - target) <= 18
+      }),
+    ),
+    details,
+  )
+  check(
+    'QWER 실제 처치율이 자동 공격 기준선보다 시드별 50% 이상 높다',
+    samples.every(({ qwer, auto }) => qwer.kills >= auto.kills * 1.5),
+    samples
+      .map(
+        ({ expected, qwer, auto }) =>
+          `${expected.playerClass}:${expected.seed}=${(qwer.kills / auto.kills).toFixed(2)}x`,
+      )
+      .join(', '),
+  )
+  check(
+    '시드별 QWER 처치 수와 Lv20 시각 스냅샷 허용 오차가 유지된다',
+    samples.every(({ expected, qwer, auto }) => {
+      const time = qwer.levelTimes[MAX_LEVEL - 1]
+      return (
+        Math.abs(qwer.kills - expected.qwerKills) <= expected.qwerKills * 0.05 &&
+        Math.abs(auto.kills - expected.autoKills) <= expected.autoKills * 0.05 &&
+        time !== null &&
+        Math.abs(time - expected.level20Time) <= 5
+      )
+    }),
+    details,
   )
 }
 
@@ -389,6 +436,38 @@ console.log('\nsim smoke check\n')
   )
 }
 
+// --- 8개 QWER 시전 이벤트는 렌더러가 역추론 없이 그릴 수 있어야 한다 ---
+{
+  const slots = ['q', 'w', 'e', 'r'] as const
+  let emitted = 0
+  let selfContained = true
+
+  for (const playerClass of ['ranged', 'melee'] as const) {
+    for (const slot of slots) {
+      const w = createWorld(70 + emitted, playerClass)
+      w.spawnEnabled = false
+      w.lastAim.x = 8
+      w.lastAim.y = 3
+      unlockSkill(w.skills, slot, 1)
+
+      const cast = castSkill(w, slot) ? w.casts[0] : undefined
+      if (cast) emitted++
+      selfContained =
+        selfContained &&
+        cast !== undefined &&
+        cast.slot === slot &&
+        Number.isFinite(cast.angle) &&
+        Number.isFinite(cast.originX) &&
+        Number.isFinite(cast.originY) &&
+        Number.isFinite(cast.targetX) &&
+        Number.isFinite(cast.targetY)
+    }
+  }
+
+  check('두 클래스 QWER 8개가 모두 world.casts를 발행한다', emitted === 8, `${emitted}/8`)
+  check('시전 이벤트가 시작점·도착점을 완전하게 보존한다', selfContained)
+}
+
 // --- 클래스 ---
 {
   check('기본 클래스는 원딜', createWorld(1).playerClass === 'ranged')
@@ -484,6 +563,24 @@ console.log('\nsim smoke check\n')
 
 // --- 보스 스폰·체력 상태·승리 ---
 {
+  check(
+    '보스 페이즈는 등장 → 선회 → 예고 → 돌진 → 경직 순서다',
+    bossPhaseAt(BOSS_SPAWN_TIME) === 'arrival' &&
+      bossPhaseAt(BOSS_SPAWN_TIME + BOSS_INTRO_DURATION) === 'orbit' &&
+      bossPhaseAt(
+        BOSS_SPAWN_TIME + BOSS_INTRO_DURATION + BOSS_WINDUP_AT + DT / 2,
+      ) ===
+        'windup' &&
+      bossPhaseAt(
+        BOSS_SPAWN_TIME + BOSS_INTRO_DURATION + BOSS_CHARGE_AT + DT / 2,
+      ) ===
+        'charge' &&
+      bossPhaseAt(
+        BOSS_SPAWN_TIME + BOSS_INTRO_DURATION + BOSS_RECOVER_AT + DT / 2,
+      ) ===
+        'recover',
+  )
+
   const makeBossWorld = (seed: number) => {
     const w = createWorld(seed)
     // 긴 준비 구간을 돌리지 않고 정확히 3:30 경계에서 한 틱 진행한다.
@@ -507,6 +604,68 @@ console.log('\nsim smoke check\n')
       w.boss.hp === BOSS_MAX_HP &&
       w.boss.maxHp === BOSS_MAX_HP,
     `${w.boss.hp}/${w.boss.maxHp}`,
+  )
+  check(
+    '보스 상태가 실제 등장 시각을 기록한다',
+    w.boss.spawnedAt === BOSS_SPAWN_TIME,
+    `spawnedAt=${w.boss.spawnedAt}`,
+  )
+  check(
+    '보스 등장 틱에 균열 파동 연출 이벤트가 생긴다',
+    w.rings.some((ring) => ring.kind === 3 && ring.radius === 10),
+  )
+
+  const intro = createWorld(811)
+  intro.spawnEnabled = false
+  spawnBoss(intro.enemies, intro.rng, 0, 0)
+  intro.boss.spawned = true
+  intro.boss.spawnedAt = 0
+  intro.boss.active = true
+  intro.boss.hp = BOSS_MAX_HP
+  const introBoss = intro.enemies.count - 1
+  intro.enemies.x[introBoss] = 0
+  intro.enemies.y[introBoss] = 0
+  intro.enemies.prevX[introBoss] = 0
+  intro.enemies.prevY[introBoss] = 0
+  intro.player.attackCooldown = Infinity
+  const introHp = intro.player.hp
+  stepWorld(intro, createInput())
+  check(
+    '등장 연출 중 보스 접촉 피해가 유예된다',
+    intro.player.hp === introHp,
+    `hp=${intro.player.hp}`,
+  )
+
+  const makeCrowdedBossWorld = (seed: number) => {
+    const crowded = createWorld(seed)
+    for (let i = 0; i < 100; i++) {
+      spawnEnemy(
+        crowded.enemies,
+        crowded.rng,
+        crowded.player.pos.x,
+        crowded.player.pos.y,
+        TYPE_WALKER,
+        BOSS_SPAWN_TIME,
+      )
+    }
+    crowded.tick = Math.round(BOSS_SPAWN_TIME / DT)
+    crowded.time = crowded.tick * DT
+    crowded.player.attackCooldown = Infinity
+    crowded.player.invulnUntil = Infinity
+    stepWorld(crowded, createInput())
+    return crowded
+  }
+
+  const crowded = makeCrowdedBossWorld(812)
+  const crowdedBosses = Array.from({ length: crowded.enemies.count }).filter(
+    (_, i) => crowded.enemies.type[i] === TYPE_BOSS,
+  ).length
+  check(
+    '3:30에 살아 있던 잡몹도 목표 수까지 실제로 정리된다',
+    crowded.enemies.count === Math.floor(targetAliveCount(BOSS_SPAWN_TIME)) &&
+      crowdedBosses === 1 &&
+      crowded.kills === 0,
+    `count=${crowded.enemies.count} bosses=${crowdedBosses} kills=${crowded.kills}`,
   )
 
   for (let i = 0; i < 120; i++) stepWorld(w, createInput())
@@ -571,6 +730,38 @@ console.log('\nsim smoke check\n')
     a.enemies.x[ai] === b.enemies.x[bi] &&
       a.enemies.y[ai] === b.enemies.y[bi] &&
       a.rng.state() === b.rng.state(),
+  )
+
+  const runPattern = (seed: number) => {
+    const pattern = makeCrowdedBossWorld(seed)
+    const input = createInput()
+    input.aim.x = 8
+    for (let tick = 0; tick < 60 * 12; tick++) {
+      input.move.x = tick % 240 < 120 ? 1 : -1
+      input.move.y = tick % 180 < 90 ? 0.35 : -0.35
+      stepWorld(pattern, input)
+    }
+    const i = Array.from({ length: pattern.enemies.count }).findIndex(
+      (_, index) => pattern.enemies.type[index] === TYPE_BOSS,
+    )
+    return {
+      time: pattern.time,
+      count: pattern.enemies.count,
+      x: pattern.enemies.x[i],
+      y: pattern.enemies.y[i],
+      vx: pattern.enemies.vx[i],
+      vy: pattern.enemies.vy[i],
+      hp: pattern.boss.hp,
+      rng: pattern.rng.state(),
+    }
+  }
+
+  const patternA = runPattern(913)
+  const patternB = runPattern(913)
+  check(
+    '잡몹 정리와 보스 패턴 12초 전체가 같은 시드에서 결정론적이다',
+    JSON.stringify(patternA) === JSON.stringify(patternB),
+    JSON.stringify(patternA),
   )
 }
 
