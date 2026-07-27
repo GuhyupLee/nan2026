@@ -29,10 +29,25 @@ const CONE_HALF = 0.96
 const hitBuf: number[] = []
 
 /**
- * 타겟을 고른다.
- * 1) 콘 안의 브루트(대형) 우선 — 없으면
- * 2) 콘 안 최근접 — 없으면
- * 3) 사거리 내 최근접(방향 무관)
+ * 대형 적에게 주는 거리 할인.
+ *
+ * 예전에는 "콘 안에 대형이 있으면 무조건 그것"이었는데, 그러면 바로 옆에서
+ * 워커가 물어뜯는 동안 사거리 끝의 브루트를 계속 쏜다. 위험한 적은 닿아 있는
+ * 적이므로 생존 관점에서 틀린 우선순위였다.
+ *
+ * 절대 우선 대신 거리에 할인을 준다. 0.72면 브루트가 거리 d에서 잡몹 0.85d와
+ * 겨루므로, 비슷한 거리면 브루트를 고르되 훨씬 가까운 적을 절대 무시하지 않는다.
+ * 관통이 5로 오른 뒤로는 잡몹 뒤의 브루트도 같은 선에 걸려 어차피 맞는다.
+ */
+const BIG_TARGET_DISCOUNT = 0.72
+
+/**
+ * 타겟을 고른다. **가까운 적이 먼저다.**
+ * 1) 콘 안 최근접(대형은 거리 할인) — 없으면
+ * 2) 사거리 내 최근접(방향 무관)
+ *
+ * 콘 밖 폴백이 있는 이유: 이동이 마우스 전용이라 커서는 조준점인 동시에
+ * 이동 목표다. 순수 콘 조준이면 도망칠 때 등 뒤의 적을 영영 못 쏜다.
  * @returns 적 인덱스, 없으면 -1
  */
 function pickTarget(
@@ -54,14 +69,13 @@ function pickTarget(
     ay = 0
   }
 
-  let bigInCone = -1
-  let bigDist = Infinity
   let inCone = -1
-  let coneDist = Infinity
+  let coneScore = Infinity
   let anyNear = -1
-  let anyDist = Infinity
+  let anyScore = Infinity
 
   const r2 = range * range
+  const cosCone = Math.cos(CONE_HALF)
 
   for (let i = 0; i < pool.count; i++) {
     const dx = pool.x[i]! - px
@@ -69,30 +83,27 @@ function pickTarget(
     const d2 = dx * dx + dy * dy
     if (d2 > r2) continue
 
-    if (d2 < anyDist) {
-      anyDist = d2
+    // 점수는 거리 제곱이다. 대형만 할인을 받는다.
+    const big = ENEMY_TYPES[pool.type[i]!]!.radius >= 0.6
+    const score = big ? d2 * BIG_TARGET_DISCOUNT : d2
+
+    if (score < anyScore) {
+      anyScore = score
       anyNear = i
     }
 
     const d = Math.sqrt(d2)
-    if (d < 1e-6) continue
-    // 내적으로 콘 안쪽인지 판정
-    if ((dx / d) * ax + (dy / d) * ay < Math.cos(CONE_HALF)) continue
+    // 발밑에 붙은 적은 각도가 무의미하다. 콘 밖으로 밀어내면
+    // 정작 나를 죽이는 적을 안 쏘게 된다.
+    if (d > 1e-6 && (dx / d) * ax + (dy / d) * ay < cosCone) continue
 
-    if (d2 < coneDist) {
-      coneDist = d2
+    if (score < coneScore) {
+      coneScore = score
       inCone = i
-    }
-    // 큰 적은 우선순위를 올린다. 없으면 자동 공격이 브루트를 거의 안 때린다.
-    if (ENEMY_TYPES[pool.type[i]!]!.radius >= 0.6 && d2 < bigDist) {
-      bigDist = d2
-      bigInCone = i
     }
   }
 
-  if (bigInCone >= 0) return bigInCone
-  if (inCone >= 0) return inCone
-  return anyNear
+  return inCone >= 0 ? inCone : anyNear
 }
 
 /** 점 p에서 선분 ab까지의 거리 제곱. */
