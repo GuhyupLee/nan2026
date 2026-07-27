@@ -114,6 +114,8 @@ export interface AttackEvent {
 export interface BossState {
   /** 이번 판에 이미 한 번 등장했는가. 재스폰 방지용. */
   spawned: boolean
+  /** 실제 스폰 시각. 등장 연출과 패턴 주기의 공통 기준점. */
+  spawnedAt: number
   /** 지금 전장에 살아 있는가. 보스바 표시 조건. */
   active: boolean
   /** 현재 체력. 비활성 상태에서는 0이다. */
