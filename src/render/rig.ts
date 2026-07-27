@@ -30,6 +30,14 @@ export interface CharacterRig {
    * 연출이라 렌더러가 시작점을 여기로 옮겨야 한다.
    */
   muzzleWorld?(out: THREE.Vector3): boolean
+  /**
+   * 칼날(또는 지팡이)의 밑점과 끝점 앵커.
+   *
+   * 무기 궤적 리본이 매 프레임 이 둘의 월드 좌표를 샘플해 띠를 만든다.
+   * 리본 쪽이 리그 구조를 몰라야 서로 갈아끼울 수 있어서, 리그가 "이 두 점을
+   * 따라가면 된다"만 내놓는다.
+   */
+  blade?: { base: THREE.Object3D; tip: THREE.Object3D } | null
   dispose(): void
 }
 
