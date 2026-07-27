@@ -1,4 +1,10 @@
 import { ARENA_RADIUS } from './constants.ts'
+import {
+  beginPlayerAction,
+  emitActionStart,
+  markPlayerActionResolved,
+  pendingImpact,
+} from './actions.ts'
 import { damageEnemy } from './damage.ts'
 import { ENEMY_TYPES } from './enemies.ts'
 import { nearestEnemy, queryCircle, queryCone, querySegment } from './query.ts'
@@ -36,7 +42,22 @@ const EMPOWERED_ATTACK_MUL = 1.45
 // ---------------------------------------------------------------------------
 
 /** 커서 방향 단위벡터. 커서가 발밑이면 바라보는 방향으로 대체한다. */
-function aimDir(world: World, out: { x: number; y: number }): void {
+interface SkillCastContext {
+  angle: number
+  targetX: number
+  targetY: number
+}
+
+function aimDir(
+  world: World,
+  out: { x: number; y: number },
+  context?: SkillCastContext,
+): void {
+  if (context) {
+    out.x = Math.cos(context.angle)
+    out.y = Math.sin(context.angle)
+    return
+  }
   const p = world.player
   let dx = world.lastAim.x - p.pos.x
   let dy = world.lastAim.y - p.pos.y
@@ -123,10 +144,10 @@ function collectSorted(): { i: number; d2: number }[] {
 // ---------------------------------------------------------------------------
 
 /** Q 섬광(閃絃) — 관통 + 맨 앞 속박. QWE 중 최단 쿨다운. */
-function rangedQ(world: World): void {
+function rangedQ(world: World, context?: SkillCastContext): void {
   const p = world.player
   const now = world.time
-  aimDir(world, dir)
+  aimDir(world, dir, context)
 
   const x1 = p.pos.x + dir.x * 16
   const y1 = p.pos.y + dir.y * 16
@@ -169,10 +190,10 @@ function rangedQ(world: World): void {
 }
 
 /** W 굴절(屈折) — 커서 반대쪽으로 도약하고 있던 자리에 빛기둥을 남긴다. */
-function rangedW(world: World): void {
+function rangedW(world: World, context?: SkillCastContext): void {
   const p = world.player
   const now = world.time
-  aimDir(world, dir)
+  aimDir(world, dir, context)
 
   const fromX = p.pos.x
   const fromY = p.pos.y
@@ -204,12 +225,12 @@ function rangedW(world: World): void {
 }
 
 /** E 분광(分光) — 던져서 터뜨리고 그 자리를 둔화 장판으로 남긴다. */
-function rangedE(world: World): void {
+function rangedE(world: World, context?: SkillCastContext): void {
   const p = world.player
   const now = world.time
 
-  let tx = world.lastAim.x
-  let ty = world.lastAim.y
+  let tx = context?.targetX ?? world.lastAim.x
+  let ty = context?.targetY ?? world.lastAim.y
   const dx = tx - p.pos.x
   const dy = ty - p.pos.y
   const d = Math.hypot(dx, dy)
@@ -230,7 +251,7 @@ function rangedE(world: World): void {
     markDuration: MARK_DURATION,
     slowMul: 1,
     slowDuration: 0,
-    fireAt: now + 0.3,
+    fireAt: now,
   })
 
   pushZone(world, {
@@ -238,8 +259,8 @@ function rangedE(world: World): void {
     x: tx,
     y: ty,
     radius: 5,
-    expireAt: now + 3.3,
-    nextTickAt: now + 0.3,
+    expireAt: now + 3,
+    nextTickAt: now,
     tickInterval: 0.25,
     tickDamage: dmg(world, 'e', 4),
     pushSpeed: 0,
@@ -253,10 +274,10 @@ function rangedE(world: World): void {
 }
 
 /** R 일현(日弦) — 화면 끝에서 끝까지. 직선 위의 모든 것이 사라진다. */
-function rangedR(world: World): void {
+function rangedR(world: World, context?: SkillCastContext): void {
   const p = world.player
   const now = world.time
-  aimDir(world, dir)
+  aimDir(world, dir, context)
 
   // 길이 64는 아레나 지름 60을 넘긴다 — 언제나 화면 끝에서 끝까지다.
   const x0 = p.pos.x - dir.x * 2
@@ -288,10 +309,10 @@ function rangedR(world: World): void {
 // ---------------------------------------------------------------------------
 
 /** Q 인월참(引月斬) — 앞의 적을 칼끝 거리로 끌어다 꿰뚫는다. */
-function meleeQ(world: World): void {
+function meleeQ(world: World, context?: SkillCastContext): void {
   const p = world.player
   const now = world.time
-  aimDir(world, dir)
+  aimDir(world, dir, context)
   const pool = world.enemies
 
   const x1 = p.pos.x + dir.x * 5
@@ -324,19 +345,19 @@ function meleeQ(world: World): void {
 }
 
 /** W 이합참(離合斬) — 가려는 쪽으로 꿰뚫고 나간다. 그동안 무적. */
-function meleeW(world: World): void {
+function meleeW(world: World, context?: SkillCastContext): void {
   const p = world.player
   const now = world.time
   const pool = world.enemies
 
   // 이동 방향 우선 — 도망칠 때 손이 이미 그쪽을 향하고 있다.
-  let dx = p.vel.x
-  let dy = p.vel.y
-  if (Math.hypot(dx, dy) < 0.5) {
+  let dx = context ? Math.cos(context.angle) : p.vel.x
+  let dy = context ? Math.sin(context.angle) : p.vel.y
+  if (!context && Math.hypot(dx, dy) < 0.5) {
     aimDir(world, dir)
     dx = dir.x
     dy = dir.y
-  } else {
+  } else if (!context) {
     const l = Math.hypot(dx, dy)
     dx /= l
     dy /= l
@@ -394,7 +415,7 @@ function meleeE(world: World): void {
     markDuration: MARK_DURATION,
     slowMul: 1,
     slowDuration: 0,
-    fireAt: now + 0.3,
+    fireAt: now,
   })
 
   emitRing(world, p.pos.x, p.pos.y, 9, 3)
@@ -406,7 +427,7 @@ function meleeR(world: World): void {
   const now = world.time
   world.ult.active = true
   world.ult.hitsLeft = 6
-  world.ult.nextHitAt = now + 0.15
+  world.ult.nextHitAt = now + 0.3
   world.player.invulnUntil = now + 2.85
 
   emitRing(world, world.player.pos.x, world.player.pos.y, 5, 3)
@@ -442,10 +463,12 @@ function stepMeleeUlt(world: World): void {
     const def = ENEMY_TYPES[pool.type[target]!]!
     teleport(world, pool.x[target]! - def.radius * 1.4, pool.y[target]!)
   }
+  p.facing = attackAngle
 
   if (world.attacks.length < 16) {
     world.attacks.push({ angle: attackAngle, kind: 'ult' })
   }
+  emitActionStart(world, 'ult', attackAngle)
 
   const radius = last ? 7 : 3.4
   const damage = last ? 430 : 260
@@ -471,13 +494,15 @@ function stepMeleeUlt(world: World): void {
 // 진입점
 // ---------------------------------------------------------------------------
 
-const RANGED: Record<string, (w: World) => void> = {
+type SkillFn = (world: World, context?: SkillCastContext) => void
+
+const RANGED: Record<string, SkillFn> = {
   q: rangedQ,
   w: rangedW,
   e: rangedE,
   r: rangedR,
 }
-const MELEE: Record<string, (w: World) => void> = {
+const MELEE: Record<string, SkillFn> = {
   q: meleeQ,
   w: meleeW,
   e: meleeE,
@@ -490,17 +515,49 @@ const MELEE: Record<string, (w: World) => void> = {
  */
 export function castSkill(world: World, slot: SkillId): boolean {
   // 궁극기가 도는 중에는 다른 스킬을 받지 않는다 — 무적으로 사라진 상태다.
-  if (world.ult.active) return false
+  if (world.ult.active || world.playerAction) return false
+  if (slot === 'd' || slot === 'f') return false
   const table = world.playerClass === 'melee' ? MELEE : RANGED
   const fn = table[slot]
   if (!fn) return false
   if (!consumeCooldown(world.skills, slot)) return false
-  fn(world)
-  return true
+  const p = world.player
+  let angle = p.facing
+  if (world.playerClass === 'melee' && slot === 'w' && Math.hypot(p.vel.x, p.vel.y) >= 0.5) {
+    angle = Math.atan2(p.vel.y, p.vel.x)
+  } else {
+    const dx = world.lastAim.x - p.pos.x
+    const dy = world.lastAim.y - p.pos.y
+    if (dx * dx + dy * dy > 1e-8) angle = Math.atan2(dy, dx)
+  }
+
+  return beginPlayerAction(
+    world,
+    'skill',
+    slot,
+    angle,
+    world.lastAim.x,
+    world.lastAim.y,
+    slot,
+  )
 }
 
 /** 매 틱 도는 킷 상태(지속 궁극기 등). */
 export function stepKits(world: World): void {
+  const action = pendingImpact(world, 'skill')
+  if (action && action.slot) {
+    const table = world.playerClass === 'melee' ? MELEE : RANGED
+    const fn = table[action.slot]
+    if (fn) {
+      fn(world, {
+        angle: action.angle,
+        targetX: action.targetX,
+        targetY: action.targetY,
+      })
+    }
+    markPlayerActionResolved(world, action)
+  }
+
   if (world.playerClass === 'melee') stepMeleeUlt(world)
 }
 
@@ -535,13 +592,18 @@ export function stepGauge(world: World, dt: number): void {
  * 「월참」 — 승격된 평타. 단일 타격이 부채꼴 광역이 된다.
  * @returns 처리했으면 true (일반 평타를 대체한다)
  */
-export function tryEmpoweredAttack(world: World): boolean {
+export function tryEmpoweredAttack(world: World, angle?: number): boolean {
   const p = world.player
   if (world.playerClass !== 'melee' || !p.empowered) return false
 
   const pool = world.enemies
   const now = world.time
-  aimDir(world, dir)
+  if (angle === undefined) {
+    aimDir(world, dir)
+  } else {
+    dir.x = Math.cos(angle)
+    dir.y = Math.sin(angle)
+  }
 
   if (world.attacks.length < 16) {
     world.attacks.push({ angle: Math.atan2(dir.y, dir.x), kind: 'empowered' })

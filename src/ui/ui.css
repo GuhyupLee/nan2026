@@ -1366,7 +1366,8 @@ button {
 }
 
 .pause-overlay,
-.settings-overlay {
+.settings-overlay,
+.records-overlay {
   position: fixed;
   inset: 0;
   z-index: 35;
@@ -1385,17 +1386,20 @@ button {
   animation: menu-overlay-in 0.16s ease-out;
 }
 
-.settings-overlay {
+.settings-overlay,
+.records-overlay {
   z-index: 40;
 }
 
 .pause-overlay[hidden],
-.settings-overlay[hidden] {
+.settings-overlay[hidden],
+.records-overlay[hidden] {
   display: none;
 }
 
 .pause-panel,
-.settings-panel {
+.settings-panel,
+.records-panel {
   position: relative;
   width: min(29rem, calc(100vw - var(--ui-safe-left) - var(--ui-safe-right) - 1.6rem));
   max-height: calc(100dvh - var(--ui-safe-top) - var(--ui-safe-bottom) - 1.6rem);
@@ -1414,7 +1418,8 @@ button {
 }
 
 .pause-panel::after,
-.settings-panel::after {
+.settings-panel::after,
+.records-panel::after {
   content: '';
   position: absolute;
   top: 0;
@@ -1424,6 +1429,133 @@ button {
   background: #303742;
   clip-path: polygon(100% 0, 100% 100%, 0 0);
   pointer-events: none;
+}
+
+.records-panel {
+  width: min(52rem, calc(100vw - var(--ui-safe-left) - var(--ui-safe-right) - 1.6rem));
+}
+
+.record-classes {
+  margin-top: 1.2rem;
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 0.8rem;
+}
+
+.record-class {
+  min-width: 0;
+  border: var(--ui-hairline) solid #343c47;
+  background: #0c1117;
+}
+
+.record-class > header {
+  min-height: 4.2rem;
+  padding: 0.72rem 0.8rem;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.8rem;
+  border-bottom: var(--ui-hairline) solid #343c47;
+}
+
+.record-class > header span,
+.record-class > header h3 {
+  display: block;
+}
+
+.record-class > header span {
+  color: #788492;
+  font-size: 0.54rem;
+  font-weight: 720;
+  letter-spacing: 0.14em;
+}
+
+.record-class > header h3 {
+  margin-top: 0.18rem;
+  color: #e2e7ec;
+  font-size: 1rem;
+}
+
+.record-class > header strong {
+  color: var(--ui-cyan);
+  font-size: 1.25rem;
+  font-variant-numeric: tabular-nums;
+}
+
+.record-class[data-class='melee'] > header strong {
+  color: #e57b88;
+}
+
+.record-table-viewport {
+  overflow-x: auto;
+}
+
+.record-class table {
+  width: 100%;
+  min-width: 27rem;
+  border-collapse: collapse;
+  font-size: 0.64rem;
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+
+.record-class th,
+.record-class td {
+  padding: 0.48rem 0.44rem;
+  border-bottom: 1px solid #202833;
+  text-align: left;
+}
+
+.record-class th {
+  color: #687482;
+  font-size: 0.52rem;
+  letter-spacing: 0.08em;
+}
+
+.record-class td {
+  color: #9aa6b4;
+}
+
+.record-class tbody tr:last-child td {
+  border-bottom: 0;
+}
+
+.record-class .record-score {
+  color: #e5edf5;
+  font-weight: 760;
+}
+
+.record-class .record-result[data-win='true'] {
+  color: var(--ui-positive);
+}
+
+.record-class .record-result[data-win='false'] {
+  color: #c9707a;
+}
+
+.record-empty {
+  min-height: 8.5rem;
+  padding: 1rem;
+  display: grid;
+  place-items: center;
+  color: #66717e;
+  font-size: 0.66rem;
+  text-align: center;
+}
+
+.records-back {
+  margin-top: 0.8rem;
+}
+
+@media (max-width: 760px) {
+  .record-classes {
+    grid-template-columns: 1fr;
+  }
+
+  .records-panel {
+    width: min(34rem, calc(100vw - var(--ui-safe-left) - var(--ui-safe-right) - 1.2rem));
+    padding: 1.25rem 1rem 1rem 1.2rem;
+  }
 }
 
 .menu-heading {
@@ -2697,9 +2829,9 @@ button {
 }
 
 .mainmenu-actions {
-  width: min(28rem, 100%);
+  width: min(34rem, 100%);
   margin-top: 1.25rem;
-  grid-template-columns: 1.22fr 0.9fr;
+  grid-template-columns: 1.15fr 1fr 0.9fr;
   gap: 1px;
   border-block: 1px solid rgba(230, 224, 211, 0.28);
 }
@@ -2770,6 +2902,7 @@ button {
   font-weight: 650;
   line-height: 1.2;
   letter-spacing: 0.07em;
+  white-space: nowrap;
 }
 
 .mainmenu-action .action-copy small {
@@ -3203,7 +3336,7 @@ button {
   }
 
   .mainmenu-actions {
-    grid-template-columns: 1.2fr 0.9fr;
+    grid-template-columns: 1.1fr 1fr 0.9fr;
   }
 
   .mainmenu-vertical {
@@ -3329,6 +3462,11 @@ button {
 
   .mainmenu-actions {
     margin-top: 0.85rem;
+    grid-template-columns: 1fr 1fr;
+  }
+
+  .mainmenu-action.primary {
+    grid-column: 1 / -1;
   }
 
   .mainmenu-action {

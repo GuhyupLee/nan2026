@@ -17,6 +17,7 @@ import { showLevelUp } from './ui/levelup.ts'
 import { showMainMenu } from './ui/mainmenu.ts'
 import { showOutcome } from './ui/outcome.ts'
 import { PauseButton, showPause, showSettings } from './ui/pause.ts'
+import { showRecords } from './ui/record-viewer.ts'
 import { DEFAULT_SLOTS, SkillBar, assertSlotsCoverAllSkills } from './ui/skillbar.ts'
 import './ui/ui.css'
 
@@ -354,7 +355,11 @@ async function start(): Promise<void> {
   // 데스크톱은 캐릭터 모델(각 20MB 안팎)을 메뉴가 떠 있는 동안 미리 받는다.
   // 모바일은 다운로드와 파싱을 건너뛰고 기존 프로시저럴 경량 모델을 쓴다.
   if (useVrmModels) startVrmPreload()
-  await showMainMenu(document.body, () => showSettings(document.body, audio, input))
+  await showMainMenu(
+    document.body,
+    () => showSettings(document.body, audio, input),
+    () => showRecords(document.body),
+  )
   // 일부 WebView는 AudioContext.resume() Promise를 사용자 제스처가 끝난 뒤에도
   // 오래 보류한다. 사운드는 best-effort 기능이므로 화면 전환을 막지 않는다.
   void audio.unlock()

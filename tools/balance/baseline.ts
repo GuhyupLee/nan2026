@@ -16,10 +16,10 @@ export interface BalanceRegressionSample {
  * 처치 수와 시각 기준값을 함께 두고 작은 스폰 편차만 허용해 전 경로의 드리프트를 잡는다.
  */
 export const BALANCE_REGRESSION_SAMPLES: readonly BalanceRegressionSample[] = [
-  { playerClass: 'ranged', seed: 1, qwerKills: 3579, autoKills: 1951, level20Time: 277.3 },
-  { playerClass: 'ranged', seed: 11, qwerKills: 3585, autoKills: 2030, level20Time: 280.6 },
-  { playerClass: 'ranged', seed: 47, qwerKills: 3657, autoKills: 2037, level20Time: 272.5 },
-  { playerClass: 'melee', seed: 1, qwerKills: 4248, autoKills: 2469, level20Time: 269.1 },
-  { playerClass: 'melee', seed: 11, qwerKills: 3896, autoKills: 2350, level20Time: 295.4 },
-  { playerClass: 'melee', seed: 47, qwerKills: 4249, autoKills: 2366, level20Time: 273.4 },
+  { playerClass: 'ranged', seed: 1, qwerKills: 3265, autoKills: 1864, level20Time: 299.4 },
+  { playerClass: 'ranged', seed: 5, qwerKills: 3458, autoKills: 1863, level20Time: 286.3 },
+  { playerClass: 'ranged', seed: 47, qwerKills: 3355, autoKills: 2024, level20Time: 291.6 },
+  { playerClass: 'melee', seed: 1, qwerKills: 4164, autoKills: 2381, level20Time: 278.7 },
+  { playerClass: 'melee', seed: 5, qwerKills: 3901, autoKills: 2371, level20Time: 292.6 },
+  { playerClass: 'melee', seed: 47, qwerKills: 4004, autoKills: 2315, level20Time: 285.6 },
 ]

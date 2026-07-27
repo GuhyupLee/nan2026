@@ -1,5 +1,6 @@
 import { ARENA_RADIUS, DT, PLAYER_ACCEL, RUN_TIME_LIMIT } from './constants.ts'
 import { currentSpeed, stepAbilities } from './abilities.ts'
+import { releaseFinishedPlayerAction } from './actions.ts'
 import { stepAutoAttack } from './combat.ts'
 import { sweepDead } from './damage.ts'
 import { stepGauge, stepKits } from './kits.ts'
@@ -62,6 +63,7 @@ export function createWorld(seed: number, playerClass: PlayerClass = 'ranged'): 
     playerClass,
     stats,
     player,
+    playerAction: null,
     kills: 0,
     progression: createProgression(),
     skills,
@@ -85,6 +87,7 @@ export function createWorld(seed: number, playerClass: PlayerClass = 'ranged'): 
     rings: [],
     casts: [],
     attacks: [],
+    actionStarts: [],
     awaitingChoice: false,
     outcome: 'alive',
   }
@@ -102,6 +105,7 @@ export function stepWorld(world: World, input: Input): void {
 
   world.lastAim.x = input.aim.x
   world.lastAim.y = input.aim.y
+  releaseFinishedPlayerAction(world)
 
   // 격자를 가장 먼저 만든다. 스킬 시전이 이동보다 앞서므로 여기서
   // 갱신하지 않으면 스킬이 낡은(첫 틱엔 빈) 격자를 질의해 헛손질한다.
@@ -195,6 +199,7 @@ export function drainEvents(world: World): void {
   world.rings.length = 0
   world.casts.length = 0
   world.attacks.length = 0
+  world.actionStarts.length = 0
 }
 
 /**
@@ -227,19 +232,26 @@ function stepPlayer(world: World, input: Input): void {
   p.prevFacing = p.facing
 
   // --- 이동 ---
-  moveDir.x = input.move.x
-  moveDir.y = input.move.y
-  normalize(moveDir)
+  if (world.playerAction || world.ult.active) {
+    moveDir.x = 0
+    moveDir.y = 0
+    p.vel.x = 0
+    p.vel.y = 0
+  } else {
+    moveDir.x = input.move.x
+    moveDir.y = input.move.y
+    normalize(moveDir)
 
-  const speed = currentSpeed(world)
-  const targetVx = moveDir.x * speed
-  const targetVy = moveDir.y * speed
+    const speed = currentSpeed(world)
+    const targetVx = moveDir.x * speed
+    const targetVy = moveDir.y * speed
 
-  // 프레임레이트 독립 지수 감쇠. DT가 고정이라 사실상 상수지만,
-  // 상수를 바꿔 손맛을 튜닝할 때 의미가 직관적으로 유지된다.
-  const k = 1 - Math.exp(-PLAYER_ACCEL * DT)
-  p.vel.x += (targetVx - p.vel.x) * k
-  p.vel.y += (targetVy - p.vel.y) * k
+    // 프레임레이트 독립 지수 감쇠. DT가 고정이라 사실상 상수지만,
+    // 상수를 바꿔 손맛을 튜닝할 때 의미가 직관적으로 유지된다.
+    const k = 1 - Math.exp(-PLAYER_ACCEL * DT)
+    p.vel.x += (targetVx - p.vel.x) * k
+    p.vel.y += (targetVy - p.vel.y) * k
+  }
 
   p.pos.x += p.vel.x * DT
   p.pos.y += p.vel.y * DT
@@ -262,10 +274,12 @@ function stepPlayer(world: World, input: Input): void {
   }
 
   // --- 조준 방향 ---
-  const ax = input.aim.x - p.pos.x
-  const ay = input.aim.y - p.pos.y
-  if (ax * ax + ay * ay > 1e-6) {
-    const targetFacing = Math.atan2(ay, ax)
-    p.facing = lerpAngle(p.facing, targetFacing, 0.35)
+  if (!world.playerAction && !world.ult.active) {
+    const ax = input.aim.x - p.pos.x
+    const ay = input.aim.y - p.pos.y
+    if (ax * ax + ay * ay > 1e-6) {
+      const targetFacing = Math.atan2(ay, ax)
+      p.facing = lerpAngle(p.facing, targetFacing, 0.35)
+    }
   }
 }

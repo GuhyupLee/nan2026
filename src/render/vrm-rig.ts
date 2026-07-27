@@ -5,6 +5,7 @@ import {
   VRMAnimationLoaderPlugin,
   type VRMAnimation,
 } from '@pixiv/three-vrm-animation'
+import { PLAYER_ACTION_DURATION as ACTION_DURATION } from '../sim/action-timing.ts'
 import type { PlayerClass } from '../sim/types.ts'
 import { CHARACTER_HEIGHT, type CharacterAction, type CharacterRig } from './rig.ts'
 import {
@@ -150,16 +151,6 @@ const ZERO: VrmPose = {
   armL: [0, 0, 0, 0],
   aim: [0, 0, 0],
   lift: 0,
-}
-
-const ACTION_DURATION: Record<CharacterAction, number> = {
-  attack: 0.26,
-  empowered: 0.46,
-  ult: 0.34,
-  q: 0.36,
-  w: 0.44,
-  e: 0.58,
-  r: 0.9,
 }
 
 /**

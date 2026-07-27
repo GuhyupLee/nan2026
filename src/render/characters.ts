@@ -1,5 +1,6 @@
 import * as THREE from 'three'
 
+import { PLAYER_ACTION_DURATION as ACTION_DURATION } from '../sim/action-timing.ts'
 import type { PlayerClass } from '../sim/types.ts'
 import {
   type BodyPalette,
@@ -52,16 +53,6 @@ const PALETTE: Record<PlayerClass, BodyPalette> = {
     hair: 0x1b1f28,
     boot: 0x39404f,
   },
-}
-
-const ACTION_DURATION: Record<CharacterAction, number> = {
-  attack: 0.26,
-  empowered: 0.46,
-  ult: 0.34,
-  q: 0.36,
-  w: 0.44,
-  e: 0.58,
-  r: 0.9,
 }
 
 function clamp01(n: number): number {

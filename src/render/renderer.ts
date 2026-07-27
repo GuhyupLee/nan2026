@@ -1,5 +1,6 @@
 import * as THREE from 'three'
 
+import { PLAYER_ACTION_DURATION } from '../sim/action-timing.ts'
 import { TYPE_BOSS } from '../sim/enemies.ts'
 import type { SkillId } from '../sim/skills.ts'
 import type { PlayerClass, World } from '../sim/types.ts'
@@ -541,34 +542,23 @@ export class Renderer {
     let angle = world.player.facing
     let priority = -1
     let facingHold = 0
-
-    for (const attack of world.attacks) {
+    for (const action of world.actionStarts) {
       const p =
-        attack.kind === 'ult'
-          ? 3
-          : attack.kind === 'empowered'
-            ? 2
-            : 1
+        action.kind === 'q' ||
+        action.kind === 'w' ||
+        action.kind === 'e' ||
+        action.kind === 'r'
+          ? 4
+          : action.kind === 'ult'
+            ? 3
+            : action.kind === 'empowered'
+              ? 2
+              : 1
       if (p < priority) continue
       priority = p
-      next =
-        attack.kind === 'empowered'
-          ? 'empowered'
-          : attack.kind === 'ult'
-            ? 'ult'
-            : 'attack'
-      angle = attack.angle
-      facingHold = attack.kind === 'empowered' ? 0.36 : attack.kind === 'ult' ? 0.26 : 0.2
-    }
-
-    for (const cast of world.casts) {
-      // CastEvent는 소환사 주문까지 확장될 수 있으므로 캐릭터 QWER만 리그에 전달한다.
-      if (cast.slot !== 'q' && cast.slot !== 'w' && cast.slot !== 'e' && cast.slot !== 'r') continue
-      priority = 4
-      next = cast.slot
-      angle = cast.angle
-      facingHold =
-        cast.slot === 'r' ? 0.72 : cast.slot === 'e' ? 0.48 : cast.slot === 'w' ? 0.34 : 0.3
+      next = action.kind
+      angle = action.angle
+      facingHold = PLAYER_ACTION_DURATION[action.kind]
     }
 
     if (next === null || priority < 0) return

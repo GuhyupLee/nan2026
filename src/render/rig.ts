@@ -1,4 +1,5 @@
 import type * as THREE from 'three'
+import type { PlayerActionKind } from '../sim/types.ts'
 
 /**
  * 캐릭터 리그 공용 계약.
@@ -9,7 +10,7 @@ import type * as THREE from 'three'
  * 환경(CI·클론 직후)에서도 게임은 그대로 돌아간다.
  */
 
-export type CharacterAction = 'attack' | 'empowered' | 'ult' | 'q' | 'w' | 'e' | 'r'
+export type CharacterAction = PlayerActionKind
 
 export interface CharacterRig {
   group: THREE.Group

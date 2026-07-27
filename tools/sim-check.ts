@@ -13,6 +13,7 @@ import {
   FLASH_COOLDOWN,
   RUN_TIME_LIMIT,
 } from '../src/sim/constants.ts'
+import { PLAYER_ACTION_TIMING } from '../src/sim/action-timing.ts'
 import { damageEnemy } from '../src/sim/damage.ts'
 import { castSkill } from '../src/sim/kits.ts'
 import {
@@ -44,6 +45,7 @@ import {
 } from '../src/sim/progression.ts'
 import { createRng } from '../src/sim/rng.ts'
 import {
+  SKILL_F,
   SKILL_Q,
   consumeCooldown,
   cooldownProgress,
@@ -436,10 +438,11 @@ console.log('\nsim smoke check\n')
   )
 }
 
-// --- 8개 QWER 시전 이벤트는 렌더러가 역추론 없이 그릴 수 있어야 한다 ---
+// --- QWER은 모션 시작과 타격 판정을 분리한다 ---
 {
   const slots = ['q', 'w', 'e', 'r'] as const
   let emitted = 0
+  let started = 0
   let selfContained = true
 
   for (const playerClass of ['ranged', 'melee'] as const) {
@@ -450,7 +453,16 @@ console.log('\nsim smoke check\n')
       w.lastAim.y = 3
       unlockSkill(w.skills, slot, 1)
 
-      const cast = castSkill(w, slot) ? w.casts[0] : undefined
+      const accepted = castSkill(w, slot)
+      if (accepted && w.actionStarts[0]?.kind === slot && w.casts.length === 0) started++
+
+      const input = createInput()
+      input.aim.x = -9
+      input.aim.y = -4
+      const ticks = Math.ceil(PLAYER_ACTION_TIMING[slot].impact / DT) + 1
+      for (let i = 0; i < ticks; i++) stepWorld(w, input)
+
+      const cast = w.casts[0]
       if (cast) emitted++
       selfContained =
         selfContained &&
@@ -464,8 +476,67 @@ console.log('\nsim smoke check\n')
     }
   }
 
-  check('두 클래스 QWER 8개가 모두 world.casts를 발행한다', emitted === 8, `${emitted}/8`)
-  check('시전 이벤트가 시작점·도착점을 완전하게 보존한다', selfContained)
+  check('두 클래스 QWER 8개가 입력 즉시 모션을 시작한다', started === 8, `${started}/8`)
+  check('두 클래스 QWER 8개가 타격 시점에 world.casts를 발행한다', emitted === 8, `${emitted}/8`)
+  check('지연된 시전 이벤트가 입력 시점의 목표를 완전하게 보존한다', selfContained)
+}
+
+// --- 공격 동작 중 이동·방향·다른 QWER을 잠그고, D/F은 유지한다 ---
+{
+  const w = createWorld(79, 'ranged')
+  w.spawnEnabled = false
+  w.lastAim.x = 8
+  unlockSkill(w.skills, 'q', 1)
+  unlockSkill(w.skills, 'w', 1)
+  const started = castSkill(w, 'q')
+  const startX = w.player.pos.x
+  const startY = w.player.pos.y
+  const startFacing = w.player.facing
+  const input = createInput()
+  input.move.x = 1
+  input.aim.x = -8
+  input.aim.y = 4
+  stepWorld(w, input)
+
+  check(
+    'QWER 애니메이션 중 이동과 방향 전환이 잠긴다',
+    started &&
+      w.player.pos.x === startX &&
+      w.player.pos.y === startY &&
+      w.player.facing === startFacing,
+  )
+  check('후딜 중 다른 QWER로 캔슬할 수 없다', !castSkill(w, 'w'))
+  const beforeFlash = w.player.pos.x
+  const flash = createInput()
+  flash.aim.x = 5
+  flash.skillsPressed = SKILL_F
+  stepWorld(w, flash)
+  check('이동 잠금 중에도 소환사 주문 F는 사용할 수 있다', w.player.pos.x > beforeFlash)
+
+  while (w.time <= PLAYER_ACTION_TIMING.q.duration + DT) stepWorld(w, createInput())
+  check('애니메이션 종료 뒤 다음 QWER을 사용할 수 있다', castSkill(w, 'w'))
+}
+
+// --- 평타도 타격 포즈까지 판정을 미룬다 ---
+{
+  const w = createWorld(80, 'ranged')
+  w.spawnEnabled = false
+  spawnEnemy(w.enemies, w.rng, 0, 0, TYPE_WALKER)
+  w.enemies.x[0] = 2
+  w.enemies.y[0] = 0
+  w.enemies.prevX[0] = 2
+  w.enemies.prevY[0] = 0
+  const input = createInput()
+  input.aim.x = 2
+  stepWorld(w, input)
+
+  const started = w.actionStarts.some((event) => event.kind === 'attack')
+  const immediateHit = w.attacks.length > 0
+  const ticks = Math.ceil(PLAYER_ACTION_TIMING.attack.impact / DT) + 1
+  for (let i = 0; i < ticks; i++) stepWorld(w, input)
+
+  check('평타는 입력 시 모션을 시작하고 즉시 판정하지 않는다', started && !immediateHit)
+  check('평타 판정은 타격 포즈에서 발생한다', w.attacks.length > 0)
 }
 
 // --- 클래스 ---
@@ -690,8 +761,7 @@ console.log('\nsim smoke check\n')
     `outcome=${w.outcome} active=${w.boss.active}`,
   )
 
-  // 스킬은 접촉 피해보다 먼저 처리된다. 보스를 쓰러뜨린 바로 그 틱에
-  // 플레이어 체력도 0이 되더라도 최종 일격을 승리로 인정한다.
+  // 선딜 중에는 아직 스킬 판정이 없으므로 접촉 피해를 먼저 받는다.
   const simultaneous = createWorld(810, 'ranged')
   simultaneous.spawnEnabled = false
   spawnBoss(
@@ -716,8 +786,10 @@ console.log('\nsim smoke check\n')
   finalBlow.skillsPressed = SKILL_Q
   stepWorld(simultaneous, finalBlow)
   check(
-    '보스 처치와 플레이어 사망이 같은 틱이면 승리가 우선된다',
-    simultaneous.outcome === 'victory',
+    '선딜 첫 틱에는 아직 스킬 판정이 발생하지 않는다',
+    simultaneous.outcome === 'alive' &&
+      simultaneous.boss.active &&
+      simultaneous.casts.length === 0,
     `outcome=${simultaneous.outcome}`,
   )
 
@@ -807,8 +879,8 @@ console.log('\nsim smoke check\n')
   lastShot.skillsPressed = SKILL_Q
   stepWorld(finalTick, lastShot)
   check(
-    '마지막 틱에 보스를 처치하면 시간 초과보다 승리가 우선된다',
-    finalTick.outcome === 'victory' && finalTick.time === RUN_TIME_LIMIT,
+    '제한시간 마지막 틱에 시작한 스킬은 선딜 전에 시간 초과된다',
+    finalTick.outcome === 'timeout' && finalTick.time === RUN_TIME_LIMIT,
     `outcome=${finalTick.outcome}`,
   )
 

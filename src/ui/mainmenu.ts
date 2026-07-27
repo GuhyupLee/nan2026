@@ -7,6 +7,7 @@
 export function showMainMenu(
   parent: HTMLElement,
   onSettings: () => Promise<void> | void,
+  onRecords: () => Promise<void> | void,
 ): Promise<void> {
   return new Promise((resolve) => {
     const root = document.createElement('div')
@@ -76,20 +77,29 @@ export function showMainMenu(
       '<span class="action-arrow" aria-hidden="true">↗</span>'
     actions.appendChild(start)
 
+    const records = document.createElement('button')
+    records.className = 'mainmenu-action'
+    records.type = 'button'
+    records.innerHTML =
+      '<span class="action-index">02</span>' +
+      '<span class="action-copy"><b>점수 기록</b><small>최고 기록</small></span>' +
+      '<span class="action-arrow" aria-hidden="true">＋</span>'
+    actions.appendChild(records)
+
     const settings = document.createElement('button')
     settings.className = 'mainmenu-action'
     settings.type = 'button'
     settings.innerHTML =
-      '<span class="action-index">02</span>' +
+      '<span class="action-index">03</span>' +
       '<span class="action-copy"><b>설정</b><small>오디오 · 조작</small></span>' +
       '<span class="action-arrow" aria-hidden="true">＋</span>'
     actions.appendChild(settings)
 
     let done = false
-    let settingsOpen = false
+    let subviewOpen = false
 
     const finish = (): void => {
-      if (done || settingsOpen) return
+      if (done || subviewOpen) return
       done = true
       root.classList.add('closing')
       window.setTimeout(() => {
@@ -99,17 +109,29 @@ export function showMainMenu(
     }
 
     const openSettings = async (): Promise<void> => {
-      if (done || settingsOpen) return
-      settingsOpen = true
+      if (done || subviewOpen) return
+      subviewOpen = true
       try {
         await onSettings()
       } finally {
-        settingsOpen = false
+        subviewOpen = false
         if (!done) settings.focus()
       }
     }
 
+    const openRecords = async (): Promise<void> => {
+      if (done || subviewOpen) return
+      subviewOpen = true
+      try {
+        await onRecords()
+      } finally {
+        subviewOpen = false
+        if (!done) records.focus()
+      }
+    }
+
     start.addEventListener('click', finish)
+    records.addEventListener('click', () => void openRecords())
     settings.addEventListener('click', () => void openSettings())
     parent.appendChild(root)
     start.focus()

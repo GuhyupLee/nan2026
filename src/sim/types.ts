@@ -40,6 +40,39 @@ export function createInput(): Input {
  */
 export type PlayerClass = 'ranged' | 'melee'
 
+export type PlayerActionKind =
+  | 'attack'
+  | 'empowered'
+  | 'ult'
+  | 'q'
+  | 'w'
+  | 'e'
+  | 'r'
+
+export type PlayerActionSource = 'attack' | 'skill'
+
+export interface PendingPlayerAction {
+  source: PlayerActionSource
+  kind: PlayerActionKind
+  /** 평타면 null, QWER면 해당 슬롯. */
+  slot: SkillId | null
+  /** 시작 시 고정한 시전 방향. */
+  angle: number
+  /** 지면 지정 스킬을 위해 시작 시 고정한 조준점. */
+  targetX: number
+  targetY: number
+  /** 실제 판정이 발생하는 월드 시각. */
+  impactAt: number
+  /** 후딜까지 끝나 다음 행동을 받을 수 있는 월드 시각. */
+  endAt: number
+  resolved: boolean
+}
+
+export interface ActionStartEvent {
+  kind: PlayerActionKind
+  angle: number
+}
+
 export interface Player {
   pos: Vec2
   /** 직전 틱 위치. 렌더러의 프레임 보간에 쓴다. */
@@ -156,6 +189,8 @@ export interface World {
   /** 강화 카드가 건드리는 런타임 스탯. 게임 코드는 상수가 아니라 이걸 읽는다. */
   stats: Stats
   player: Player
+  /** 현재 선딜·후딜 중인 평타 또는 QWER. */
+  playerAction: PendingPlayerAction | null
   /** 이번 판 누적 처치 수. 점수의 기본 축. */
   kills: number
   progression: Progression
@@ -193,6 +228,8 @@ export interface World {
   casts: CastEvent[]
   /** 평타·지속 궁극기 타격 이벤트. 렌더러가 공격 모션에 쓰고 비운다. */
   attacks: AttackEvent[]
+  /** 렌더러가 판정보다 먼저 전투 애니메이션을 시작하는 데 쓰는 이벤트. */
+  actionStarts: ActionStartEvent[]
 
   /**
    * 레벨업 선택 대기 중인가.

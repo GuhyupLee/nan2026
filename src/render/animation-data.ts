@@ -1,4 +1,5 @@
 import type { PlayerClass } from '../sim/types.ts'
+import { PLAYER_ACTION_DURATION } from '../sim/action-timing.ts'
 import type { CharacterAction } from './rig.ts'
 
 export type VrmVec3 = [number, number, number]
@@ -41,15 +42,7 @@ export const ZERO_POSE: VrmPose = {
   lift: 0,
 }
 
-export const VRM_ACTION_DURATION: Record<CharacterAction, number> = {
-  attack: 0.26,
-  empowered: 0.46,
-  ult: 0.34,
-  q: 0.36,
-  w: 0.44,
-  e: 0.58,
-  r: 0.9,
-}
+export const VRM_ACTION_DURATION = PLAYER_ACTION_DURATION
 
 export const VRM_POSES: Record<PlayerClass, Record<CharacterAction, VrmPose>> = {
   ranged: {

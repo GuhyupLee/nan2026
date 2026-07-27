@@ -26,7 +26,7 @@ import { createWorld, resolveLevelUp, stepWorld } from '../../src/sim/world.ts'
 export const BALANCE_SEEDS = [1, 5, 11, 17, 23, 31, 47, 59, 71, 89, 101, 127] as const
 
 /** 매 npm run check에서 돌릴 대표 시드. 전체 표는 npm run balance가 담당한다. */
-export const REGRESSION_SEEDS = [1, 11, 47] as const
+export const REGRESSION_SEEDS = [1, 5, 47] as const
 
 const QWER_MASK = SKILL_Q | SKILL_W | SKILL_E | SKILL_R
 
