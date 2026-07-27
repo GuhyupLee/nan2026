@@ -200,7 +200,7 @@ function frame(now: number): void {
 
     const result = world.outcome
     const restartClass = world.playerClass
-    void showOutcome(document.body, result).then((action) => {
+    void showOutcome(document.body, result, world).then((action) => {
       if (action === 'restart') {
         beginRun(restartClass)
       } else {

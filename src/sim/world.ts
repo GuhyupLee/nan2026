@@ -58,6 +58,7 @@ export function createWorld(seed: number, playerClass: PlayerClass = 'ranged'): 
     playerClass,
     stats,
     player,
+    kills: 0,
     progression: createProgression(),
     skills,
     upgradesTaken: new Set(),

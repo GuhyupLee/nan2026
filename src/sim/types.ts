@@ -134,6 +134,8 @@ export interface World {
   /** 강화 카드가 건드리는 런타임 스탯. 게임 코드는 상수가 아니라 이걸 읽는다. */
   stats: Stats
   player: Player
+  /** 이번 판 누적 처치 수. 점수의 기본 축. */
+  kills: number
   progression: Progression
   skills: SkillBook
   /** 이미 획득한 강화 id. 같은 카드가 다시 뜨지 않게 한다. */

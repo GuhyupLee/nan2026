@@ -31,6 +31,7 @@ export function damageEnemy(world: World, i: number, amount: number): boolean {
 
   // 사망 처리는 여기서 한 번만 일어난다.
   const def = ENEMY_TYPES[pool.type[i]!]!
+  world.kills += 1
   grantXp(world, def.xp)
 
   // 점등된 적이 죽으면 빛이 돌아온다 — 원거리의 지속 회복.
