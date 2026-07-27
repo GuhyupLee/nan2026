@@ -454,6 +454,7 @@ function makeRig(
 
   const rig: CharacterRig = {
     group: body.root,
+    source: 'procedural',
 
     playAction(kind, time) {
       action.kind = kind

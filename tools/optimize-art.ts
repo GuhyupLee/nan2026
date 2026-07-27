@@ -14,7 +14,6 @@ import { mkdir, readdir, stat } from 'node:fs/promises'
 import { basename, extname, join } from 'node:path'
 import sharp from 'sharp'
 
-const SRC = 'art-src/portraits'
 const OUT = 'public/art'
 
 /**
@@ -29,10 +28,32 @@ const OUT = 'public/art'
  * 이 예산 안에서는 화질을 아낄 이유가 없다. hero는 원본 해상도를 유지한다.
  * card = 레벨업/결과 화면용 작은 초상, hero = 캐릭터 선택 화면용.
  */
-const VARIANTS = [
-  { suffix: 'card', height: 640, quality: 86 },
-  { suffix: 'hero', height: 1536, quality: 92 },
-] as const
+interface Group {
+  src: string
+  variants: readonly { suffix: string; height: number; quality: number }[]
+}
+
+/**
+ * 원본 디렉터리별 출력 규격. 산출물 이름은 `<원본이름>-<suffix>.webp`다.
+ *
+ * 메인 메뉴 키아트는 원래 이 파이프라인 밖에서 만들어져 `public/art/`에 바로
+ * 커밋돼 있었다. 그러면 "생성 원본부터 산출물까지 리포 안에서 재현된다"는
+ * AI 활용 문서의 주장에 구멍이 난다. 원본을 `art-src/keyart/`로 들여왔다.
+ */
+const GROUPS: readonly Group[] = [
+  {
+    src: 'art-src/portraits',
+    variants: [
+      { suffix: 'card', height: 640, quality: 86 },
+      { suffix: 'hero', height: 1536, quality: 92 },
+    ],
+  },
+  {
+    // main-menu.png → main-menu-keyart.webp (src/ui/mainmenu.ts가 참조하는 이름)
+    src: 'art-src/keyart',
+    variants: [{ suffix: 'keyart', height: 1080, quality: 88 }],
+  },
+]
 
 function kb(bytes: number): string {
   return `${(bytes / 1024).toFixed(0)} KB`
@@ -41,44 +62,51 @@ function kb(bytes: number): string {
 async function main(): Promise<void> {
   await mkdir(OUT, { recursive: true })
 
-  let files: string[]
-  try {
-    files = (await readdir(SRC)).filter((f) => extname(f).toLowerCase() === '.png')
-  } catch {
-    console.error(`원본 디렉터리가 없습니다: ${SRC}`)
-    process.exit(1)
-  }
-
-  if (files.length === 0) {
-    console.error(`${SRC} 에 PNG가 없습니다.`)
-    process.exit(1)
-  }
-
-  console.log(`\n아트 최적화 — 원본 ${files.length}장\n`)
-
   let totalIn = 0
   let totalOut = 0
+  let count = 0
 
-  for (const file of files) {
-    const src = join(SRC, file)
-    const name = basename(file, extname(file))
-    const inSize = (await stat(src)).size
-    totalIn += inSize
+  console.log('\n아트 최적화\n')
 
-    const meta = await sharp(src).metadata()
-    console.log(`  ${file}  ${meta.width}x${meta.height}  ${kb(inSize)}`)
+  for (const g of GROUPS) {
+    let files: string[]
+    try {
+      files = (await readdir(g.src)).filter((f) => extname(f).toLowerCase() === '.png')
+    } catch {
+      console.error(`원본 디렉터리가 없습니다: ${g.src}`)
+      process.exit(1)
+    }
 
-    for (const v of VARIANTS) {
-      const dest = join(OUT, `${name}-${v.suffix}.webp`)
-      const info = await sharp(src)
-        .resize({ height: v.height, withoutEnlargement: true })
-        .webp({ quality: v.quality, effort: 6 })
-        .toFile(dest)
+    if (files.length === 0) {
+      console.error(`${g.src} 에 PNG가 없습니다.`)
+      process.exit(1)
+    }
 
-      totalOut += info.size
-      console.log(`    → ${basename(dest)}  ${info.width}x${info.height}  ${kb(info.size)}`)
+    console.log(`  ${g.src}`)
+    for (const file of files) {
+      const src = join(g.src, file)
+      const name = basename(file, extname(file))
+      const inSize = (await stat(src)).size
+      totalIn += inSize
+      count++
+
+      const meta = await sharp(src).metadata()
+      console.log(`    ${file}  ${meta.width}x${meta.height}  ${kb(inSize)}`)
+
+      for (const v of g.variants) {
+        const dest = join(OUT, `${name}-${v.suffix}.webp`)
+        const info = await sharp(src)
+          .resize({ height: v.height, withoutEnlargement: true })
+          .webp({ quality: v.quality, effort: 6 })
+          .toFile(dest)
+
+        totalOut += info.size
+        console.log(`      → ${basename(dest)}  ${info.width}x${info.height}  ${kb(info.size)}`)
+      }
     }
   }
+
+  console.log(`\n원본 ${count}장`)
 
   const saved = ((1 - totalOut / totalIn) * 100).toFixed(1)
   console.log(`\n원본 ${kb(totalIn)} → 산출 ${kb(totalOut)}  (${saved}% 감소)\n`)

@@ -13,6 +13,13 @@ export type CharacterAction = 'attack' | 'empowered' | 'ult' | 'q' | 'w' | 'e' |
 
 export interface CharacterRig {
   group: THREE.Group
+  /**
+   * 어느 구현인지. 렌더러는 부팅 시점에 리그를 한 번 만드는데 그때는 VRM
+   * 다운로드가 아직 안 끝나 프로시저럴이 잡힌다. 이 표시가 없으면 같은
+   * 클래스를 골랐을 때 교체 조건(`world.playerClass !== charClass`)이 성립하지
+   * 않아 프로시저럴 모델이 그대로 남는다 — 실제로 원거리에서 그렇게 됐다.
+   */
+  source: 'vrm' | 'procedural'
   update(time: number, speed: number): void
   playAction(action: CharacterAction, time: number): void
   dispose(): void

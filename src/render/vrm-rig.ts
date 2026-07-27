@@ -189,8 +189,8 @@ const POSES: Record<PlayerClass, Record<CharacterAction, VrmPose>> = {
       spine: [-0.26, 0.12, 0],
       chest: [-0.16, 0.06, 0],
       head: [-0.24, 0, 0],
-      armR: [0.15, 0.30, 1.85, 0.85],
-      armL: [0.25, 0.30, 1.55, 1.15],
+      armR: [0.15, 0.30, 1.90, 0.80],
+      armL: [0.40, 0.35, 1.05, 1.30],
       aim: [0, 0, -0.4],
       lift: 0.05,
     },
@@ -200,8 +200,8 @@ const POSES: Record<PlayerClass, Record<CharacterAction, VrmPose>> = {
       spine: [-0.4, -0.24, 0.1],
       chest: [-0.24, -0.12, 0.06],
       head: [-0.3, 0.2, 0],
-      armR: [0.05, 0.15, 2.15, 0.45],
-      armL: [0.20, 0.20, 1.50, 0.95],
+      armR: [0.10, 0.25, 2.30, 0.35],
+      armL: [0.35, 0.30, 1.00, 1.35],
       aim: [0, 0, -0.55],
       lift: 0.13,
     },
@@ -271,8 +271,10 @@ const POSES: Record<PlayerClass, Record<CharacterAction, VrmPose>> = {
       spine: [0.1, 0.85, -0.2],
       chest: [0.04, 0.45, -0.1],
       head: [0.04, -0.7, -0.1],
-      armR: [0.15, 0.20, 1.20, 0.30],
-      armL: [-0.40, -0.20, 1.05, 0.45],
+      // 칼이 가슴 높이로 지나가야 한다. 어깨 높이로 올리면 VRoid 의상의 큰
+      // 소매가 얼굴을 통째로 덮어, 캐릭터를 보여주는 컷에서 얼굴이 사라진다.
+      armR: [0.02, 0.20, 0.92, 0.30],
+      armL: [-0.40, -0.20, 0.85, 0.45],
       aim: [0, 0, 0.35],
       lift: 0.03,
     },
@@ -282,8 +284,8 @@ const POSES: Record<PlayerClass, Record<CharacterAction, VrmPose>> = {
       spine: [-0.42, -0.5, 0.18],
       chest: [-0.24, -0.26, 0.1],
       head: [-0.34, 0.34, 0],
-      armR: [0.05, 0.10, 2.10, 0.35],
-      armL: [0.12, 0.10, 1.70, 0.60],
+      armR: [0.05, 0.15, 2.25, 0.30],
+      armL: [0.30, 0.25, 1.15, 1.20],
       aim: [0, 0, -0.6],
       lift: 0.16,
     },
@@ -305,15 +307,74 @@ function clamp01(n: number): number {
   return n < 0 ? 0 : n > 1 ? 1 : n
 }
 
-/** 0에서 올라갔다 내려오는 종. 크고 느린 동작(E·R)의 강도 곡선. */
-function bell(t: number): number {
-  return Math.sin(clamp01(t) * Math.PI)
+function lerp(a: number, b: number, t: number): number {
+  return a + (b - a) * t
 }
 
-/** 앞부분에서 확 치고 천천히 풀린다. 짧고 반복되는 동작(평타·Q)에 쓴다. */
-function snap(t: number): number {
+/** 감속. 예비동작처럼 부드럽게 도착해야 하는 구간. */
+function easeOut(t: number): number {
+  return 1 - (1 - t) * (1 - t)
+}
+
+/** 가속. 타격처럼 뒤로 갈수록 빨라져야 하는 구간. */
+function easeIn(t: number): number {
+  return t * t
+}
+
+/**
+ * 동작 타이밍.
+ *
+ * 처음에는 액션마다 목표 포즈 하나를 두고 종 모양 곡선으로 기울였다 돌아왔다.
+ * 그래서 전부 "포즈를 취했다 푸는" 것처럼 보였다 — 예비동작이 없으면 타격에
+ * 무게가 안 실린다. 실제 모션은 반대로 감았다가 튀어나간다.
+ *
+ * 그래서 강도 곡선의 치역을 음수까지 넓혔다. 같은 포즈 표에 **음수**를 곱하면
+ * 그게 곧 반대 방향 예비동작이다 — 감는 포즈를 따로 14개 더 쓰지 않아도 된다.
+ *
+ *   0 → −wind → +1 → hold → −overshoot → 0
+ *   (감기)   (타격)  (버팀)   (되돌림 오버슛)
+ */
+interface Timing {
+  /** 감는 깊이. 타격 포즈의 몇 배로 반대로 감을지. */
+  wind: number
+  /** 감기가 끝나는 시점(0~1). */
+  tWind: number
+  /** 타격이 정점에 닿는 시점. tWind와 가까울수록 빠르게 꽂힌다. */
+  tStrike: number
+  /** 정점을 버티는 끝 시점. 무거운 기술일수록 길다. */
+  tHold: number
+  /** 되돌아올 때 0을 지나쳐 반대로 흔들리는 양. */
+  overshoot: number
+}
+
+const TIMING: Record<CharacterAction, Timing> = {
+  // 평타는 초당 3~4회 나간다. 감기가 길면 답답해서 얕고 짧게.
+  attack: { wind: 0.3, tWind: 0.22, tStrike: 0.42, tHold: 0.5, overshoot: 0.1 },
+  empowered: { wind: 0.42, tWind: 0.26, tStrike: 0.46, tHold: 0.56, overshoot: 0.14 },
+  q: { wind: 0.35, tWind: 0.24, tStrike: 0.44, tHold: 0.54, overshoot: 0.12 },
+  // 이동기는 즉발로 느껴져야 한다. 감기를 거의 없앤다 —
+  // 여기서 0.4초를 끌면 조작이 안 먹은 것처럼 읽힌다.
+  w: { wind: 0.14, tWind: 0.1, tStrike: 0.26, tHold: 0.42, overshoot: 0.08 },
+  e: { wind: 0.45, tWind: 0.3, tStrike: 0.52, tHold: 0.66, overshoot: 0.12 },
+  // 궁극기가 가장 깊게 감고 가장 오래 버틴다.
+  r: { wind: 0.55, tWind: 0.34, tStrike: 0.58, tHold: 0.72, overshoot: 0.16 },
+  // 궁극 후속타는 이미 움직이는 중이라 감을 시간이 없다.
+  ult: { wind: 0.18, tWind: 0.14, tStrike: 0.32, tHold: 0.44, overshoot: 0.1 },
+}
+
+/** 진행도 t(0~1)를 강도로 바꾼다. 음수 구간이 예비동작이다. */
+function envelope(t: number, k: Timing): number {
   const x = clamp01(t)
-  return x < 0.28 ? x / 0.28 : 1 - (x - 0.28) / 0.72
+  if (x < k.tWind) return lerp(0, -k.wind, easeOut(x / k.tWind))
+  if (x < k.tStrike) {
+    return lerp(-k.wind, 1, easeIn((x - k.tWind) / (k.tStrike - k.tWind)))
+  }
+  if (x < k.tHold) return 1
+  const u = (x - k.tHold) / (1 - k.tHold)
+  // 1 → −overshoot → 0. 되돌림에 반동을 남겨야 동작이 끊기지 않는다.
+  return u < 0.65
+    ? lerp(1, -k.overshoot, easeOut(u / 0.65))
+    : lerp(-k.overshoot, 0, (u - 0.65) / 0.35)
 }
 
 // ---------------------------------------------------------------------------
@@ -562,10 +623,16 @@ export function createVrmRig(cls: PlayerClass): CharacterRig | null {
   let actionKind: CharacterAction | null = null
   let actionStart = -99
   let lastTime = -1
+  /** 선회 뱅킹의 현재 값과 직전 프레임 방위. 각속도를 재려면 둘 다 필요하다. */
+  let bank = 0
+  let lastYaw = 0
+  /** 머리 요가 몸통을 지연해 따라오게 하는 필터 상태. */
+  let headYaw = 0
   const hips0 = j.hips.position.y
 
   const rig: CharacterRig = {
     group,
+    source: 'vrm',
 
     playAction(kind, time) {
       actionKind = kind
@@ -583,6 +650,8 @@ export function createVrmRig(cls: PlayerClass): CharacterRig | null {
       const sw2 = Math.sin(gait * 2)
 
       // --- 시전 강도 ---
+      // env는 −wind에서 +1 사이를 오간다. 음수 구간이 예비동작이라, 같은 포즈에
+      // 음수를 곱하는 것만으로 반대로 감는 동작이 나온다.
       let env = 0
       let p = ZERO
       if (actionKind) {
@@ -590,33 +659,58 @@ export function createVrmRig(cls: PlayerClass): CharacterRig | null {
         if (t >= 1) actionKind = null
         else {
           p = poses[actionKind]
-          // 크고 느린 동작은 종 모양으로, 짧고 반복되는 건 스냅으로.
-          env = actionKind === 'r' || actionKind === 'e' ? bell(t) : snap(t)
+          env = envelope(t, TIMING[actionKind])
         }
       }
 
-      // --- 상하 바운스 + 호흡 ---
-      // 발이 땅을 두 번 딛는 동안 골반이 한 번 오르내린다(2배 주파수).
+      // --- 선회 뱅킹 ---
+      // 방향을 틀 때 오토바이처럼 안쪽으로 기운다. 쿼터뷰에서 이게 없으면
+      // 캐릭터가 제자리에서 홱홱 도는 팽이로 보인다.
+      const yaw = group.rotation.y
+      let dYaw = yaw - lastYaw
+      // −π~π로 감아 한 바퀴 경계에서 튀지 않게 한다
+      while (dYaw > Math.PI) dYaw -= Math.PI * 2
+      while (dYaw < -Math.PI) dYaw += Math.PI * 2
+      lastYaw = yaw
+      const turnRate = dt > 0 ? dYaw / dt : 0
+      // 1차 필터로 완만하게 따라가야 뱅킹이 덜덜거리지 않는다
+      bank += (Math.max(-1, Math.min(1, turnRate * 0.16)) * mv * 0.26 - bank) * Math.min(1, dt * 9)
+
+      // --- 무게중심 이동 ---
+      // 멈춰 있을 때 호흡만 하면 마네킹이다. 호흡(1.5Hz)과 어긋나는 주기로
+      // 체중을 좌우로 옮겨야 서 있는 사람으로 읽힌다.
+      const still = 1 - mv
+      const shift = Math.sin(time * 0.62) * still
       const breath = Math.sin(time * 1.5) * 0.004
-      j.hips.position.y = hips0 + sw2 * (0.006 + mv * 0.022) + breath + p.lift * env
+
+      // --- 상하 바운스 ---
+      // 발이 땅을 두 번 딛는 동안 골반이 한 번 오르내린다(2배 주파수).
+      // 감는 동안(env<0) 살짝 주저앉아야 다음 타격이 무거워 보인다.
+      j.hips.position.y =
+        hips0 + sw2 * (0.006 + mv * 0.022) + breath + Math.max(-0.05, p.lift * env)
 
       // --- 골반과 어깨를 반대로 ---
       const sway = sw * mv * 0.15
-      set(j.hips, -sw * mv * 0.04 + p.hips[0] * env, sway + p.hips[1] * env, p.hips[2] * env)
       set(
-        j.spine,
-        p.spine[0] * env + mv * 0.06,
-        -sway * 0.7 + p.spine[1] * env,
-        p.spine[2] * env,
+        j.hips,
+        -sw * mv * 0.04 + p.hips[0] * env,
+        sway + p.hips[1] * env,
+        shift * 0.035 + bank * 0.5 + p.hips[2] * env,
       )
-      set(j.chest, p.chest[0] * env, -sway * 0.3 + p.chest[1] * env, p.chest[2] * env)
-      // 머리는 몸통의 비틀림을 되돌려 시선을 진행 방향에 둔다
       const spineY = -sway * 0.7 + p.spine[1] * env
+      set(j.spine, p.spine[0] * env + mv * 0.06, spineY, -shift * 0.02 + bank + p.spine[2] * env)
+      set(j.chest, p.chest[0] * env, -sway * 0.3 + p.chest[1] * env, bank * 0.4 + p.chest[2] * env)
+
+      // --- 머리 ---
+      // 머리는 몸통을 몇 프레임 늦게 따라간다. 이 지연 하나가 목이 있는 것처럼
+      // 보이게 한다 — 같이 움직이면 머리가 몸통에 용접된 것처럼 읽힌다.
+      const headTargetY = -spineY * 0.5 + p.head[1] * env
+      headYaw += (headTargetY - headYaw) * Math.min(1, dt * 13)
       set(
         j.head,
         Math.sin(time * 0.9) * 0.025 + p.head[0] * env,
-        -spineY * 0.5 + p.head[1] * env,
-        p.head[2] * env,
+        headYaw,
+        shift * 0.03 - bank * 0.35 + p.head[2] * env,
       )
 
       // --- 팔 ---
@@ -629,23 +723,42 @@ export function createVrmRig(cls: PlayerClass): CharacterRig | null {
         const swing = sw * side * mv * 0.42
         // z는 **내린 각도**다 — 0이 수평(T포즈), 양수가 아래. 그래서 들어올림은
         // 빼기로 들어간다. raise 1.31이면 수평, 2.2면 머리 위로 넘어간다.
-        const down = REST.armDown - ap[2] * env
+        //
+        // 들어올림과 팔꿈치는 절대각이라 env가 음수일 때 그대로 곱하면
+        // 어깨가 등 뒤로 꺾이고 팔꿈치가 반대로 굽는다. 예비동작으로 팔을
+        // 뒤로 빼는 건 맞지만 관절 가동범위 안에서만 해야 한다.
+        const down = REST.armDown - Math.max(-0.4, ap[2] * env)
+        const elbow = Math.max(0.02, REST.elbow + ap[3] * env)
         set(
           j.upperArm[i]!,
-          REST.armForward + swing - ap[0] * env,
+          REST.armForward + swing - ap[0] * env - bank * side * 0.25,
           -side * ap[1] * env,
           -side * down,
         )
-        set(j.lowerArm[i]!, 0, -side * (REST.elbow + ap[3] * env), 0)
+        set(j.lowerArm[i]!, 0, -side * elbow, 0)
       }
 
       // --- 다리 ---
+      // 시전 중에 다리가 대기 자세로 남아 있으면 상체만 격렬하고 하체는
+      // 가만한, 발이 땅에 안 붙은 그림이 된다. 강도만큼 자세를 낮추고
+      // 오른발을 내디뎌 몸을 받친다.
+      const stance = Math.abs(env)
       for (let i = 0; i < 2; i++) {
         const side: Side = i === 0 ? 1 : -1
         const swing = -sw * side * mv * 0.62
-        set(j.upperLeg[i]!, swing, 0, -side * REST.legSplay)
+        // 오른발(side −1)이 앞, 왼발이 뒤. 무기를 오른손에 들었으므로
+        // 같은 쪽 발이 앞으로 나가야 체중이 칼을 따라간다.
+        const step = -side * stance * 0.3
+        set(
+          j.upperLeg[i]!,
+          swing + step,
+          0,
+          -side * (REST.legSplay + stance * 0.09),
+        )
         // 무릎은 뒤로만 굽는다. 앞으로 굽으면 즉시 부자연스러워 보인다.
-        const knee = Math.max(0, sw * side) * mv * 0.9
+        // 시전 중에는 양 무릎을 함께 굽혀 자세를 낮춘다 — 무게중심이
+        // 내려가야 큰 동작이 버티는 것처럼 보인다.
+        const knee = Math.max(0, sw * side) * mv * 0.9 + stance * 0.24
         set(j.lowerLeg[i]!, knee, 0, 0)
         set(j.foot[i]!, -knee * 0.45, 0, 0)
       }

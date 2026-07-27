@@ -11,6 +11,7 @@ import {
   createCharacterRig,
 } from './characters.ts'
 import { EnemyRenderer } from './enemies.ts'
+import { hasVrm } from './vrm-rig.ts'
 
 /**
  * 쿼터뷰 카메라 오프셋. 피치 ≈ atan(14/10.8) ≈ 52°. LoL·이터널 리턴 계열 각도.
@@ -292,7 +293,17 @@ export class Renderer {
     const facing = lerpAngle(p.prevFacing, p.facing, alpha)
 
     // 클래스가 바뀌면 리그를 갈아끼운다. 캐릭터 선택 직후 한 번 일어난다.
-    if (world.playerClass !== this.charClass) this.swapCharacter(world.playerClass)
+    //
+    // 클래스가 그대로여도 갈아끼워야 하는 경우가 하나 있다. 렌더러는 부팅 시점에
+    // 기본 클래스로 리그를 한 번 만드는데, 그때는 VRM(20MB)이 아직 안 받아져
+    // 프로시저럴 폴백이 잡힌다. 그 기본 클래스를 그대로 고르면 클래스 비교가
+    // 성립하지 않아 폴백 모델이 판 내내 남는다 — 실제로 원거리에서 그렇게 됐다.
+    if (
+      world.playerClass !== this.charClass ||
+      (this.charRig.source === 'procedural' && hasVrm(world.playerClass))
+    ) {
+      this.swapCharacter(world.playerClass)
+    }
 
     this.consumeCharacterActions(world, now)
 
