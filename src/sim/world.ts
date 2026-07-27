@@ -232,7 +232,7 @@ function stepPlayer(world: World, input: Input): void {
   p.prevFacing = p.facing
 
   // --- 이동 ---
-  if (world.playerAction || world.ult.active) {
+  if (world.ult.active) {
     moveDir.x = 0
     moveDir.y = 0
     p.vel.x = 0
@@ -274,7 +274,7 @@ function stepPlayer(world: World, input: Input): void {
   }
 
   // --- 조준 방향 ---
-  if (!world.playerAction && !world.ult.active) {
+  if (!world.ult.active) {
     const ax = input.aim.x - p.pos.x
     const ay = input.aim.y - p.pos.y
     if (ax * ax + ay * ay > 1e-6) {

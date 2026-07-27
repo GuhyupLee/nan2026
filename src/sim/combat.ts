@@ -1,8 +1,4 @@
-import {
-  beginPlayerAction,
-  markPlayerActionResolved,
-  pendingImpact,
-} from './actions.ts'
+import { emitActionStart } from './actions.ts'
 import { DT } from './constants.ts'
 import { damageEnemy } from './damage.ts'
 import { ENEMY_TYPES, type EnemyPool } from './enemies.ts'
@@ -102,6 +98,9 @@ function resolveAutoAttack(
   const dx = Math.cos(angle)
   const dy = Math.sin(angle)
 
+  if (world.playerAction?.source !== 'skill') {
+    emitActionStart(world, 'attack', angle)
+  }
   if (world.attacks.length < 16) {
     world.attacks.push({
       angle,
@@ -142,10 +141,7 @@ function resolveAutoAttack(
   }
 }
 
-/**
- * Starts an attack animation immediately, resolves the hit at its strike pose,
- * and keeps the player action occupied through the recovery frames.
- */
+/** 평타는 즉시 판정한다. 스킬 모션 중에는 판정만 유지하고 평타 모션은 생략한다. */
 export function stepAutoAttack(
   world: World,
   pool: EnemyPool,
@@ -156,14 +152,7 @@ export function stepAutoAttack(
   const s = world.stats
   p.attackCooldown -= DT
 
-  const impact = pendingImpact(world, 'attack')
-  if (impact) {
-    resolveAutoAttack(world, pool, tracers, impact.angle, impact.kind === 'empowered')
-    markPlayerActionResolved(world, impact)
-  }
-
   if (
-    world.playerAction ||
     p.attackCooldown > 0 ||
     pool.count === 0 ||
     world.ult.active
@@ -186,9 +175,14 @@ export function stepAutoAttack(
   const dx = targetX - p.pos.x
   const dy = targetY - p.pos.y
   const angle = dx * dx + dy * dy > 1e-8 ? Math.atan2(dy, dx) : p.facing
-  const kind = world.playerClass === 'melee' && p.empowered ? 'empowered' : 'attack'
 
   p.attackCooldown = effectiveAtkInterval(s)
-  beginPlayerAction(world, 'attack', kind, angle, targetX, targetY, null)
+  resolveAutoAttack(
+    world,
+    pool,
+    tracers,
+    angle,
+    world.playerClass === 'melee' && p.empowered,
+  )
   return 0
 }

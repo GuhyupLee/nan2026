@@ -22,16 +22,6 @@ const ACTION_PRIORITY: Record<CharacterAction, number> = {
   r: 40,
 }
 
-const RECOVERY_START: Record<CharacterAction, number> = {
-  attack: 0.72,
-  empowered: 0.74,
-  ult: 0.72,
-  q: 0.76,
-  w: 0.7,
-  e: 0.8,
-  r: 0.84,
-}
-
 const ACTION_CROSS_FADE = 0.08
 
 export interface ActiveVrmAction {
@@ -55,7 +45,7 @@ export function canStartVrmAction(
   const incomingPriority = ACTION_PRIORITY[incoming]
   if (incomingPriority > currentPriority) return true
 
-  return currentProgress >= RECOVERY_START[current]
+  return false
 }
 
 function clamp01(value: number): number {

@@ -14,8 +14,8 @@ export interface PlayerActionTiming {
  * 끼어들거나, 검을 휘두르기 전에 피해가 들어가는 현상이 생기지 않는다.
  */
 export const PLAYER_ACTION_TIMING: Readonly<Record<PlayerActionKind, PlayerActionTiming>> = {
-  attack: { duration: 0.26, impact: 0.11 },
-  empowered: { duration: 0.46, impact: 0.21 },
+  attack: { duration: 0.26, impact: 0 },
+  empowered: { duration: 0.46, impact: 0 },
   ult: { duration: 0.34, impact: 0.11 },
   q: { duration: 0.36, impact: 0.16 },
   w: { duration: 0.44, impact: 0.11 },

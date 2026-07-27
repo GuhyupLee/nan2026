@@ -189,7 +189,7 @@ export interface World {
   /** 강화 카드가 건드리는 런타임 스탯. 게임 코드는 상수가 아니라 이걸 읽는다. */
   stats: Stats
   player: Player
-  /** 현재 선딜·후딜 중인 평타 또는 QWER. */
+  /** 현재 선딜·후딜 중인 QWER. 평타는 조작감을 위해 즉시 판정한다. */
   playerAction: PendingPlayerAction | null
   /** 이번 판 누적 처치 수. 점수의 기본 축. */
   kills: number

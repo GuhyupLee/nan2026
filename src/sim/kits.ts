@@ -427,7 +427,7 @@ function meleeR(world: World): void {
   const now = world.time
   world.ult.active = true
   world.ult.hitsLeft = 6
-  world.ult.nextHitAt = now + 0.3
+  world.ult.nextHitAt = now + 0.4
   world.player.invulnUntil = now + 2.85
 
   emitRing(world, world.player.pos.x, world.player.pos.y, 5, 3)
@@ -605,6 +605,9 @@ export function tryEmpoweredAttack(world: World, angle?: number): boolean {
     dir.y = Math.sin(angle)
   }
 
+  if (world.playerAction?.source !== 'skill') {
+    emitActionStart(world, 'empowered', Math.atan2(dir.y, dir.x))
+  }
   if (world.attacks.length < 16) {
     world.attacks.push({ angle: Math.atan2(dir.y, dir.x), kind: 'empowered' })
   }

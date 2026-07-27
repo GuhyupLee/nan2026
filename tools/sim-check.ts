@@ -481,7 +481,7 @@ console.log('\nsim smoke check\n')
   check('지연된 시전 이벤트가 입력 시점의 목표를 완전하게 보존한다', selfContained)
 }
 
-// --- 공격 동작 중 이동·방향·다른 QWER을 잠그고, D/F은 유지한다 ---
+// --- 스킬 판정은 지연하되 이동·조준과 D/F의 조작감은 유지한다 ---
 {
   const w = createWorld(79, 'ranged')
   w.spawnEnabled = false
@@ -499,11 +499,10 @@ console.log('\nsim smoke check\n')
   stepWorld(w, input)
 
   check(
-    'QWER 애니메이션 중 이동과 방향 전환이 잠긴다',
+    'QWER 애니메이션 중에도 이동과 조준 입력이 유지된다',
     started &&
-      w.player.pos.x === startX &&
-      w.player.pos.y === startY &&
-      w.player.facing === startFacing,
+      (w.player.pos.x !== startX || w.player.pos.y !== startY) &&
+      w.player.facing !== startFacing,
   )
   check('후딜 중 다른 QWER로 캔슬할 수 없다', !castSkill(w, 'w'))
   const beforeFlash = w.player.pos.x
@@ -511,13 +510,13 @@ console.log('\nsim smoke check\n')
   flash.aim.x = 5
   flash.skillsPressed = SKILL_F
   stepWorld(w, flash)
-  check('이동 잠금 중에도 소환사 주문 F는 사용할 수 있다', w.player.pos.x > beforeFlash)
+  check('스킬 시전 중에도 소환사 주문 F는 사용할 수 있다', w.player.pos.x > beforeFlash)
 
   while (w.time <= PLAYER_ACTION_TIMING.q.duration + DT) stepWorld(w, createInput())
   check('애니메이션 종료 뒤 다음 QWER을 사용할 수 있다', castSkill(w, 'w'))
 }
 
-// --- 평타도 타격 포즈까지 판정을 미룬다 ---
+// --- 평타는 즉발이며 이동·스킬 모션을 막지 않는다 ---
 {
   const w = createWorld(80, 'ranged')
   w.spawnEnabled = false
@@ -527,16 +526,43 @@ console.log('\nsim smoke check\n')
   w.enemies.prevX[0] = 2
   w.enemies.prevY[0] = 0
   const input = createInput()
+  input.move.x = 1
   input.aim.x = 2
+  const hpBefore = w.enemies.hp[0]!
   stepWorld(w, input)
 
   const started = w.actionStarts.some((event) => event.kind === 'attack')
   const immediateHit = w.attacks.length > 0
-  const ticks = Math.ceil(PLAYER_ACTION_TIMING.attack.impact / DT) + 1
-  for (let i = 0; i < ticks; i++) stepWorld(w, input)
 
-  check('평타는 입력 시 모션을 시작하고 즉시 판정하지 않는다', started && !immediateHit)
-  check('평타 판정은 타격 포즈에서 발생한다', w.attacks.length > 0)
+  check(
+    '평타는 즉시 판정되고 별도 선후딜 상태를 만들지 않는다',
+    started && immediateHit && w.enemies.hp[0]! < hpBefore && w.playerAction === null,
+  )
+  check('평타 중에도 이동 입력이 유지된다', w.player.pos.x > 0)
+}
+
+// --- 스킬 중 평타 판정은 유지하되 평타 모션 이벤트는 숨긴다 ---
+{
+  const w = createWorld(81, 'ranged')
+  w.spawnEnabled = false
+  spawnEnemy(w.enemies, w.rng, 0, 0, TYPE_WALKER)
+  w.enemies.x[0] = 2
+  w.enemies.y[0] = 0
+  w.enemies.prevX[0] = 2
+  w.enemies.prevY[0] = 0
+  w.lastAim.x = 2
+  unlockSkill(w.skills, 'q', 1)
+  castSkill(w, 'q')
+  const hpBefore = w.enemies.hp[0]!
+  const input = createInput()
+  input.aim.x = 2
+  stepWorld(w, input)
+
+  check('스킬 중에도 자동 평타 판정은 계속된다', w.enemies.hp[0]! < hpBefore)
+  check(
+    '스킬 중 평타 모션 이벤트가 QWER 애니메이션을 건드리지 않는다',
+    !w.actionStarts.some((event) => event.kind === 'attack'),
+  )
 }
 
 // --- 클래스 ---
@@ -780,6 +806,7 @@ console.log('\nsim smoke check\n')
   simultaneous.enemies.prevY[simultaneousBoss] = 0
   simultaneous.enemies.hp[simultaneousBoss] = 1
   simultaneous.player.hp = 0.001
+  simultaneous.player.attackCooldown = Number.POSITIVE_INFINITY
   unlockSkill(simultaneous.skills, 'q', 3.5)
   const finalBlow = createInput()
   finalBlow.aim.x = 4

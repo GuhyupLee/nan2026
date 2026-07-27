@@ -17,7 +17,7 @@ export function emitActionStart(
 }
 
 /**
- * 평타 또는 QWER의 선딜을 시작한다.
+ * QWER의 선딜을 시작한다.
  *
  * 판정은 impactAt에서 별도로 처리하고, endAt까지는 다음 전투 동작을 받지 않는다.
  */
@@ -49,7 +49,7 @@ export function beginPlayerAction(
   return true
 }
 
-/** 후딜이 끝난 동작을 비워 다음 평타·QWER를 받을 수 있게 한다. */
+/** 후딜이 끝난 동작을 비워 다음 QWER를 받을 수 있게 한다. */
 export function releaseFinishedPlayerAction(world: World): void {
   const action = world.playerAction
   if (

@@ -50,8 +50,10 @@ assert.equal(canStartVrmAction('attack', 0.2, 'attack'), false, 'attack blocks e
 assert.equal(canStartVrmAction('attack', 0.2, 'q'), true, 'Q interrupts attack')
 assert.equal(canStartVrmAction('q', 0.2, 'attack'), false, 'attack cannot interrupt early Q')
 assert.equal(canStartVrmAction('r', 0.17, 'ult'), false, 'ultimate follow-up cannot interrupt R')
-assert.equal(canStartVrmAction('r', 0.85, 'attack'), true, 'attack starts after R recovery')
-assert.equal(canStartVrmAction('attack', 0.73, 'attack'), true, 'attack retriggers in recovery')
+assert.equal(canStartVrmAction('r', 0.85, 'attack'), false, 'attack cannot cut off R recovery')
+assert.equal(canStartVrmAction('q', 0.99, 'attack'), false, 'attack waits for the full Q animation')
+assert.equal(canStartVrmAction('attack', 0.73, 'attack'), false, 'attack does not retrigger in recovery')
+assert.equal(canStartVrmAction('q', 1, 'attack'), true, 'attack starts after Q fully ends')
 
 assert.equal(view.getUint32(0, true), 0x46546c67, 'GLB magic')
 assert.equal(view.getUint32(4, true), 2, 'GLB version')
