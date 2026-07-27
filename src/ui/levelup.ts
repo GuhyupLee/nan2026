@@ -126,7 +126,7 @@ function buildCards(world: World): Card[] {
 
   const out: Card[] = []
   for (const choice of rollUpgrades(
-    world.rng,
+    world.choiceRng,
     upgradeCandidates(world),
     3,
     world.upgradesTaken,

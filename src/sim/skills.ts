@@ -141,9 +141,18 @@ export function rankUpSkill(book: SkillBook, id: SkillId): boolean {
   return true
 }
 
+/**
+ * 랭크를 올릴 수 있는 슬롯.
+ *
+ * 소환사 주문 D(회복)·F(점멸)는 제외한다. 둘 다 피해를 주지 않아
+ * 랭크의 주효과인 "피해 +20%"가 적용될 대상이 없고, 그러면 카드가
+ * 하지 않는 일을 약속하게 된다.
+ */
+const RANKABLE_SLOTS = ['q', 'w', 'e', 'r'] as const satisfies readonly SkillId[]
+
 /** 지금 랭크를 더 올릴 수 있는 스킬. 레벨업 카드가 이 목록에서 뽑는다. */
 export function rankableSkills(book: SkillBook): SkillId[] {
-  return SKILL_IDS.filter((id) => book[id].unlocked && book[id].rank < MAX_SKILL_RANK)
+  return RANKABLE_SLOTS.filter((id) => book[id].unlocked && book[id].rank < MAX_SKILL_RANK)
 }
 
 /** 쿨다운 진행률 0..1. UI의 부채꼴 게이지가 이 값을 쓴다. */

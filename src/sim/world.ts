@@ -54,6 +54,8 @@ export function createWorld(seed: number, playerClass: PlayerClass = 'ranged'): 
     tick: 0,
     time: 0,
     rng: createRng(seed),
+    // 시드는 같되 스트림을 갈라 서로 간섭하지 않게 한다.
+    choiceRng: createRng((seed ^ 0x9e3779b9) >>> 0),
     arenaRadius: ARENA_RADIUS,
     playerClass,
     stats,

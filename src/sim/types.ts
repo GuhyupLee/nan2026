@@ -129,6 +129,14 @@ export interface World {
   /** 경과 시간(초). 항상 tick * DT와 같다. */
   time: number
   rng: Rng
+  /**
+   * 보상 카드 추첨 전용 난수. 시뮬 rng와 반드시 분리한다.
+   *
+   * 같은 스트림을 쓰면 "카드를 몇 장 뽑았는가"가 이후 적 스폰 종류·각도·거리를
+   * 바꾼다. 그러면 헤드리스 밸런싱이 UI 선택을 그대로 재생하지 않는 한
+   * 판을 재현할 수 없고, 결정론 계약이 UI에 인질로 잡힌다.
+   */
+  choiceRng: Rng
   arenaRadius: number
   playerClass: PlayerClass
   /** 강화 카드가 건드리는 런타임 스탯. 게임 코드는 상수가 아니라 이걸 읽는다. */
