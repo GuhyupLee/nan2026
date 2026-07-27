@@ -26,6 +26,9 @@ const CAM_OFFSET = new THREE.Vector3(0, 14, 10.8)
 /** 시야각. 좁을수록 원근 왜곡이 줄어 MOBA다운 평면적 화면이 된다. */
 const CAM_FOV = 40
 
+/** 16:9보다 좁은 화면에서도 가로 전장 시야가 지나치게 잘리지 않게 한다. */
+const CAM_REFERENCE_ASPECT = 16 / 9
+
 /** 카메라 추적 반응 속도. 클수록 즉각적. */
 const CAM_FOLLOW = 14
 
@@ -43,6 +46,7 @@ export class Renderer {
 
   private readonly gl: THREE.WebGLRenderer
   private readonly lightRig: THREE.Group
+  private readonly sun: THREE.DirectionalLight
   private readonly enemyRenderer: EnemyRenderer
   private charRig: CharacterRig
   private charClass: PlayerClass = 'ranged'
@@ -60,8 +64,12 @@ export class Renderer {
   private readonly proj = new THREE.Vector3()
 
   private readonly container: HTMLElement
+  private readonly coarsePointer = window.matchMedia('(pointer: coarse)')
   private width = 1
   private height = 1
+  private cameraDistanceScale = 1
+  private pixelRatio = 0
+  private shadowMapSize = 2048
 
   constructor(container: HTMLElement, arenaRadius: number) {
     this.container = container
@@ -94,29 +102,30 @@ export class Renderer {
     // --- 조명 ---
     this.scene.add(new THREE.HemisphereLight(0x7093c8, 0x0a0e18, 0.85))
 
-    const sun = new THREE.DirectionalLight(0xffffff, 2.1)
-    sun.position.set(14, 26, 10)
-    sun.castShadow = true
-    sun.shadow.mapSize.set(2048, 2048)
-    sun.shadow.bias = -0.0006
-    sun.shadow.normalBias = 0.03
+    this.sun = new THREE.DirectionalLight(0xffffff, 2.1)
+    this.sun.position.set(14, 26, 10)
+    this.sun.castShadow = true
+    this.sun.shadow.mapSize.set(this.shadowMapSize, this.shadowMapSize)
+    this.sun.shadow.bias = -0.0006
+    this.sun.shadow.normalBias = 0.03
     // 그림자 카메라를 플레이어 주변으로 좁게 잡아 해상도를 아낀다.
     const s = 22
-    sun.shadow.camera.left = -s
-    sun.shadow.camera.right = s
-    sun.shadow.camera.top = s
-    sun.shadow.camera.bottom = -s
-    sun.shadow.camera.near = 1
-    sun.shadow.camera.far = 80
+    this.sun.shadow.camera.left = -s
+    this.sun.shadow.camera.right = s
+    this.sun.shadow.camera.top = s
+    this.sun.shadow.camera.bottom = -s
+    this.sun.shadow.camera.near = 1
+    this.sun.shadow.camera.far = 80
 
     // 라이트를 플레이어와 함께 움직여 그림자 영역이 항상 따라오게 한다.
     this.lightRig = new THREE.Group()
-    this.lightRig.add(sun)
-    this.lightRig.add(sun.target)
+    this.lightRig.add(this.sun)
+    this.lightRig.add(this.sun.target)
     this.scene.add(this.lightRig)
 
     this.resize()
     window.addEventListener('resize', this.resize)
+    this.coarsePointer.addEventListener('change', this.resize)
     // resize 이벤트만 믿으면 안 된다. 탭이 백그라운드에서 로드되거나
     // 레이아웃이 늦게 잡히면 캔버스가 0×0으로 굳고, aspect가 NaN이 되어
     // 화면이 영구히 검게 남는다. 컨테이너를 직접 관찰해 확실히 잡는다.
@@ -127,13 +136,26 @@ export class Renderer {
     // 0을 절대 통과시키지 않는다 — aspect = 0/0 = NaN 이 투영 행렬을 망친다.
     const w = Math.max(1, this.container.clientWidth || window.innerWidth)
     const h = Math.max(1, this.container.clientHeight || window.innerHeight)
-    if (w === this.width && h === this.height) return
+    const sizeChanged = w !== this.width || h !== this.height
 
     this.width = w
     this.height = h
-    this.gl.setSize(w, h, false)
-    this.camera.aspect = w / h
-    this.camera.updateProjectionMatrix()
+    const aspect = w / h
+    const nextCameraScale = THREE.MathUtils.clamp(
+      Math.sqrt(CAM_REFERENCE_ASPECT / aspect),
+      1,
+      1.75,
+    )
+    const framingChanged = Math.abs(nextCameraScale - this.cameraDistanceScale) > 0.001
+    this.cameraDistanceScale = nextCameraScale
+
+    const qualityChanged = this.updateRenderQuality(w, h)
+    if (sizeChanged || qualityChanged) this.gl.setSize(w, h, false)
+    if (sizeChanged || framingChanged) {
+      this.camera.aspect = aspect
+      this.camera.updateProjectionMatrix()
+      this.positionCamera()
+    }
   }
 
   /**
@@ -174,14 +196,46 @@ export class Renderer {
     this.camTarget.x += (px - this.camTarget.x) * k
     this.camTarget.z += (pz - this.camTarget.z) * k
 
-    this.camera.position.set(
-      this.camTarget.x + CAM_OFFSET.x,
-      CAM_OFFSET.y,
-      this.camTarget.z + CAM_OFFSET.z,
-    )
-    this.camera.lookAt(this.camTarget.x, 0, this.camTarget.z)
+    this.positionCamera()
 
     this.gl.render(this.scene, this.camera)
+  }
+
+  /**
+   * 터치 중심 기기나 작은 화면에서는 픽셀 처리량과 그림자 맵 비용을 낮춘다.
+   * 화면 회전과 DPR 변경도 같은 resize 경로에서 즉시 반영된다.
+   */
+  private updateRenderQuality(width: number, height: number): boolean {
+    const constrained =
+      this.coarsePointer.matches || width <= 900 || Math.min(width, height) <= 700
+    const nextPixelRatio = Math.min(window.devicePixelRatio || 1, constrained ? 1.35 : 2)
+    const nextShadowMapSize = constrained ? 1024 : 2048
+    let changed = false
+
+    if (Math.abs(nextPixelRatio - this.pixelRatio) > 0.01) {
+      this.pixelRatio = nextPixelRatio
+      this.gl.setPixelRatio(nextPixelRatio)
+      changed = true
+    }
+
+    if (nextShadowMapSize !== this.shadowMapSize) {
+      this.shadowMapSize = nextShadowMapSize
+      this.sun.shadow.mapSize.set(nextShadowMapSize, nextShadowMapSize)
+      this.sun.shadow.map?.dispose()
+      this.sun.shadow.map = null
+      changed = true
+    }
+
+    return changed
+  }
+
+  private positionCamera(): void {
+    this.camera.position.set(
+      this.camTarget.x + CAM_OFFSET.x * this.cameraDistanceScale,
+      CAM_OFFSET.y * this.cameraDistanceScale,
+      this.camTarget.z + CAM_OFFSET.z * this.cameraDistanceScale,
+    )
+    this.camera.lookAt(this.camTarget.x, 0, this.camTarget.z)
   }
 
   /**

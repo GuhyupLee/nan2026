@@ -16,6 +16,11 @@ const app = document.getElementById('app')!
 const bootEl = document.getElementById('boot')!
 const hint = document.getElementById('hint')!
 const statsEl = document.getElementById('stats')!
+const coarsePointer = window.matchMedia('(pointer: coarse)').matches
+
+if (coarsePointer) {
+  hint.textContent = '전장을 밀어 이동 · 스킬 버튼 터치'
+}
 
 /**
  * 시드는 URL 파라미터로 고정할 수 있다 (?seed=42).
@@ -157,7 +162,7 @@ function frame(now: number): void {
     outcomeOpen = true
     choiceOpen = false
     accumulator = 0
-    input.pointerHeld = false
+    input.releaseMovement()
     hint.classList.add('hidden')
     skillBar.setVisible(false)
     hud.setVisible(false)
@@ -218,7 +223,7 @@ function beginRun(playerClass: PlayerClass): void {
   outcomeOpen = false
 
   // 직전 판의 포인터·1틱 입력·안내 상태가 새 판으로 넘어가지 않게 한다.
-  input.pointerHeld = false
+  input.releaseMovement()
   input.hasActed = false
   simInput.move.x = 0
   simInput.move.y = 0

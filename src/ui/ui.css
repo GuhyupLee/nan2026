@@ -19,6 +19,49 @@ button {
   font: inherit;
 }
 
+.touchstick {
+  --stick-x: 0px;
+  --stick-y: 0px;
+  position: fixed;
+  left: 0;
+  top: 0;
+  z-index: 5;
+  width: 112px;
+  height: 112px;
+  display: none;
+  transform: translate(-50%, -50%);
+  border: var(--ui-hairline) solid rgba(182, 195, 210, 0.35);
+  border-radius: 50%;
+  background:
+    linear-gradient(90deg, transparent calc(50% - 1px), rgba(190, 202, 216, 0.16) 50%, transparent calc(50% + 1px)),
+    linear-gradient(0deg, transparent calc(50% - 1px), rgba(190, 202, 216, 0.16) 50%, transparent calc(50% + 1px)),
+    rgba(8, 11, 16, 0.34);
+  box-shadow: inset 0 0 0 0.42rem rgba(5, 7, 10, 0.16);
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity 0.1s ease;
+}
+
+.touchstick[data-active='true'] {
+  display: block;
+  opacity: 1;
+}
+
+.touchstick-knob {
+  position: absolute;
+  left: 50%;
+  top: 50%;
+  width: 48px;
+  height: 48px;
+  transform:
+    translate(-50%, -50%)
+    translate(var(--stick-x), var(--stick-y));
+  border: var(--ui-hairline) solid rgba(230, 235, 241, 0.72);
+  border-radius: 50%;
+  background: rgba(86, 199, 232, 0.3);
+  box-shadow: inset 0 0 0 0.28rem rgba(5, 7, 10, 0.28);
+}
+
 /* --------------------------------------------------------------------------
    In-game HUD
    -------------------------------------------------------------------------- */
@@ -373,7 +416,7 @@ button {
   object-fit: cover;
 }
 
-.lvcard .slot {
+.lvcard .slot-label {
   padding: 0.12rem 0.32rem 0.1rem;
   border: 1px solid color-mix(in srgb, var(--accent) 68%, #3a424d);
   color: var(--accent);
@@ -713,7 +756,7 @@ button {
   clip-path: polygon(0 0, 100% 30%, 100% 70%, 0 100%);
 }
 
-.slot {
+.skillbar .slot {
   --p: 0;
   position: relative;
   width: 3.25rem;
@@ -738,11 +781,11 @@ button {
     background-color 0.1s ease;
 }
 
-.slot:active {
+.skillbar .slot:active {
   transform: translateY(2px);
 }
 
-.slot[data-kind='summoner'] {
+.skillbar .slot[data-kind='summoner'] {
   width: 2.7rem;
   height: 2.7rem;
   align-self: flex-end;
@@ -750,11 +793,11 @@ button {
   background: #171813;
 }
 
-.slot:not([data-kind='summoner']) + .slot[data-kind='summoner'] {
+.skillbar .slot:not([data-kind='summoner']) + .slot[data-kind='summoner'] {
   margin-left: 0.42rem;
 }
 
-.slot .glyph {
+.skillbar .slot .glyph {
   position: relative;
   z-index: 1;
   width: 100%;
@@ -767,22 +810,22 @@ button {
   line-height: 1;
 }
 
-.slot .glyph img,
-.slot .glyph picture {
+.skillbar .slot .glyph img,
+.skillbar .slot .glyph picture {
   width: 100%;
   height: 100%;
   display: block;
   object-fit: cover;
 }
 
-.slot .glyph-fallback {
+.skillbar .slot .glyph-fallback {
   display: grid;
   width: 100%;
   height: 100%;
   place-items: center;
 }
 
-.slot .key {
+.skillbar .slot .key {
   position: absolute;
   top: 0.2rem;
   left: 0.22rem;
@@ -799,7 +842,7 @@ button {
   text-align: center;
 }
 
-.slot .cd {
+.skillbar .slot .cd {
   position: absolute;
   inset: 0;
   z-index: 3;
@@ -810,7 +853,7 @@ button {
   pointer-events: none;
 }
 
-.slot .cdtext {
+.skillbar .slot .cdtext {
   position: absolute;
   inset: 0;
   z-index: 4;
@@ -824,11 +867,11 @@ button {
   pointer-events: none;
 }
 
-.slot[data-state='ready'] {
+.skillbar .slot[data-state='ready'] {
   border-color: #6c7581;
 }
 
-.slot[data-state='ready']:hover {
+.skillbar .slot[data-state='ready']:hover {
   border-color: var(--ui-cyan);
   background: #1a222b;
 }
@@ -837,7 +880,7 @@ button {
   border-color: var(--ui-crimson);
 }
 
-.slot[data-state='ready']::after {
+.skillbar .slot[data-state='ready']::after {
   content: '';
   position: absolute;
   right: 0;
@@ -853,12 +896,12 @@ button {
   background: var(--ui-crimson);
 }
 
-.slot[data-state='cooling'] {
+.skillbar .slot[data-state='cooling'] {
   border-color: #313842;
   background: #0d1117;
 }
 
-.slot[data-state='locked'] {
+.skillbar .slot[data-state='locked'] {
   border-style: dashed;
   border-color: #303640;
   color: #4f5864;
@@ -866,8 +909,8 @@ button {
   cursor: default;
 }
 
-.slot[data-state='locked'] .glyph,
-.slot[data-state='locked'] .key {
+.skillbar .slot[data-state='locked'] .glyph,
+.skillbar .slot[data-state='locked'] .key {
   opacity: 0.38;
 }
 
@@ -876,7 +919,7 @@ button {
   100% { border-color: #6c7581; filter: brightness(1); }
 }
 
-.slot.flash {
+.skillbar .slot.flash {
   animation: slot-ready-flash 0.32s ease-out;
 }
 
@@ -1159,17 +1202,17 @@ button {
     padding-inline: 0.3rem;
   }
 
-  .slot {
+  .skillbar .slot {
     width: 3rem;
     height: 3rem;
   }
 
-  .slot[data-kind='summoner'] {
+  .skillbar .slot[data-kind='summoner'] {
     width: 2.5rem;
     height: 2.5rem;
   }
 
-  .slot:not([data-kind='summoner']) + .slot[data-kind='summoner'] {
+  .skillbar .slot:not([data-kind='summoner']) + .slot[data-kind='summoner'] {
     margin-left: 0.2rem;
   }
 
@@ -1187,14 +1230,52 @@ button {
 }
 
 @media (pointer: coarse) {
-  .slot {
-    min-width: 3.25rem;
-    min-height: 3.25rem;
+  button,
+  .skillbar .slot {
+    touch-action: manipulation;
   }
 
-  .slot[data-kind='summoner'] {
-    min-width: 2.75rem;
-    min-height: 2.75rem;
+  .skillbar {
+    gap: 3px;
+    padding: 4px 4px 5px;
+    -webkit-touch-callout: none;
+  }
+
+  .skillbar .slot {
+    width: 48px;
+    height: 48px;
+    min-width: 48px;
+    min-height: 48px;
+  }
+
+  .skillbar .slot[data-kind='summoner'] {
+    width: 44px;
+    height: 44px;
+    min-width: 44px;
+    min-height: 44px;
+  }
+
+  .skillbar .slot .key {
+    top: 3px;
+    left: 3px;
+    min-width: 15px;
+    padding: 2px 3px;
+    font-size: 9px;
+  }
+
+  .outcome .restart,
+  .outcome .menu {
+    min-height: 48px;
+  }
+
+  .xpbar {
+    bottom: calc(var(--ui-safe-bottom) + 64px);
+  }
+
+  .charselect,
+  .levelup {
+    touch-action: pan-y;
+    overscroll-behavior: contain;
   }
 }
 
@@ -1256,6 +1337,7 @@ button {
 @media (prefers-reduced-motion: reduce) {
   .floatbar .fill,
   .floatbar .ghost,
+  .touchstick,
   .xpbar .fill,
   .bossbar .boss-fill,
   .levelup,
@@ -1263,7 +1345,7 @@ button {
   .charselect,
   .charcard,
   .charcard .portrait,
-  .slot,
+  .skillbar .slot,
   .outcome,
   .outcome .restart,
   .outcome .menu {

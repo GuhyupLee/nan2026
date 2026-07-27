@@ -84,7 +84,9 @@ export function showCharacterSelect(
 
     const foot = document.createElement('div')
     foot.className = 'footnote'
-    foot.textContent = '마우스를 누른 채 이동 · Q W E R 스킬 · D 회복 · F 점멸'
+    foot.textContent = window.matchMedia('(pointer: coarse)').matches
+      ? '전장을 밀어 이동 · 아래 스킬 버튼 터치 · D 회복 · F 점멸'
+      : '마우스를 누른 채 이동 · Q W E R 스킬 · D 회복 · F 점멸'
     root.appendChild(foot)
 
     let done = false

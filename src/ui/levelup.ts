@@ -160,7 +160,7 @@ export function showLevelUp(parent: HTMLElement, world: World): Promise<void> {
             ? `<img class="skill-icon" src="${import.meta.env.BASE_URL}${card.icon}" alt="">`
             : card.glyph
         }</div>` +
-        (card.slotLabel ? `<span class="slot">${card.slotLabel}</span>` : '') +
+        (card.slotLabel ? `<span class="slot-label">${card.slotLabel}</span>` : '') +
         `<span class="tag">${card.tag}</span>` +
         `</div>` +
         `<h3>${card.name}</h3>` +
