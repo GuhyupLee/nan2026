@@ -82,28 +82,28 @@ export type LevelReward =
   | 'unlock-last' // 남은 마지막 스킬을 확정 지급 (선택지가 1개면 선택이 아니다)
   | 'unlock-ult' // 궁극기 확정 지급
   | 'upgrade' // 강화 3택
-  | 'tactic' // 반복 가능한 즉시 전술 3택
+  | 'skill-rank' // 해금한 스킬 하나의 랭크를 올린다 (반복 가능)
 
 export const LEVEL_REWARDS: Readonly<Record<number, LevelReward>> = {
   2: 'unlock-choice',
   3: 'upgrade',
   4: 'unlock-choice',
   5: 'upgrade',
-  6: 'tactic',
+  6: 'skill-rank',
   7: 'unlock-last',
   8: 'unlock-ult',
-  9: 'tactic',
+  9: 'skill-rank',
   10: 'upgrade',
-  11: 'tactic',
+  11: 'skill-rank',
   12: 'upgrade',
   13: 'upgrade',
-  14: 'tactic',
+  14: 'skill-rank',
   15: 'upgrade',
-  16: 'tactic',
-  17: 'tactic',
+  16: 'skill-rank',
+  17: 'skill-rank',
   18: 'upgrade',
-  19: 'tactic',
-  20: 'tactic',
+  19: 'skill-rank',
+  20: 'skill-rank',
 }
 
 export interface Progression {
@@ -167,7 +167,7 @@ export function pendingReward(prog: Progression): LevelReward | null {
   if (prog.pendingLevelUps <= 0) return null
   // 여러 개가 밀려 있으면 낮은 레벨부터 처리한다.
   const level = prog.level - prog.pendingLevelUps + 1
-  return LEVEL_REWARDS[level] ?? 'tactic'
+  return LEVEL_REWARDS[level] ?? 'skill-rank'
 }
 
 /** 대기 중인 레벨업 하나를 소진한다. 선택 적용 후 호출한다. */

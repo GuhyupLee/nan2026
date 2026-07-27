@@ -228,7 +228,7 @@ console.log('\nsim smoke check\n')
   check('Lv6 전술 보상도 선택창을 연다', w.awaitingChoice && w.progression.pendingLevelUps === 1)
   check(
     'Lv6 보상은 반복 가능한 전술 3택이다',
-    pendingReward(w.progression) === 'tactic',
+    pendingReward(w.progression) === 'skill-rank',
   )
   check(
     'Lv2~20의 모든 레벨에 보상이 지정되어 있다',

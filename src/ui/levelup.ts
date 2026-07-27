@@ -1,7 +1,14 @@
 import { getSkillDef } from '../content/skills.ts'
 import { UPGRADES, getUpgrade } from '../content/upgrades.ts'
 import { pendingReward, rollUpgrades, type UpgradeCandidate } from '../sim/progression.ts'
-import { SKILL_IDS, lockedChoosableSkills, unlockSkill, type SkillId } from '../sim/skills.ts'
+import {
+  MAX_SKILL_RANK,
+  lockedChoosableSkills,
+  rankUpSkill,
+  rankableSkills,
+  unlockSkill,
+  type SkillId,
+} from '../sim/skills.ts'
 import type { World } from '../sim/types.ts'
 
 /**
@@ -16,12 +23,12 @@ import type { World } from '../sim/types.ts'
  *   Lv7    마지막 스킬 확정 지급 — 카드가 1장뿐인 선택은 선택이 아니다
  *   Lv8    궁극기 확정 지급
  *   지정 레벨  영구 강화 3택
- *   나머지  반복 가능한 즉시 전술 3택
+ *   나머지  스킬 랭크업 3택 (반복 가능)
  */
 
 interface Card {
   id: string
-  kind: 'unlock' | 'upgrade' | 'tactic'
+  kind: 'unlock' | 'upgrade' | 'skill-rank'
   accent: string
   icon?: string
   glyph: string
@@ -31,35 +38,6 @@ interface Card {
   desc: string
 }
 
-const TACTIC_CARDS: readonly Card[] = [
-  {
-    id: 'emergency-repair',
-    kind: 'tactic',
-    accent: '#6fd39a',
-    glyph: '✚',
-    tag: '즉시 전술',
-    name: '응급 정비',
-    desc: '최대 체력의 30%를 즉시 회복합니다.',
-  },
-  {
-    id: 'realign',
-    kind: 'tactic',
-    accent: '#70b8ee',
-    glyph: '↻',
-    tag: '즉시 전술',
-    name: '재정렬',
-    desc: '해금한 모든 스킬의 남은 재사용 대기시간을 65% 줄입니다.',
-  },
-  {
-    id: 'combat-acceleration',
-    kind: 'tactic',
-    accent: '#e7b85f',
-    glyph: '»',
-    tag: '즉시 전술',
-    name: '전투 가속',
-    desc: '기본 공격을 즉시 준비하고 8초 동안 이동 속도가 증가합니다.',
-  },
-]
 
 function upgradeCandidates(world: World): UpgradeCandidate[] {
   return UPGRADES.map((u) => ({
@@ -85,11 +63,53 @@ function skillCard(world: World, id: SkillId): Card | null {
   }
 }
 
+/**
+ * 스킬 랭크업 카드.
+ *
+ * 즉시 전술(체력 회복·쿨다운 초기화 같은 일회성 효과)을 대체한다.
+ * 전술은 8번 등장하는데 항상 같은 카드 3장이라 세 번째부터 노이즈였고,
+ * 무엇보다 소모품이라 "영구히 강해진다"는 이 장르의 도파민이 없었다.
+ *
+ * QWER을 찍어 올리는 건 롤·이터널 리턴의 핵심 문법이기도 하다.
+ * 지금까지 스킬은 해금된 뒤 영원히 그대로였다.
+ */
+function rankCards(world: World): Card[] {
+  const ids = rankableSkills(world.skills)
+  if (ids.length === 0) return []
+
+  // 랭크가 낮은 것부터 보여준다. 몰아주기와 고루 찍기 둘 다 가능하되
+  // "아직 안 찍은 스킬"이 먼저 눈에 들어와야 선택이 의미를 갖는다.
+  const sorted = [...ids].sort((a, b) => world.skills[a].rank - world.skills[b].rank)
+
+  const out: Card[] = []
+  for (const id of sorted.slice(0, 3)) {
+    const def = getSkillDef(world.playerClass, id)
+    if (!def) continue
+    const next = world.skills[id].rank + 1
+    out.push({
+      id: `rank:${id}`,
+      kind: 'skill-rank',
+      accent: world.playerClass === 'melee' ? '#ff5a6e' : '#4dd0ff',
+      icon: def.icon,
+      glyph: def.glyph,
+      slotLabel: def.key,
+      tag: `스킬 강화 · Lv${next}`,
+      name: `${def.name} +1`,
+      desc: `피해 +20%, 재사용 대기시간 −5% (Lv${next}/${MAX_SKILL_RANK})`,
+    })
+  }
+  return out
+}
+
 /** 이번 레벨업에 보여줄 카드를 정한다. */
 function buildCards(world: World): Card[] {
   const reward = pendingReward(world.progression)
 
-  if (reward === 'tactic') return TACTIC_CARDS.map((card) => ({ ...card }))
+  if (reward === 'skill-rank') {
+    const cards = rankCards(world)
+    // 전부 만렙이면 영구 강화로 흘려보낸다. 빈 화면을 띄우지 않는다.
+    if (cards.length > 0) return cards
+  }
 
   if (reward === 'unlock-choice' || reward === 'unlock-last') {
     const locked = lockedChoosableSkills(world.skills)
@@ -133,21 +153,9 @@ function applyCard(world: World, card: Card): void {
     return
   }
 
-  if (card.kind === 'tactic') {
-    if (card.id === 'emergency-repair') {
-      world.player.hp = Math.min(
-        world.stats.maxHp,
-        world.player.hp + world.stats.maxHp * 0.3,
-      )
-    } else if (card.id === 'realign') {
-      for (const id of SKILL_IDS) {
-        const skill = world.skills[id]
-        if (skill.unlocked) skill.cooldown *= 0.35
-      }
-    } else if (card.id === 'combat-acceleration') {
-      world.player.attackCooldown = 0
-      world.player.speedBoostUntil = Math.max(world.player.speedBoostUntil, world.time + 8)
-    }
+  if (card.kind === 'skill-rank') {
+    // id는 "rank:q" 형태다.
+    rankUpSkill(world.skills, card.id.slice(5) as SkillId)
     return
   }
 
@@ -170,7 +178,7 @@ export function showLevelUp(parent: HTMLElement, world: World): Promise<void> {
   if (cards.length === 0) return Promise.resolve()
 
   const isUnlock = cards[0]!.kind === 'unlock'
-  const isTactic = cards[0]!.kind === 'tactic'
+  const isRank = cards[0]!.kind === 'skill-rank'
   const single = cards.length === 1
 
   return new Promise((resolve) => {
@@ -186,8 +194,8 @@ export function showLevelUp(parent: HTMLElement, world: World): Promise<void> {
           ? single
             ? '새로운 힘을 얻었다'
             : '스킬을 해금하세요'
-          : isTactic
-            ? '전술을 선택하세요'
+          : isRank
+            ? '스킬을 강화하세요'
             : '강화를 선택하세요'
       }</h2>`
     root.appendChild(banner)

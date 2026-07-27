@@ -2,7 +2,7 @@ import { ARENA_RADIUS } from './constants.ts'
 import { damageEnemy } from './damage.ts'
 import { ENEMY_TYPES } from './enemies.ts'
 import { nearestEnemy, queryCircle, queryCone, querySegment } from './query.ts'
-import { consumeCooldown, type SkillId } from './skills.ts'
+import { consumeCooldown, skillDamageMul, type SkillId } from './skills.ts'
 import { applyImpulse, applyMark, applyPull, applyRoot, applySlow } from './status.ts'
 import type { World } from './types.ts'
 import { pushBlast, pushZone } from './zones.ts'
@@ -83,6 +83,16 @@ function teleport(world: World, x: number, y: number): void {
   p.vel.y = 0
 }
 
+/**
+ * 스킬 랭크가 반영된 피해.
+ *
+ * 모든 스킬 피해가 이 함수를 거친다. 각 스킬이 직접 곱하면 반드시
+ * 하나가 빠지고, 그 스킬만 찍어도 안 세지는 버그가 된다.
+ */
+function dmg(world: World, slot: SkillId, base: number): number {
+  return base * skillDamageMul(world.skills, slot)
+}
+
 /** 거리순으로 정렬된 적을 모으는 임시 버퍼. */
 const hits: { i: number; d2: number }[] = []
 
@@ -131,9 +141,9 @@ function rangedQ(world: World): void {
 
     if (k === 0) {
       applyRoot(pool, i, now, 0.6)
-      damageEnemy(world, i, 70)
+      damageEnemy(world, i, dmg(world, 'q', 70))
     } else {
-      damageEnemy(world, i, 40)
+      damageEnemy(world, i, dmg(world, 'q', 40))
     }
   }
 
@@ -198,7 +208,7 @@ function rangedE(world: World): void {
     x: tx,
     y: ty,
     radius: 6,
-    damage: 125,
+    damage: dmg(world, 'e', 125),
     impulse: 26,
     markDuration: MARK_DURATION,
     slowMul: 1,
@@ -249,7 +259,7 @@ function rangedR(world: World): void {
     if (side === 0) side = i % 2 === 0 ? 1 : -1
     applyImpulse(pool, i, nx * (side > 0 ? 1 : -1), ny * (side > 0 ? 1 : -1), 32)
     // 잡몹은 예외 없이 전멸한다. 예외가 없어야 심사자가 한 번 보고 규칙을 배운다.
-    damageEnemy(world, i, 1700)
+    damageEnemy(world, i, dmg(world, 'r', 1700))
   })
 
   emitBeam(world, x0, y0, x1, y1, 5.5, 2)
@@ -289,7 +299,7 @@ function meleeQ(world: World): void {
       applyImpulse(pool, i, pool.x[i]! - p.pos.x, pool.y[i]! - p.pos.y, 16)
     }
 
-    damageEnemy(world, i, k === 0 ? 76 : 38)
+    damageEnemy(world, i, dmg(world, 'q', k === 0 ? 76 : 38))
   }
 
   emitBeam(world, p.pos.x, p.pos.y, x1, y1, 2.4, 3)
@@ -326,12 +336,12 @@ function meleeW(world: World): void {
   // 지나온 경로
   querySegment(pool, world.enemyHash, fromX, fromY, p.pos.x, p.pos.y, 2.2, (i) => {
     applyMark(pool, i, now, MARK_DURATION)
-    damageEnemy(world, i, 60)
+    damageEnemy(world, i, dmg(world, 'w', 60))
   })
   // 착지 지점 — 경로와 겹치면 120이 들어가 브루트가 정확히 한 사이클에 죽는다.
   queryCircle(pool, world.enemyHash, p.pos.x, p.pos.y, 3.5, (i) => {
     applyImpulse(pool, i, pool.x[i]! - p.pos.x, pool.y[i]! - p.pos.y, 30)
-    damageEnemy(world, i, 60)
+    damageEnemy(world, i, dmg(world, 'w', 60))
   })
 
   emitBeam(world, fromX, fromY, p.pos.x, p.pos.y, 3, 3)
@@ -362,7 +372,7 @@ function meleeE(world: World): void {
     x: p.pos.x,
     y: p.pos.y,
     radius: 6,
-    damage: 140,
+    damage: dmg(world, 'e', 140),
     impulse: 10,
     markDuration: MARK_DURATION,
     slowMul: 1,
@@ -416,7 +426,7 @@ function stepMeleeUlt(world: World): void {
   const damage = last ? 430 : 260
   queryCircle(pool, world.enemyHash, p.pos.x, p.pos.y, radius, (i) => {
     applyMark(pool, i, now, MARK_DURATION)
-    damageEnemy(world, i, damage)
+    damageEnemy(world, i, dmg(world, 'r', damage))
   })
 
   emitRing(world, p.pos.x, p.pos.y, radius, 3)

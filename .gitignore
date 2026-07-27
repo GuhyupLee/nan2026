@@ -3,3 +3,6 @@ dist/
 *.local
 .DS_Store
 Thumbs.db
+
+# 임시 계측·검토 스크립트 (tools/_로 시작). 커밋하지 않는다.
+tools/_*

@@ -111,6 +111,41 @@ export function unlockedCount(book: SkillBook): number {
   return SKILL_IDS.reduce((n, id) => n + (book[id].unlocked ? 1 : 0), 0)
 }
 
+/**
+ * 스킬 레벨(랭크) 상한.
+ *
+ * 5분에 레벨업이 19번이고 영구 강화 풀은 13종뿐이라 보상이 모자란다.
+ * 그 구멍을 일회성 소모품으로 메우면 "영구히 강해진다"는 장르의 도파민이
+ * 사라지므로, QWER 자체를 찍어 올리는 MOBA 문법으로 채운다.
+ * 스킬 4개 × 4랭크 = 16장이면 남는 레벨업을 전부 덮는다.
+ */
+export const MAX_SKILL_RANK = 4
+
+/** 랭크당 스킬 피해 증가율. 랭크 4에서 1.8배. */
+const RANK_DAMAGE_STEP = 0.2
+/** 랭크당 쿨다운 감소율. 랭크 4에서 0.8배. */
+const RANK_COOLDOWN_STEP = 0.05
+
+/** 랭크가 반영된 스킬 피해 배수. */
+export function skillDamageMul(book: SkillBook, id: SkillId): number {
+  return 1 + RANK_DAMAGE_STEP * book[id].rank
+}
+
+/** 한 랭크 올린다. 상한에 걸리면 false. */
+export function rankUpSkill(book: SkillBook, id: SkillId): boolean {
+  const s = book[id]
+  if (!s.unlocked || s.rank >= MAX_SKILL_RANK) return false
+  s.rank += 1
+  // 쿨다운 단축은 최대 쿨다운에 즉시 반영한다. 다음 시전부터 체감된다.
+  s.maxCooldown *= 1 - RANK_COOLDOWN_STEP
+  return true
+}
+
+/** 지금 랭크를 더 올릴 수 있는 스킬. 레벨업 카드가 이 목록에서 뽑는다. */
+export function rankableSkills(book: SkillBook): SkillId[] {
+  return SKILL_IDS.filter((id) => book[id].unlocked && book[id].rank < MAX_SKILL_RANK)
+}
+
 /** 쿨다운 진행률 0..1. UI의 부채꼴 게이지가 이 값을 쓴다. */
 export function cooldownProgress(book: SkillBook, id: SkillId): number {
   const s = book[id]
