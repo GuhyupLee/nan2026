@@ -113,6 +113,9 @@ const TRACER_CORE_COLORS = [0xf4fdff, 0xdcf9ff, 0xffffff, 0xffc0cc]
 const ZONE_COLORS = [0x4dd0ff, 0x865cff]
 
 export class EnemyRenderer {
+  // SkillFx owns live skill layers. Legacy routines stay referenced for source
+  // compatibility, but never submit their duplicate instances.
+  private static readonly LEGACY_SKILL_FX = false
   private readonly batches: TypeBatch[] = []
   private readonly pops: Pop[] = []
   private readonly rings: Ring[] = []
@@ -323,9 +326,14 @@ export class EnemyRenderer {
   update(world: World, alpha: number, dt: number): void {
     this.drawEnemies(world, alpha)
     this.drawPops(world, dt)
-    this.drawFields(world)
-    this.drawTracers(world, dt)
-    this.drawRings(world, dt)
+    if (EnemyRenderer.LEGACY_SKILL_FX) {
+      this.drawFields(world)
+      this.drawRings(world, dt)
+      this.drawTracers(world, dt)
+    }
+    // 스킬·장판·예광선은 ShaderMaterial 풀을 쓰는 SkillFx가 전담한다.
+    // 옛 메시 경로까지 함께 갱신하면 같은 이벤트가 두 번 보이고 드로우콜도
+    // 중복된다. 아래 레거시 메서드는 이전 저장 데이터 호환용으로만 남긴다.
   }
 
   /** 지속 장판과 아직 터지지 않은 폭발의 위험 반경. */

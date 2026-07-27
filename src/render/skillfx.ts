@@ -1,6 +1,6 @@
 import * as THREE from 'three'
 
-import type { World } from '../sim/types.ts'
+import type { CastEvent, World } from '../sim/types.ts'
 import { lerp } from '../sim/vec.ts'
 
 /**
@@ -1258,6 +1258,7 @@ export class SkillFx {
     const px = lerp(world.player.prevPos.x, world.player.pos.x, alpha)
     const pz = lerp(world.player.prevPos.y, world.player.pos.y, alpha)
 
+    this.captureCasts(world)
     this.captureTracers(world)
     this.captureRings(world)
     this.capturePierce(world)
@@ -1275,6 +1276,121 @@ export class SkillFx {
   // -------------------------------------------------------------------------
   // 수집
   // -------------------------------------------------------------------------
+
+  /**
+   * QWER 시전 서명.
+   *
+   * 예광선·링·장판은 "무엇이 맞았는가"를 보여 주는 결과 이벤트다. 그것만
+   * 역추론하면 순간이동 뒤 출발점을 잃고, 일현 W/E도 원형 범위 표시가 먼저
+   * 보여 두 클래스가 같은 마법처럼 읽힌다. CastEvent의 시전 순간 선분을
+   * 직접 소비해 일현은 오직 선, 월아는 오직 호와 원으로 첫 프레임을 연다.
+   *
+   * 아래 8개 분기는 모두 constructor에서 미리 만든 FxPool 객체만 acquire한다.
+   * 시전 중 지오메트리·머티리얼·Object3D를 새로 만들지 않는다.
+   */
+  private captureCasts(world: World): void {
+    for (let i = 0; i < world.casts.length; i++) {
+      const cast = world.casts[i]!
+      if (
+        cast.slot !== 'q' &&
+        cast.slot !== 'w' &&
+        cast.slot !== 'e' &&
+        cast.slot !== 'r'
+      ) {
+        continue
+      }
+
+      if (world.playerClass === 'ranged') this.spawnRangedCast(cast)
+      else this.spawnMeleeCast(cast)
+    }
+  }
+
+  /** 일현(日弦): Q/W/E/R 모두 시작점과 도착점을 잇는 선형 서명이다. */
+  private spawnRangedCast(cast: CastEvent): void {
+    const x0 = cast.originX
+    const z0 = cast.originY
+    const x1 = cast.targetX
+    const z1 = cast.targetY
+    const nx = -Math.sin(cast.angle)
+    const nz = Math.cos(cast.angle)
+
+    switch (cast.slot) {
+      case 'q':
+        // 섬광 — 기존 시안 관통광 안을 가르는 짧은 은백색 활시위.
+        this.spawnBeam(
+          x0, z0, x1, z1, BEAM_LANCE, 0.1, 0.14,
+          HEX_SILVER, GAIN_WHITE, 1.08,
+        )
+        break
+      case 'w':
+        // 굴절 — 평행한 두 잔상이 출발·착지점을 한 번에 연결한다.
+        this.spawnBeam(
+          x0 + nx * 0.2, z0 + nz * 0.2, x1 + nx * 0.2, z1 + nz * 0.2,
+          BEAM_BLADE, 0.08, 0.2, HEX_CYAN, GAIN_CYAN, 0.9,
+        )
+        this.spawnBeam(
+          x0 - nx * 0.2, z0 - nz * 0.2, x1 - nx * 0.2, z1 - nz * 0.2,
+          BEAM_BLADE, 0.06, 0.16, HEX_SILVER, GAIN_WHITE, 1.1,
+        )
+        break
+      case 'e': {
+        // 분광 — 목표까지 실제로 전진하는 금백색 광탄. 폭발 원보다 먼저 읽힌다.
+        const travel = THREE.MathUtils.clamp(Math.hypot(x1 - x0, z1 - z0) / 45, 0.18, 0.32)
+        this.spawnBeam(
+          x0, z0, x1, z1, BEAM_BOLT, 0.3, travel,
+          HEX_GOLD, GAIN_GOLD, 1.05,
+        )
+        break
+      }
+      case 'r':
+        // 일현 — 광폭 빔의 양쪽 레일. 화면 끝까지 선형이라는 사실을 즉시 박는다.
+        this.spawnBeam(
+          x0 + nx * 0.34, z0 + nz * 0.34, x1 + nx * 0.34, z1 + nz * 0.34,
+          BEAM_LANCE, 0.09, 0.18, HEX_GOLD, GAIN_GOLD, 1.02,
+        )
+        this.spawnBeam(
+          x0 - nx * 0.34, z0 - nz * 0.34, x1 - nx * 0.34, z1 - nz * 0.34,
+          BEAM_LANCE, 0.07, 0.15, HEX_SILVER, GAIN_WHITE, 1.12,
+        )
+        break
+    }
+  }
+
+  /** 월아(月牙): Q/W/E/R 모두 시전 중심을 감싸는 호 또는 완전한 원이다. */
+  private spawnMeleeCast(cast: CastEvent): void {
+    const x0 = cast.originX
+    const z0 = cast.originY
+    const x1 = cast.targetX
+    const z1 = cast.targetY
+
+    switch (cast.slot) {
+      case 'q':
+        // 인월참 — 정면을 물어뜯는 단일 초승달.
+        this.spawnSlash(x0, z0, cast.angle, 1.7, 3.5, 0.19, 1.15, x0, z0, false)
+        break
+      case 'w':
+        // 이합참 — 출발점에서 닫히고 착지점에서 열리는 한 쌍의 반월.
+        this.spawnSlash(
+          x0, z0, cast.angle + Math.PI, 2.1, 2.8, 0.18, 1.0, x0, z0, false,
+        )
+        this.spawnSlash(x1, z1, cast.angle, 2.7, 3.7, 0.24, 1.3, x1, z1, false)
+        break
+      case 'e':
+        // 월륜 — 바깥 판정 링과 겹치기 전 안쪽에서 한 바퀴 도는 칼날.
+        this.spawnSlash(x0, z0, cast.angle, TAU, 5.8, 0.34, 1.45, x0, z0, false)
+        this.spawnRing(x0, z0, 6.3, 0.36, 3, HEX_CRIMSON, GAIN_CRIMSON)
+        break
+      case 'r':
+        // 만월난무 — 은빛 만월이 먼저 차오르고 크림슨 칼날이 외곽을 닫는다.
+        this.spawnRing(x0, z0, 3.4, 0.34, 3, HEX_SILVER, GAIN_WHITE)
+        this.spawnSlash(x0, z0, cast.angle, TAU, 5.1, 0.46, 1.7, x0, z0, false)
+        this.spawnFlare(
+          x0, 0.85, z0, 1.35, cast.angle,
+          FLARE_PIERCE, 0.26, HEX_CRIMSON, GAIN_CRIMSON,
+        )
+        break
+    }
+  }
 
   private captureTracers(world: World): void {
     const melee = world.playerClass === 'melee'
@@ -1578,6 +1694,26 @@ export class SkillFx {
     f.t = 0
     f.dur = dur
     this.setColor(f, hex, gain)
+  }
+
+  private spawnRing(
+    x: number,
+    z: number,
+    radius: number,
+    dur: number,
+    style: number,
+    hex: number,
+    gain: number,
+  ): void {
+    const r = this.rings.acquire()
+    r.x = x
+    r.z = z
+    r.radius = radius
+    r.t = 0
+    r.dur = dur
+    r.style = style
+    r.seed = seedFrom(x + radius * 0.13, z - radius * 0.07)
+    this.setColor(r, hex, gain)
   }
 
   /** 링/참격 중복 방지 — 같은 자리에서 방금 시작한 참격이 있으면 두 번 그리지 않는다. */

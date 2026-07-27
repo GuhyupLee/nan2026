@@ -14,6 +14,7 @@ import {
   RUN_TIME_LIMIT,
 } from '../src/sim/constants.ts'
 import { damageEnemy } from '../src/sim/damage.ts'
+import { castSkill } from '../src/sim/kits.ts'
 import {
   BOSS_CHARGE_AT,
   BOSS_INTRO_DURATION,
@@ -392,6 +393,38 @@ console.log('\nsim smoke check\n')
     w.skills.f.maxCooldown === FLASH_COOLDOWN,
     `${w.skills.f.maxCooldown}`,
   )
+}
+
+// --- 8개 QWER 시전 이벤트는 렌더러가 역추론 없이 그릴 수 있어야 한다 ---
+{
+  const slots = ['q', 'w', 'e', 'r'] as const
+  let emitted = 0
+  let selfContained = true
+
+  for (const playerClass of ['ranged', 'melee'] as const) {
+    for (const slot of slots) {
+      const w = createWorld(70 + emitted, playerClass)
+      w.spawnEnabled = false
+      w.lastAim.x = 8
+      w.lastAim.y = 3
+      unlockSkill(w.skills, slot, 1)
+
+      const cast = castSkill(w, slot) ? w.casts[0] : undefined
+      if (cast) emitted++
+      selfContained =
+        selfContained &&
+        cast !== undefined &&
+        cast.slot === slot &&
+        Number.isFinite(cast.angle) &&
+        Number.isFinite(cast.originX) &&
+        Number.isFinite(cast.originY) &&
+        Number.isFinite(cast.targetX) &&
+        Number.isFinite(cast.targetY)
+    }
+  }
+
+  check('두 클래스 QWER 8개가 모두 world.casts를 발행한다', emitted === 8, `${emitted}/8`)
+  check('시전 이벤트가 시작점·도착점을 완전하게 보존한다', selfContained)
 }
 
 // --- 클래스 ---

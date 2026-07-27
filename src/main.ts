@@ -351,12 +351,14 @@ async function start(): Promise<void> {
   // 모바일은 다운로드와 파싱을 건너뛰고 기존 프로시저럴 경량 모델을 쓴다.
   if (useVrmModels) startVrmPreload()
   await showMainMenu(document.body, () => showSettings(document.body, audio, input))
-  await audio.unlock()
+  // 일부 WebView는 AudioContext.resume() Promise를 사용자 제스처가 끝난 뒤에도
+  // 오래 보류한다. 사운드는 best-effort 기능이므로 화면 전환을 막지 않는다.
+  void audio.unlock()
   audio.ui('select')
   const playerClass = await showCharacterSelect(document.body, undefined, () =>
     showSettings(document.body, audio, input),
   )
-  await audio.unlock()
+  void audio.unlock()
   audio.ui('select')
 
   // 아직 안 받았으면 여기서 기다린다. 실패해도 false가 올 뿐이고,
