@@ -68,14 +68,50 @@ export const CLASS_OPTIONS: ClassOption[] = [
 export function showCharacterSelect(
   parent: HTMLElement,
   options: readonly ClassOption[] = CLASS_OPTIONS,
+  onSettings?: () => Promise<void> | void,
 ): Promise<PlayerClass> {
   return new Promise((resolve) => {
     const root = document.createElement('div')
     root.className = 'charselect'
+    root.setAttribute('role', 'dialog')
+    root.setAttribute('aria-modal', 'true')
+    root.setAttribute('aria-labelledby', 'charselect-title')
 
     const title = document.createElement('div')
     title.className = 'title'
-    title.innerHTML = `<h2>캐릭터 선택</h2><p>5분. 보스를 쓰러뜨리면 승리.</p>`
+
+    const titleCopy = document.createElement('div')
+    titleCopy.className = 'title-copy'
+    titleCopy.innerHTML =
+      `<h2 id="charselect-title">캐릭터 선택</h2>` +
+      `<p>5분 안에 보스를 쓰러뜨리면 승리.</p>`
+    title.appendChild(titleCopy)
+
+    let settingsOpen = false
+    if (onSettings) {
+      const settings = document.createElement('button')
+      settings.className = 'charselect-settings'
+      settings.type = 'button'
+      settings.textContent = '설정'
+
+      const openSettings = async (): Promise<void> => {
+        if (done || settingsOpen) return
+        settingsOpen = true
+        window.removeEventListener('keydown', onKey)
+        try {
+          await onSettings()
+        } finally {
+          settingsOpen = false
+          if (!done) {
+            window.addEventListener('keydown', onKey)
+            settings.focus()
+          }
+        }
+      }
+
+      settings.addEventListener('click', () => void openSettings())
+      title.appendChild(settings)
+    }
     root.appendChild(title)
 
     const cards = document.createElement('div')
@@ -91,7 +127,7 @@ export function showCharacterSelect(
 
     let done = false
     const choose = (id: PlayerClass): void => {
-      if (done) return
+      if (done || settingsOpen) return
       done = true
       window.removeEventListener('keydown', onKey)
       root.classList.add('closing')
@@ -139,11 +175,13 @@ export function showCharacterSelect(
     }
 
     const onKey = (e: KeyboardEvent): void => {
+      if (e.repeat || settingsOpen) return
       const hit = options.find((o) => o.hotkey === e.key)
       if (hit) choose(hit.id)
     }
     window.addEventListener('keydown', onKey)
 
     parent.appendChild(root)
+    ;(cards.firstElementChild as HTMLButtonElement | null)?.focus()
   })
 }

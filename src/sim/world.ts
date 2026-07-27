@@ -1,4 +1,4 @@
-import { ARENA_RADIUS, DT, PLAYER_ACCEL } from './constants.ts'
+import { ARENA_RADIUS, DT, PLAYER_ACCEL, RUN_TIME_LIMIT } from './constants.ts'
 import { currentSpeed, stepAbilities } from './abilities.ts'
 import { stepAutoAttack } from './combat.ts'
 import { sweepDead } from './damage.ts'
@@ -14,7 +14,12 @@ import {
   stepEnemies,
   updateSpawner,
 } from './enemies.ts'
-import { addXp, consumeLevelUp, createProgression } from './progression.ts'
+import {
+  MELEE_XP_GAIN_MULTIPLIER,
+  addXp,
+  consumeLevelUp,
+  createProgression,
+} from './progression.ts'
 import { createRng } from './rng.ts'
 import { createSkillBook, tickSkills, unlockSkill } from './skills.ts'
 import { createStats } from './stats.ts'
@@ -136,7 +141,9 @@ export function stepWorld(world: World, input: Input): void {
   // 근접 패시브 게이지는 적을 센 뒤에 돌려야 이번 틱 배치를 반영한다.
   stepGauge(world, DT)
   stepKits(world)
-  stepZones(world)
+  // 이 틱이 끝나는 정확한 시각까지 예약된 판정을 처리한다. 그래야 5:00에
+  // 발동하는 지연 폭발과 장판 피해도 제한 시간의 마지막 공격으로 인정된다.
+  stepZones(world, (world.tick + 1) * DT)
   stepAutoAttack(world, world.enemies, world.enemyHash, world.tracers)
 
   // 사망 처리는 모든 판정이 끝난 뒤 한 번만. 질의 도중에 배열을 흔들면
@@ -145,6 +152,17 @@ export function stepWorld(world: World, input: Input): void {
 
   world.tick += 1
   world.time = world.tick * DT
+
+  // 모든 공격·지연 폭발·사망 스윕이 끝난 뒤 판정한다. 제한 시각이 되는 바로 그
+  // 틱에 보스를 처치했다면 damageEnemy가 설정한 victory가 timeout보다 우선한다.
+  if (
+    world.outcome === 'alive' &&
+    world.boss.spawned &&
+    world.boss.active &&
+    world.time >= RUN_TIME_LIMIT
+  ) {
+    world.outcome = 'timeout'
+  }
 }
 
 /**
@@ -164,7 +182,8 @@ export function drainEvents(world: World): void {
  * XP는 반드시 이 함수를 통해서만 들어온다 — awaitingChoice 동기화를 놓치지 않기 위해서다.
  */
 export function grantXp(world: World, amount: number): void {
-  addXp(world.progression, amount, world.time)
+  const classMultiplier = world.playerClass === 'melee' ? MELEE_XP_GAIN_MULTIPLIER : 1
+  addXp(world.progression, amount * classMultiplier, world.time)
   world.awaitingChoice = world.progression.pendingLevelUps > 0
 }
 

@@ -1,5 +1,6 @@
 import { xpToNext } from '../sim/progression.ts'
 import type { World } from '../sim/types.ts'
+import { RUN_TIME_LIMIT } from '../sim/constants.ts'
 
 /**
  * HUD — 캐릭터 위 체력바 + 하단 경험치 바 + 타이머.
@@ -94,11 +95,17 @@ export class Hud {
       ? `${Math.min(100, (prog.xp / need) * 100).toFixed(1)}%`
       : '100%'
 
-    // --- 타이머 ---
-    const t = Math.max(0, world.time)
-    const mm = Math.floor(t / 60)
-    const ss = Math.floor(t % 60)
+    // --- 제한 시간 ---
+    // 경과 시간보다 "얼마나 남았는가"가 보스전의 의사결정에 직접 필요하다.
+    // 마지막 30초에는 색과 점멸로 시선을 끌되, 보스 등장 전에는 조용히 둔다.
+    const t = Math.max(0, RUN_TIME_LIMIT - world.time)
+    const wholeSeconds = Math.ceil(t)
+    const mm = Math.floor(wholeSeconds / 60)
+    const ss = wholeSeconds % 60
     this.clock.textContent = `${mm}:${String(ss).padStart(2, '0')}`
+    this.clock.dataset.phase =
+      world.boss.active && t <= 30 ? 'critical' : world.boss.active ? 'boss' : 'normal'
+    this.clock.setAttribute('aria-label', `남은 시간 ${mm}분 ${ss}초`)
   }
 
   setVisible(visible: boolean): void {

@@ -61,8 +61,7 @@ export function pushBlast(world: World, b: PendingBlast): void {
 }
 
 /** 장판과 지연 폭발을 한 틱 진행시킨다. */
-export function stepZones(world: World): void {
-  const now = world.time
+export function stepZones(world: World, now = world.time): void {
   const pool = world.enemies
   const hash = world.enemyHash
 

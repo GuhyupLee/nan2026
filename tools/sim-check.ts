@@ -7,7 +7,12 @@
  *
  *   npx tsx tools/sim-check.ts
  */
-import { ARENA_RADIUS, DT, FLASH_COOLDOWN } from '../src/sim/constants.ts'
+import {
+  ARENA_RADIUS,
+  DT,
+  FLASH_COOLDOWN,
+  RUN_TIME_LIMIT,
+} from '../src/sim/constants.ts'
 import { damageEnemy } from '../src/sim/damage.ts'
 import {
   BOSS_MAX_HP,
@@ -15,12 +20,14 @@ import {
   TYPE_BOSS,
   TYPE_WALKER,
   createEnemyPool,
+  enemyHealthMultiplier,
   removeEnemy,
   spawnBoss,
   spawnEnemy,
   targetAliveCount,
 } from '../src/sim/enemies.ts'
 import {
+  LEVEL_REWARDS,
   MAX_LEVEL,
   TARGET_LEVEL_TIMES,
   XP_FOR_NEXT,
@@ -44,6 +51,7 @@ import { effectiveAtkDamage, effectiveAtkInterval } from '../src/sim/stats.ts'
 import { createInput } from '../src/sim/types.ts'
 import { length } from '../src/sim/vec.ts'
 import { createWorld, grantXp, resolveLevelUp, stepWorld } from '../src/sim/world.ts'
+import { pushBlast } from '../src/sim/zones.ts'
 
 let failures = 0
 
@@ -153,9 +161,10 @@ console.log('\nsim smoke check\n')
   )
   check(
     '만렙 도달 목표가 5분 안이다',
-    TARGET_LEVEL_TIMES[MAX_LEVEL - 1]! < 300,
+    TARGET_LEVEL_TIMES[MAX_LEVEL - 1]! < RUN_TIME_LIMIT,
     `${TARGET_LEVEL_TIMES[MAX_LEVEL - 1]}s`,
   )
+  check('최대 레벨은 20이다', MAX_LEVEL === 20, `MAX_LEVEL=${MAX_LEVEL}`)
 }
 
 // --- 레벨업 ---
@@ -177,6 +186,58 @@ console.log('\nsim smoke check\n')
     const p = { ...w.progression, level: 8, pendingLevelUps: 1 }
     return pendingReward(p) === 'unlock-ult'
   })())
+  check('Lv13 보상은 영구 강화', (() => {
+    const p = { ...w.progression, level: 13, pendingLevelUps: 1 }
+    return pendingReward(p) === 'upgrade'
+  })())
+}
+
+// --- 실제 자동 전투 레벨 페이스 ---
+{
+  const level20Time = (playerClass: 'ranged' | 'melee', seed: number): number => {
+    const w = createWorld(seed, playerClass)
+    const idle = createInput()
+    // 생존 편차가 아니라 처치 XP 페이스만 측정한다.
+    w.player.invulnUntil = Number.POSITIVE_INFINITY
+
+    while (w.time < RUN_TIME_LIMIT && w.progression.level < MAX_LEVEL) {
+      while (w.awaitingChoice) resolveLevelUp(w)
+      stepWorld(w, idle)
+    }
+    return w.progression.levelTimes[MAX_LEVEL - 1] ?? Number.POSITIVE_INFINITY
+  }
+
+  const samples = [
+    ...[1, 5, 11].map((seed) => ['ranged', seed, level20Time('ranged', seed)] as const),
+    ...[1, 5, 11].map((seed) => ['melee', seed, level20Time('melee', seed)] as const),
+  ]
+  check(
+    '원거리·근거리 여러 시드가 Lv20에 4:30~4:55 도달한다',
+    samples.every(([, , time]) => time >= 270 && time <= 295),
+    samples.map(([cls, seed, time]) => `${cls}:${seed}=${time.toFixed(1)}s`).join(', '),
+  )
+}
+
+// --- Lv2~20은 모두 실제 선택 ---
+{
+  const w = createWorld(13)
+  w.spawnEnabled = false
+  w.progression.level = 5
+
+  grantXp(w, XP_FOR_NEXT[4]!)
+  check('Lv6 전술 보상도 선택창을 연다', w.awaitingChoice && w.progression.pendingLevelUps === 1)
+  check(
+    'Lv6 보상은 반복 가능한 전술 3택이다',
+    pendingReward(w.progression) === 'tactic',
+  )
+  check(
+    'Lv2~20의 모든 레벨에 보상이 지정되어 있다',
+    Array.from({ length: MAX_LEVEL - 1 }, (_, i) => LEVEL_REWARDS[i + 2]).every(Boolean),
+  )
+  check(
+    '영구 강화는 7회로 제한된다',
+    Object.values(LEVEL_REWARDS).filter((reward) => reward === 'upgrade').length === 7,
+  )
 }
 
 // --- 선택 대기 중에는 게임이 멈춘다 ---
@@ -234,7 +295,7 @@ console.log('\nsim smoke check\n')
   const none = rollUpgrades(createRng(1), [], 3)
   check('후보가 없어도 터지지 않는다', none.length === 0)
 
-  // 이미 뽑은 카드는 다시 나오면 안 된다 — 5분에 강화는 5번뿐이다
+  // 이미 뽑은 카드는 다시 나오면 안 된다.
   const taken = new Set(['a', 'b'])
   const excluded = rollUpgrades(createRng(3), pool, 3, taken)
   check(
@@ -375,6 +436,30 @@ console.log('\nsim smoke check\n')
   check('커브가 음수로 가지 않는다', [0, 60, 120, 180, 240, 300].every((t) => targetAliveCount(t) > 0))
 }
 
+// --- 후반 체력 스케일: 수는 그대로, 개체당 맷집만 증가 ---
+{
+  check('첫 1분은 일반몹 체력이 그대로다', enemyHealthMultiplier(0) === 1 && enemyHealthMultiplier(60) === 1)
+  check(
+    '보스 등장 시 일반몹 체력은 1.35배다',
+    Math.abs(enemyHealthMultiplier(BOSS_SPAWN_TIME) - 1.35) < 1e-9,
+  )
+  check(
+    '제한시간 일반몹 체력은 1.55배에서 멈춘다',
+    enemyHealthMultiplier(RUN_TIME_LIMIT) === 1.55 &&
+      enemyHealthMultiplier(RUN_TIME_LIMIT + 600) === 1.55,
+  )
+
+  const pool = createEnemyPool()
+  const rng = createRng(91)
+  spawnEnemy(pool, rng, 0, 0, TYPE_WALKER, RUN_TIME_LIMIT)
+  spawnBoss(pool, rng, 0, 0)
+  check(
+    '체력 스케일이 일반몹에만 적용된다',
+    Math.abs(pool.maxHp[0]! - 20 * 1.55) < 1e-6 && pool.maxHp[1] === BOSS_MAX_HP,
+    `${pool.maxHp[0]}/${pool.maxHp[1]}`,
+  )
+}
+
 // --- 결정론: 적이 있어도 유지되는가 ---
 {
   const play = (seed: number) => {
@@ -486,6 +571,76 @@ console.log('\nsim smoke check\n')
     a.enemies.x[ai] === b.enemies.x[bi] &&
       a.enemies.y[ai] === b.enemies.y[bi] &&
       a.rng.state() === b.rng.state(),
+  )
+}
+
+// --- 5분 보스 마감 ---
+{
+  const makeDeadlineWorld = (hp = BOSS_MAX_HP) => {
+    const w = createWorld(1001)
+    w.spawnEnabled = false
+    spawnBoss(w.enemies, w.rng, w.player.pos.x, w.player.pos.y)
+    const i = w.enemies.count - 1
+    w.enemies.x[i] = 0.5
+    w.enemies.y[i] = 0
+    w.enemies.prevX[i] = 0.5
+    w.enemies.prevY[i] = 0
+    w.enemies.hp[i] = hp
+    w.boss.spawned = true
+    w.boss.active = true
+    w.boss.hp = hp
+    w.player.invulnUntil = Infinity
+    w.player.attackCooldown = Infinity
+    w.tick = Math.round(RUN_TIME_LIMIT / DT) - 2
+    w.time = w.tick * DT
+    return w
+  }
+
+  const timedOut = makeDeadlineWorld()
+  stepWorld(timedOut, createInput())
+  check('5분 직전에는 보스전이 계속된다', timedOut.outcome === 'alive')
+  stepWorld(timedOut, createInput())
+  check(
+    '5분에 보스가 살아 있으면 시간 초과 패배다',
+    timedOut.outcome === 'timeout' && timedOut.time === RUN_TIME_LIMIT,
+    `outcome=${timedOut.outcome} time=${timedOut.time}`,
+  )
+
+  const finalTick = makeDeadlineWorld(1)
+  finalTick.tick = Math.round(RUN_TIME_LIMIT / DT) - 1
+  finalTick.time = finalTick.tick * DT
+  finalTick.player.attackCooldown = Infinity
+  unlockSkill(finalTick.skills, 'q', 3.5)
+  const lastShot = createInput()
+  lastShot.aim.x = 4
+  lastShot.skillsPressed = SKILL_Q
+  stepWorld(finalTick, lastShot)
+  check(
+    '마지막 틱에 보스를 처치하면 시간 초과보다 승리가 우선된다',
+    finalTick.outcome === 'victory' && finalTick.time === RUN_TIME_LIMIT,
+    `outcome=${finalTick.outcome}`,
+  )
+
+  const delayedFinalHit = makeDeadlineWorld(1)
+  delayedFinalHit.tick = Math.round(RUN_TIME_LIMIT / DT) - 1
+  delayedFinalHit.time = delayedFinalHit.tick * DT
+  pushBlast(delayedFinalHit, {
+    kind: 0,
+    x: 0.5,
+    y: 0,
+    radius: 1,
+    damage: 1,
+    impulse: 0,
+    markDuration: 0,
+    slowMul: 1,
+    slowDuration: 0,
+    fireAt: RUN_TIME_LIMIT,
+  })
+  stepWorld(delayedFinalHit, createInput())
+  check(
+    '정확히 5분에 터지는 지연 공격도 마지막 판정으로 인정된다',
+    delayedFinalHit.outcome === 'victory',
+    `outcome=${delayedFinalHit.outcome} blasts=${delayedFinalHit.blasts.length}`,
   )
 }
 

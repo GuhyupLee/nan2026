@@ -1,4 +1,5 @@
 import type { World } from '../sim/types.ts'
+import { trapFocus } from './focus-trap.ts'
 
 export type GameOutcome = Exclude<World['outcome'], 'alive'>
 export type OutcomeAction = 'restart' | 'menu'
@@ -15,6 +16,11 @@ const COPY: Record<GameOutcome, OutcomeCopy> = {
     title: '쓰러졌습니다',
     description: '호흡을 고르고, 같은 전장에 다시 도전하세요.',
   },
+  timeout: {
+    eyebrow: 'TIME OVER',
+    title: '시간이 다 됐습니다',
+    description: '5분 안에 보스를 쓰러뜨리지 못했습니다. 같은 전장에 다시 도전하세요.',
+  },
   victory: {
     eyebrow: 'VICTORY',
     title: '승리했습니다',
@@ -25,8 +31,8 @@ const COPY: Record<GameOutcome, OutcomeCopy> = {
 /**
  * 결과 화면을 띄우고 재시작 의사가 들어올 때까지 기다린다.
  *
- * R은 궁극기 입력이므로 결과 화면에서도 쓰지 않는다. 키보드는 Enter/Space,
- * 포인터는 명시적인 버튼만 받는다.
+ * R은 궁극기 입력이므로 결과 화면에서도 쓰지 않는다. Enter/Space는 포커스된
+ * 네이티브 버튼이 처리하므로, 메인 메뉴 버튼에서도 올바른 동작을 유지한다.
  */
 export function showOutcome(parent: HTMLElement, outcome: GameOutcome): Promise<OutcomeAction> {
   return new Promise((resolve) => {
@@ -72,10 +78,12 @@ export function showOutcome(parent: HTMLElement, outcome: GameOutcome): Promise<
     panel.appendChild(note)
 
     let done = false
+    let releaseFocusTrap = (): void => {}
     const finish = (action: OutcomeAction): void => {
       if (done) return
       done = true
       window.removeEventListener('keydown', onKey)
+      releaseFocusTrap()
       root.remove()
       resolve(action)
     }
@@ -85,17 +93,14 @@ export function showOutcome(parent: HTMLElement, outcome: GameOutcome): Promise<
       if (e.key === 'Escape') {
         e.preventDefault()
         finish('menu')
-        return
       }
-      if (e.key !== 'Enter' && e.key !== ' ') return
-      e.preventDefault()
-      finish('restart')
     }
 
     restart.addEventListener('click', () => finish('restart'))
     menu.addEventListener('click', () => finish('menu'))
     window.addEventListener('keydown', onKey)
     parent.appendChild(root)
+    releaseFocusTrap = trapFocus(root)
     restart.focus()
   })
 }

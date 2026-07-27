@@ -23,6 +23,17 @@ const MOVE_DEADZONE = 0.6
 const TOUCH_STICK_RADIUS = 32
 const TOUCH_STICK_DEADZONE = 8
 const TOUCH_AIM_DISTANCE = 12
+const CAST_MODE_STORAGE_KEY = 'prototype-cast-mode-v1'
+
+export type CastMode = 'instant' | 'release'
+
+function readCastMode(): CastMode {
+  try {
+    return localStorage.getItem(CAST_MODE_STORAGE_KEY) === 'release' ? 'release' : 'instant'
+  } catch {
+    return 'instant'
+  }
+}
 
 export class InputState {
   /** 렌더러가 지면 레이캐스트에 사용하는 현재 커서 좌표. */
@@ -37,6 +48,8 @@ export class InputState {
 
   private readonly held = new Set<string>()
   private pendingSkills = 0
+  private castMode: CastMode = readCastMode()
+  private targetedSkill: SkillId | null = null
   private readonly surface: HTMLElement
   private readonly previousTouchAction: string
 
@@ -180,14 +193,13 @@ export class InputState {
     this.held.add(e.code)
 
     const skill = SKILL_KEYS[e.code]
-    if (skill !== undefined) {
-      this.pendingSkills |= SKILL_BIT[skill]
-      this.hasActed = true
-    }
+    if (skill !== undefined) this.startSkill(skill)
   }
 
   private readonly onKeyUp = (e: KeyboardEvent): void => {
     this.held.delete(e.code)
+    const skill = SKILL_KEYS[e.code]
+    if (skill !== undefined) this.releaseSkill(skill)
   }
 
   private readonly onBlur = (): void => {
@@ -213,11 +225,57 @@ export class InputState {
     this.touchDirectionX = 0
     this.touchDirectionY = 0
     this.pointerHeld = false
+    this.pendingSkills = 0
     this.touchStick.dataset.active = 'false'
     this.touchStick.style.setProperty('--stick-x', '0px')
     this.touchStick.style.setProperty('--stick-y', '0px')
+    this.targetedSkill = null
   }
 
+  get targetingSkill(): SkillId | null {
+    return this.targetedSkill
+  }
+
+  getCastMode(): CastMode {
+    return this.castMode
+  }
+
+  setCastMode(mode: CastMode): void {
+    if (mode === this.castMode) return
+    this.targetedSkill = null
+    this.castMode = mode
+    try {
+      localStorage.setItem(CAST_MODE_STORAGE_KEY, mode)
+    } catch {
+      // 저장소가 막혀 있어도 현재 세션의 입력 모드는 정상 동작한다.
+    }
+  }
+
+  /** 스킬 키·버튼을 누른 순간. 즉시 모드는 여기서, 키업 모드는 releaseSkill에서 발동한다. */
+  startSkill(id: SkillId): void {
+    this.hasActed = true
+    if (this.castMode === 'instant') {
+      this.targetedSkill = null
+      this.pendingSkills |= SKILL_BIT[id]
+      return
+    }
+    this.targetedSkill = id
+  }
+
+  /** 키업 시전 모드에서 현재 조준 중인 같은 스킬만 발동한다. */
+  releaseSkill(id: SkillId): void {
+    if (this.castMode !== 'release' || this.targetedSkill !== id) return
+    this.targetedSkill = null
+    this.pendingSkills |= SKILL_BIT[id]
+    this.hasActed = true
+  }
+
+  /** 포인터 이탈·취소 시 해당 스킬의 키업 시전을 버린다. */
+  cancelSkill(id: SkillId): void {
+    if (this.targetedSkill === id) this.targetedSkill = null
+  }
+
+  /** 기존 호출부를 위한 시전 모드 비의존 즉시 큐잉 메서드. */
   pressSkill(id: SkillId): void {
     this.pendingSkills |= SKILL_BIT[id]
     this.hasActed = true

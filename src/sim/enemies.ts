@@ -1,4 +1,4 @@
-import { ARENA_RADIUS, DT } from './constants.ts'
+import { ARENA_RADIUS, DT, RUN_TIME_LIMIT } from './constants.ts'
 import { randRange, type Rng } from './rng.ts'
 import { SpatialHash } from './spatial.ts'
 import { integrateImpulse, speedMultiplier } from './status.ts'
@@ -219,6 +219,27 @@ export function targetAliveCount(time: number): number {
 }
 
 /**
+ * 일반 몬스터의 후반 체력 배율.
+ *
+ * 첫 1분은 학습 구간이라 원래 체력을 유지하고, 보스 등장 시점까지 1.35배,
+ * 제한 시간에는 1.55배가 되도록 완만하게 선형 보간한다. 시간은 양 끝에서
+ * 고정되므로 오래 진행해도 체력이 무한히 증가하지 않는다.
+ */
+export function enemyHealthMultiplier(time: number): number {
+  if (Number.isNaN(time) || time <= 60) return 1
+  if (time < BOSS_SPAWN_TIME) {
+    return 1 + ((time - 60) / (BOSS_SPAWN_TIME - 60)) * 0.35
+  }
+  if (time < RUN_TIME_LIMIT) {
+    return (
+      1.35 +
+      ((time - BOSS_SPAWN_TIME) / (RUN_TIME_LIMIT - BOSS_SPAWN_TIME)) * 0.2
+    )
+  }
+  return 1.55
+}
+
+/**
  * 시각에 따른 적 종류 추첨.
  *
  * 브루트 비율이 낮은 데에는 이유가 있다. 스폰 확률과 화면에 보이는 비율은
@@ -243,7 +264,14 @@ function rollType(rng: Rng, time: number): number {
 /** 화면 밖에서 스폰시킬 거리. 카메라 시야보다 살짝 넓게. */
 const SPAWN_RING = 17
 
-export function spawnEnemy(pool: EnemyPool, rng: Rng, px: number, py: number, type: number): void {
+export function spawnEnemy(
+  pool: EnemyPool,
+  rng: Rng,
+  px: number,
+  py: number,
+  type: number,
+  time = 0,
+): void {
   if (pool.count >= MAX_ENEMIES) return
 
   const def = ENEMY_TYPES[type]!
@@ -268,8 +296,9 @@ export function spawnEnemy(pool: EnemyPool, rng: Rng, px: number, py: number, ty
   pool.prevY[i] = sy
   pool.vx[i] = 0
   pool.vy[i] = 0
-  pool.hp[i] = def.hp
-  pool.maxHp[i] = def.hp
+  const maxHp = type === TYPE_BOSS ? BOSS_MAX_HP : def.hp * enemyHealthMultiplier(time)
+  pool.hp[i] = maxHp
+  pool.maxHp[i] = maxHp
   pool.type[i] = type
   pool.flash[i] = 0
 
@@ -520,7 +549,7 @@ export function updateSpawner(
 
   const budget = Math.min(deficit, 3)
   for (let k = 0; k < budget; k++) {
-    spawnEnemy(pool, rng, px, py, rollType(rng, time))
+    spawnEnemy(pool, rng, px, py, rollType(rng, time), time)
   }
 }
 

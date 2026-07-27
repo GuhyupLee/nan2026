@@ -1,3 +1,4 @@
+import { GameAudio } from './audio.ts'
 import { InputState, applyPointerMove } from './input.ts'
 import { Renderer } from './render/renderer.ts'
 import { ARENA_RADIUS, DT, MAX_TICKS_PER_FRAME } from './sim/constants.ts'
@@ -8,7 +9,9 @@ import { BossBar } from './ui/bossbar.ts'
 import { showCharacterSelect } from './ui/charselect.ts'
 import { Hud } from './ui/hud.ts'
 import { showLevelUp } from './ui/levelup.ts'
+import { showMainMenu } from './ui/mainmenu.ts'
 import { showOutcome } from './ui/outcome.ts'
+import { PauseButton, showPause, showSettings } from './ui/pause.ts'
 import { DEFAULT_SLOTS, SkillBar, assertSlotsCoverAllSkills } from './ui/skillbar.ts'
 import './ui/ui.css'
 
@@ -62,11 +65,25 @@ const simInput = createInput()
 if (import.meta.env.DEV) assertSlotsCoverAllSkills(DEFAULT_SLOTS)
 // 스킬바는 body에 붙인다. 캔버스 컨테이너 밖이어야 슬롯 클릭이
 // 이동 입력으로 새어 들어가지 않는다.
-const skillBar = new SkillBar(document.body, DEFAULT_SLOTS, (id) => input.pressSkill(id))
+const skillBar = new SkillBar(document.body, DEFAULT_SLOTS, {
+  start: (id) => input.startSkill(id),
+  release: (id) => input.releaseSkill(id),
+  cancel: (id) => input.cancelSkill(id),
+})
 skillBar.setVisible(false)
+
+function releaseGameplayInput(): void {
+  input.releaseMovement()
+  skillBar.cancelTargeting()
+}
 
 const hud = new Hud(document.body)
 const bossBar = new BossBar(document.body)
+const audio = new GameAudio()
+const pauseButton = new PauseButton(document.body, () => {
+  void pauseRun()
+})
+pauseButton.setVisible(false)
 const project = renderer.worldToScreen.bind(renderer)
 
 /**
@@ -78,6 +95,8 @@ let choiceOpen = false
 
 /** 결과 화면이 매 프레임 중복으로 쌓이지 않게 막는다. */
 let outcomeOpen = false
+let pauseOpen = false
+let activeRun = false
 
 /**
  * 캐릭터 선택 중에도 렌더 루프는 돈다 — 셰이더 컴파일과 첫 프레임 비용을
@@ -106,6 +125,7 @@ if (import.meta.env.DEV) {
       input,
       skillBar,
       bossBar,
+      audio,
       // rAF가 멈춘 환경(백그라운드 탭)에서도 시뮬을 손으로 돌려
       // 렌더 결과를 검증할 수 있게 열어둔다.
       stepWorld,
@@ -148,10 +168,17 @@ function frame(now: number): void {
     accumulator = 0
   }
 
+  renderer.setTargeting(
+    world,
+    activeRun && running && !world.awaitingChoice ? input.targetingSkill : null,
+    accumulator / DT,
+  )
   renderer.render(world, accumulator / DT)
   skillBar.update(world.skills, world.playerClass)
   hud.update(world, project, Math.min(rawDt, 0.1))
   bossBar.update(world)
+  // 렌더 전용 전투 이벤트를 비우기 전에 사운드도 같은 이벤트를 읽는다.
+  audio.update(world)
   // 렌더러가 사망·예광선 이벤트를 소비했으므로 비운다.
   drainEvents(world)
 
@@ -159,14 +186,17 @@ function frame(now: number): void {
   // 레벨업 카드가 결과 화면 위에 뜨면 안 된다.
   if (running && world.outcome !== 'alive' && !outcomeOpen) {
     running = false
+    activeRun = false
     outcomeOpen = true
     choiceOpen = false
+    pauseOpen = false
     accumulator = 0
-    input.releaseMovement()
+    releaseGameplayInput()
     hint.classList.add('hidden')
     skillBar.setVisible(false)
     hud.setVisible(false)
     bossBar.setVisible(false)
+    pauseButton.setVisible(false)
 
     const result = world.outcome
     const restartClass = world.playerClass
@@ -183,8 +213,11 @@ function frame(now: number): void {
   // 여기서 화면을 띄우지 않으면 게임이 영영 멈춘다.
   if (running && world.outcome === 'alive' && world.awaitingChoice && !choiceOpen) {
     choiceOpen = true
+    releaseGameplayInput()
     const target = world
     void showLevelUp(document.body, target).then(() => {
+      audio.ui('select')
+      releaseGameplayInput()
       resolveLevelUp(target)
       choiceOpen = false
       // 카드를 읽던 시간이 다음 프레임 델타로 밀려들지 않게 시계를 다시 맞춘다.
@@ -215,15 +248,63 @@ function frame(now: number): void {
   if (input.hasActed) hint.classList.add('hidden')
 }
 
+/** 진행 중인 판을 멈추고 일시정지 메뉴를 연다. */
+async function pauseRun(): Promise<void> {
+  if (
+    !activeRun ||
+    !running ||
+    pauseOpen ||
+    choiceOpen ||
+    outcomeOpen ||
+    world.outcome !== 'alive'
+  ) {
+    return
+  }
+
+  running = false
+  pauseOpen = true
+  accumulator = 0
+  releaseGameplayInput()
+  pauseButton.setVisible(false)
+  await audio.unlock()
+  audio.ui('pause')
+
+  const action = await showPause(document.body, audio, input)
+  pauseOpen = false
+
+  if (action === 'menu') {
+    activeRun = false
+    hint.classList.add('hidden')
+    skillBar.setVisible(false)
+    hud.setVisible(false)
+    bossBar.setVisible(false)
+    pauseButton.setVisible(false)
+    void start()
+    return
+  }
+
+  if (!activeRun || world.outcome !== 'alive') return
+  await audio.unlock()
+  lastTime = performance.now()
+  accumulator = 0
+  releaseGameplayInput()
+  pauseButton.setVisible(true)
+  running = true
+}
+
 /** 선택된 캐릭터와 고정 시드로 새 판을 즉시 시작한다. */
 function beginRun(playerClass: PlayerClass): void {
   running = false
+  activeRun = true
   world = createWorld(seed, playerClass)
   choiceOpen = false
   outcomeOpen = false
+  pauseOpen = false
+  audio.reset()
+  void audio.unlock()
 
   // 직전 판의 포인터·1틱 입력·안내 상태가 새 판으로 넘어가지 않게 한다.
-  input.releaseMovement()
+  releaseGameplayInput()
   input.hasActed = false
   simInput.move.x = 0
   simInput.move.y = 0
@@ -238,6 +319,7 @@ function beginRun(playerClass: PlayerClass): void {
   skillBar.setVisible(true)
   hud.setVisible(true)
   bossBar.setVisible(true)
+  pauseButton.setVisible(true)
   hint.classList.remove('hidden')
 
   // 결과 화면에 머문 시간이 새 판의 첫 프레임과 FPS 통계에 섞이지 않게 한다.
@@ -252,14 +334,45 @@ function beginRun(playerClass: PlayerClass): void {
 
 /** 첫 프레임이 나온 뒤 캐릭터 선택을 띄우고, 고르면 판을 시작한다. */
 async function start(): Promise<void> {
-  const playerClass = await showCharacterSelect(document.body)
+  activeRun = false
+  pauseButton.setVisible(false)
+  await showMainMenu(document.body, () => showSettings(document.body, audio, input))
+  await audio.unlock()
+  audio.ui('select')
+  const playerClass = await showCharacterSelect(document.body, undefined, () =>
+    showSettings(document.body, audio, input),
+  )
+  await audio.unlock()
+  audio.ui('select')
   beginRun(playerClass)
 }
+
+// 브라우저의 사용자 제스처 정책을 만족시키기 위해 첫 입력에서 오디오를 연다.
+const unlockAudio = (): void => {
+  void audio.unlock()
+}
+window.addEventListener('pointerdown', unlockAudio, { capture: true, once: true })
+window.addEventListener('keydown', unlockAudio, { capture: true, once: true })
+
+window.addEventListener('keydown', (event) => {
+  if (event.code !== 'Escape' || event.repeat) return
+  if (!activeRun || !running || pauseOpen || choiceOpen || outcomeOpen) return
+  event.preventDefault()
+  void pauseRun()
+})
+
+// 모바일에서 앱을 내렸다 돌아왔을 때 전투가 진행돼 있지 않게 한다.
+document.addEventListener('visibilitychange', () => {
+  if (document.hidden && activeRun && running && !choiceOpen && !outcomeOpen) {
+    void pauseRun()
+  }
+})
 
 // 선택 화면은 첫 프레임을 기다리지 않는다. 렌더러는 이미 생성되어 있고,
 // rAF에 물려두면 탭이 백그라운드에 있거나 프레임이 지연될 때
 // 심사자가 로딩 화면에 갇힌다. 렌더 루프는 선택 화면 뒤에서 돌며
 // 셰이더 컴파일 비용을 미리 치른다.
 bootEl.classList.add('hidden')
+bootEl.setAttribute('aria-hidden', 'true')
 void start()
 requestAnimationFrame(frame)

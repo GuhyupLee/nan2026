@@ -179,5 +179,5 @@ export interface World {
   awaitingChoice: boolean
 
   /** 판이 끝났는가. 'alive'가 아니면 시뮬이 멈춘다. */
-  outcome: 'alive' | 'dead' | 'victory'
+  outcome: 'alive' | 'dead' | 'timeout' | 'victory'
 }

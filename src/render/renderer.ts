@@ -1,5 +1,6 @@
 import * as THREE from 'three'
 
+import type { SkillId } from '../sim/skills.ts'
 import type { PlayerClass, World } from '../sim/types.ts'
 import type { Vec2 } from '../sim/vec.ts'
 import { length, lerp, lerpAngle } from '../sim/vec.ts'
@@ -33,6 +34,14 @@ const CAM_REFERENCE_ASPECT = 16 / 9
 const CAM_FOLLOW = 14
 
 const BG_COLOR = 0x05070d
+const TARGET_CYAN = 0x56c7e8
+const TARGET_CRIMSON = 0xe25063
+const TARGET_GREEN = 0x67bd78
+
+const TARGET_RANGES: Readonly<Record<PlayerClass, Readonly<Record<'q' | 'w' | 'e' | 'r', number>>>> = {
+  ranged: { q: 16, w: 8, e: 14, r: 30 },
+  melee: { q: 5, w: 7, e: 9, r: 13 },
+}
 
 /**
  * 렌더러.
@@ -48,6 +57,12 @@ export class Renderer {
   private readonly lightRig: THREE.Group
   private readonly sun: THREE.DirectionalLight
   private readonly enemyRenderer: EnemyRenderer
+  private readonly targetingGroup: THREE.Group
+  private readonly targetingRingGeometry: THREE.RingGeometry
+  private readonly targetingLineGeometry: THREE.PlaneGeometry
+  private readonly targetingRange: THREE.Mesh<THREE.RingGeometry, THREE.MeshBasicMaterial>
+  private readonly targetingLine: THREE.Mesh<THREE.PlaneGeometry, THREE.MeshBasicMaterial>
+  private readonly targetingEnd: THREE.Mesh<THREE.RingGeometry, THREE.MeshBasicMaterial>
   private charRig: CharacterRig
   private charClass: PlayerClass = 'ranged'
   /** 공격·시전 중 이동 보간이 모션 방향을 덮지 않게 잠깐 고정하는 방향. */
@@ -65,6 +80,7 @@ export class Renderer {
 
   private readonly container: HTMLElement
   private readonly coarsePointer = window.matchMedia('(pointer: coarse)')
+  private readonly resizeObserver: ResizeObserver
   private width = 1
   private height = 1
   private cameraDistanceScale = 1
@@ -99,6 +115,36 @@ export class Renderer {
 
     this.enemyRenderer = new EnemyRenderer(this.scene)
 
+    // 타기팅 프리뷰는 단위 지오메트리를 scale만 바꿔 재사용한다.
+    this.targetingGroup = new THREE.Group()
+    this.targetingGroup.visible = false
+    this.targetingGroup.renderOrder = 8
+    this.targetingRingGeometry = new THREE.RingGeometry(0.94, 1, 64)
+    this.targetingLineGeometry = new THREE.PlaneGeometry(1, 1)
+    this.targetingLineGeometry.rotateX(-Math.PI / 2)
+
+    const targetingMaterial = (opacity: number): THREE.MeshBasicMaterial =>
+      new THREE.MeshBasicMaterial({
+        color: TARGET_CYAN,
+        transparent: true,
+        opacity,
+        depthWrite: false,
+        side: THREE.DoubleSide,
+        polygonOffset: true,
+        polygonOffsetFactor: -2,
+      })
+
+    this.targetingRange = new THREE.Mesh(this.targetingRingGeometry, targetingMaterial(0.48))
+    this.targetingRange.rotation.x = -Math.PI / 2
+    this.targetingRange.renderOrder = 8
+    this.targetingLine = new THREE.Mesh(this.targetingLineGeometry, targetingMaterial(0.24))
+    this.targetingLine.renderOrder = 7
+    this.targetingEnd = new THREE.Mesh(this.targetingRingGeometry, targetingMaterial(0.68))
+    this.targetingEnd.rotation.x = -Math.PI / 2
+    this.targetingEnd.renderOrder = 9
+    this.targetingGroup.add(this.targetingRange, this.targetingLine, this.targetingEnd)
+    this.scene.add(this.targetingGroup)
+
     // --- 조명 ---
     this.scene.add(new THREE.HemisphereLight(0x7093c8, 0x0a0e18, 0.85))
 
@@ -129,7 +175,8 @@ export class Renderer {
     // resize 이벤트만 믿으면 안 된다. 탭이 백그라운드에서 로드되거나
     // 레이아웃이 늦게 잡히면 캔버스가 0×0으로 굳고, aspect가 NaN이 되어
     // 화면이 영구히 검게 남는다. 컨테이너를 직접 관찰해 확실히 잡는다.
-    new ResizeObserver(this.resize).observe(container)
+    this.resizeObserver = new ResizeObserver(this.resize)
+    this.resizeObserver.observe(container)
   }
 
   readonly resize = (): void => {
@@ -156,6 +203,76 @@ export class Renderer {
       this.camera.updateProjectionMatrix()
       this.positionCamera()
     }
+  }
+
+  /**
+   * 시전 대기 중인 스킬의 실제 월드 범위를 표시한다.
+   * 단위 링과 선을 이동·회전·스케일만 하므로 매 프레임 지오메트리를 만들지 않는다.
+   */
+  setTargeting(world: World, skill: SkillId | null, alpha = 1): void {
+    if (skill === null) {
+      this.targetingGroup.visible = false
+      return
+    }
+
+    const player = world.player
+    const playerClass = world.playerClass
+    const px = lerp(player.prevPos.x, player.pos.x, alpha)
+    const pz = lerp(player.prevPos.y, player.pos.y, alpha)
+    const facing = lerpAngle(player.prevFacing, player.facing, alpha)
+    const color =
+      skill === 'd'
+        ? TARGET_GREEN
+        : skill === 'f'
+          ? TARGET_CYAN
+          : playerClass === 'ranged'
+            ? TARGET_CYAN
+            : TARGET_CRIMSON
+    let range: number
+    if (skill === 'd') range = 3.2
+    else if (skill === 'f') range = world.stats.flashRange
+    else range = TARGET_RANGES[playerClass][skill]
+    range = Math.max(0.1, range)
+
+    this.targetingGroup.visible = true
+    this.targetingRange.material.color.setHex(color)
+    this.targetingLine.material.color.setHex(color)
+    this.targetingEnd.material.color.setHex(color)
+    this.targetingRange.position.set(px, 0.035, pz)
+    this.targetingRange.scale.set(range, range, 1)
+
+    const centered = skill === 'd' || (playerClass === 'melee' && skill === 'e')
+    this.targetingLine.visible = !centered
+    this.targetingEnd.visible = !centered
+    if (centered) return
+
+    let dx = world.lastAim.x - px
+    let dz = world.lastAim.y - pz
+    const rawDistance = Math.hypot(dx, dz)
+    if (rawDistance < 1e-5) {
+      dx = Math.cos(facing)
+      dz = Math.sin(facing)
+    } else {
+      dx /= rawDistance
+      dz /= rawDistance
+    }
+
+    const distance = rawDistance < 1e-5 ? range : Math.min(rawDistance, range)
+    const endX = px + dx * distance
+    const endZ = pz + dz * distance
+    const angle = Math.atan2(dz, dx)
+
+    this.targetingLine.position.set(
+      (px + endX) * 0.5,
+      0.025,
+      (pz + endZ) * 0.5,
+    )
+    this.targetingLine.rotation.y = -angle
+    this.targetingLine.scale.set(distance, 1, 0.08)
+
+    const endRadius = playerClass === 'ranged' && skill === 'e' ? 6 : 0.42
+    this.targetingEnd.position.set(endX, 0.045, endZ)
+    this.targetingEnd.scale.set(endRadius, endRadius, 1)
   }
 
   /**
@@ -317,6 +434,26 @@ export class Renderer {
     this.charRig.playAction(next, now)
     this.actionFacing = angle
     this.actionFacingUntil = now + facingHold
+  }
+
+  dispose(): void {
+    window.removeEventListener('resize', this.resize)
+    this.coarsePointer.removeEventListener('change', this.resize)
+    this.resizeObserver.disconnect()
+
+    this.targetingGroup.visible = false
+    this.scene.remove(this.targetingGroup)
+    this.targetingRingGeometry.dispose()
+    this.targetingLineGeometry.dispose()
+    this.targetingRange.material.dispose()
+    this.targetingLine.material.dispose()
+    this.targetingEnd.material.dispose()
+
+    this.charRig.dispose()
+    this.enemyRenderer.dispose()
+    this.sun.shadow.map?.dispose()
+    this.gl.dispose()
+    this.gl.domElement.remove()
   }
 
   get drawCalls(): number {

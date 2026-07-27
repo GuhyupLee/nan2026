@@ -13,16 +13,26 @@ import type { Rng } from './rng.ts'
  * 인덱스 i = 레벨 (i+1). 즉 [1] = Lv2 = 20초.
  */
 export const TARGET_LEVEL_TIMES = [
-  0, //   Lv1  0:00  시작
-  20, //  Lv2  0:20  첫 스킬 해금 (3중 1택)
-  50, //  Lv3  0:50  두번째 스킬 해금 (2중 1택)
-  75, //  Lv4  1:15  강화
-  100, // Lv5  1:40  마지막 스킬 확정 획득
-  130, // Lv6  2:10  강화
-  165, // Lv7  2:45  강화
-  200, // Lv8  3:20  궁극기 해금 → 10초 뒤 보스
-  240, // Lv9  4:00  강화
-  270, // Lv10 4:30  강화
+  0, //   Lv1  0:00
+  20, //  Lv2  0:20
+  38, //  Lv3  0:38
+  55, //  Lv4  0:55
+  72, //  Lv5  1:12
+  89, //  Lv6  1:29
+  106, // Lv7  1:46
+  123, // Lv8  2:03
+  140, // Lv9  2:20
+  157, // Lv10 2:37
+  174, // Lv11 2:54
+  191, // Lv12 3:11
+  208, // Lv13 3:28
+  225, // Lv14 3:45
+  240, // Lv15 4:00
+  252, // Lv16 4:12
+  264, // Lv17 4:24
+  276, // Lv18 4:36
+  282, // Lv19 4:42
+  290, // Lv20 4:50
 ] as const
 
 export const MAX_LEVEL = TARGET_LEVEL_TIMES.length
@@ -30,16 +40,41 @@ export const MAX_LEVEL = TARGET_LEVEL_TIMES.length
 /**
  * Lv(i+1) → Lv(i+2) 에 필요한 XP.
  *
- * 감으로 잡지 않는다. 헤드리스로 8개 시드를 돌려 목표 시각별 누적 XP를
- * 실측하고 그 차분을 그대로 넣었다. 처음 감으로 잡았던 [8,16,26,38,...]은
- * 실측 대비 4배 낮아서 Lv2가 20초가 아니라 6초에 떴다 — 비트 시트가
- * 통째로 무너지는 오차였다.
+ * 후반 체력 스케일을 켠 자동 전투를 원거리·근거리 각각 12개 시드로 실측해,
+ * 목표 시각의 클래스 보정 XP 중앙값을 차분했다. 누적 1,913 XP에서 Lv20이며
+ * 두 클래스 모두 4:30~4:55 사이에 도달한다.
  *
  * 주의: 이 값은 "자동 공격만 있는" 상태의 처치율에서 나왔다.
  * QWER 스킬이 붙으면 처치율이 크게 오르므로 D9에서 다시 뽑아야 한다.
  * 재측정 절차는 tools/balance 가 담당한다.
  */
-export const XP_FOR_NEXT = [32, 78, 85, 83, 98, 111, 125, 138, 150] as const
+export const XP_FOR_NEXT = [
+  29,
+  48,
+  60,
+  74,
+  103,
+  117,
+  130,
+  132,
+  143,
+  150,
+  161,
+  165,
+  130,
+  108,
+  88,
+  88,
+  83,
+  45,
+  59,
+] as const
+
+/**
+ * 근접은 기본 공격의 실제 처치율이 원거리보다 약 30% 높다.
+ * 요구 XP는 공통으로 유지하고 획득량만 보정해 두 클래스의 선택 타이밍을 맞춘다.
+ */
+export const MELEE_XP_GAIN_MULTIPLIER = 0.76
 
 /** 레벨업 시 무엇을 주는가. */
 export type LevelReward =
@@ -47,17 +82,28 @@ export type LevelReward =
   | 'unlock-last' // 남은 마지막 스킬을 확정 지급 (선택지가 1개면 선택이 아니다)
   | 'unlock-ult' // 궁극기 확정 지급
   | 'upgrade' // 강화 3택
+  | 'tactic' // 반복 가능한 즉시 전술 3택
 
 export const LEVEL_REWARDS: Readonly<Record<number, LevelReward>> = {
   2: 'unlock-choice',
-  3: 'unlock-choice',
-  4: 'upgrade',
-  5: 'unlock-last',
-  6: 'upgrade',
-  7: 'upgrade',
+  3: 'upgrade',
+  4: 'unlock-choice',
+  5: 'upgrade',
+  6: 'tactic',
+  7: 'unlock-last',
   8: 'unlock-ult',
-  9: 'upgrade',
+  9: 'tactic',
   10: 'upgrade',
+  11: 'tactic',
+  12: 'upgrade',
+  13: 'upgrade',
+  14: 'tactic',
+  15: 'upgrade',
+  16: 'tactic',
+  17: 'tactic',
+  18: 'upgrade',
+  19: 'tactic',
+  20: 'tactic',
 }
 
 export interface Progression {
@@ -121,7 +167,7 @@ export function pendingReward(prog: Progression): LevelReward | null {
   if (prog.pendingLevelUps <= 0) return null
   // 여러 개가 밀려 있으면 낮은 레벨부터 처리한다.
   const level = prog.level - prog.pendingLevelUps + 1
-  return LEVEL_REWARDS[level] ?? 'upgrade'
+  return LEVEL_REWARDS[level] ?? 'tactic'
 }
 
 /** 대기 중인 레벨업 하나를 소진한다. 선택 적용 후 호출한다. */
@@ -161,9 +207,9 @@ export interface UpgradeCandidate {
  * 반드시 rng만 쓴다. 정렬·순회 순서가 입력 배열 순서에만 의존하므로
  * 같은 시드 + 같은 상태면 항상 같은 카드가 나온다.
  *
- * @param taken 이미 획득한 강화 id. 5분에 강화는 5번뿐인데 이미 가진 카드가
+ * @param taken 이미 획득한 강화 id. 5분에 강화는 7번뿐인데 이미 가진 카드가
  *              다시 뜨면 선택이 아니라 낭비가 되고, 하필 그게 심사자가
- *              마지막으로 보는 화면(Lv10)이 될 수 있다.
+ *              마지막으로 보는 강화 화면(Lv18)이 될 수 있다.
  */
 export function rollUpgrades(
   rng: Rng,

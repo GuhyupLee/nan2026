@@ -2,6 +2,14 @@
 <html lang="ko">
   <head>
     <meta charset="UTF-8" />
+    <link rel="icon" type="image/png" href="%BASE_URL%favicon.png" />
+    <link
+      rel="preload"
+      as="image"
+      type="image/webp"
+      href="%BASE_URL%art/main-menu-keyart.webp"
+      fetchpriority="high"
+    />
     <meta
       name="viewport"
       content="width=device-width, initial-scale=1.0, viewport-fit=cover"
@@ -9,21 +17,22 @@
     <meta name="theme-color" content="#07090d" />
     <meta
       name="description"
-      content="빛의 선을 긋는 일현과 달의 원을 베는 월아. 두 전투 스타일로 살아남는 액션 서바이벌."
+      content="명월 — 달은 원을 파고, 해는 선을 긋는다. 두 전투 스타일로 5분 안에 보스를 쓰러뜨리는 액션 서바이벌."
     />
     <meta property="og:type" content="website" />
-    <meta property="og:title" content="액션 서바이벌 프로토타입" />
+    <meta property="og:site_name" content="명월" />
+    <meta property="og:title" content="명월" />
     <meta
       property="og:description"
-      content="달은 원을 파고, 해는 선을 긋는다."
+      content="달은 원을 파고, 해는 선을 긋는다. 두 전투 스타일로 펼치는 액션 서바이벌."
     />
     <meta name="twitter:card" content="summary" />
-    <meta name="twitter:title" content="액션 서바이벌 프로토타입" />
+    <meta name="twitter:title" content="명월" />
     <meta
       name="twitter:description"
-      content="달은 원을 파고, 해는 선을 긋는다."
+      content="달은 원을 파고, 해는 선을 긋는다. 두 전투 스타일로 펼치는 액션 서바이벌."
     />
-    <title>액션 서바이벌 프로토타입</title>
+    <title>명월</title>
     <style>
       :root {
         --bg: #07090d;
@@ -188,9 +197,9 @@
     <div id="stats"></div>
     <div id="hint" class="hidden">화면을 누른 채 움직이세요</div>
     <div id="boot">
-      <h1>전투 준비 중</h1>
+      <h1>명월</h1>
       <div class="bar"></div>
-      <p>LOADING</p>
+      <p>전투 준비 중</p>
     </div>
     <script type="module" src="/src/main.ts"></script>
   </body>

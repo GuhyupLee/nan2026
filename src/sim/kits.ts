@@ -422,7 +422,7 @@ function stepMeleeUlt(world: World): void {
   emitRing(world, p.pos.x, p.pos.y, radius, 3)
 
   if (last) {
-    // 마지막 타격의 회복이 근접 클래스가 5분을 완주하는 유일한 큰 회복이다.
+    // 마지막 타격의 회복이 근접 클래스 스킬에서 나오는 유일한 큰 회복이다.
     p.hp = Math.min(world.stats.maxHp, p.hp + 58)
     u.active = false
     u.hitsLeft = 0

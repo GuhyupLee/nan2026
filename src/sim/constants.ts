@@ -3,7 +3,8 @@
  *
  * 아래 값들은 "상수"가 아니라 world.stats의 초기값이다. 강화 카드가
  * 런타임에 바꾸는 대상이므로 게임 코드는 이 상수가 아니라 world.stats를 읽는다.
- * (진짜 상수는 SIM_HZ / DT / MAX_TICKS_PER_FRAME / ARENA_RADIUS / PLAYER_ACCEL 뿐이다.)
+ * (진짜 상수는 SIM_HZ / DT / RUN_TIME_LIMIT / MAX_TICKS_PER_FRAME /
+ * ARENA_RADIUS / PLAYER_ACCEL뿐이다.)
  *
  * 렌더링·연출용 수치는 절대 여기 두지 않는다.
  */
@@ -13,6 +14,9 @@ export const SIM_HZ = 60
 
 /** 시뮬레이션 한 틱의 길이(초). */
 export const DT = 1 / SIM_HZ
+
+/** 보스를 쓰러뜨려야 하는 전체 런 제한 시간(초). */
+export const RUN_TIME_LIMIT = 300
 
 /** 한 프레임에 밀어넣을 수 있는 최대 틱 수. 탭 복귀 시 death spiral 방지. */
 export const MAX_TICKS_PER_FRAME = 8

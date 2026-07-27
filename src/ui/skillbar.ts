@@ -43,7 +43,7 @@ export const DEFAULT_SLOTS: SlotMeta[] = [
 
 interface SlotView {
   meta: SlotMeta
-  root: HTMLDivElement
+  root: HTMLButtonElement
   icon: HTMLImageElement
   fallback: HTMLSpanElement
   cd: HTMLDivElement
@@ -52,24 +52,33 @@ interface SlotView {
   wasReady: boolean
 }
 
+export interface SkillBarHandlers {
+  start: (id: SkillId) => void
+  release: (id: SkillId) => void
+  cancel: (id: SkillId) => void
+}
+
 export class SkillBar {
   private readonly root: HTMLDivElement
   private readonly slots: SlotView[] = []
+  private readonly cancelPointers: Array<() => void> = []
   private currentClass: PlayerClass | null = null
 
   constructor(
     parent: HTMLElement,
     meta: readonly SlotMeta[],
-    onPress: (id: SkillId) => void,
+    handlers: SkillBarHandlers,
   ) {
     this.root = document.createElement('div')
     this.root.className = 'skillbar'
 
     for (const m of meta) {
-      const slot = document.createElement('div')
+      const slot = document.createElement('button')
       slot.className = 'slot'
+      slot.type = 'button'
       slot.dataset.kind = m.kind
       slot.dataset.state = 'locked'
+      slot.disabled = true
       slot.title = `${m.name} (${m.key})`
 
       const glyph = document.createElement('div')
@@ -100,13 +109,75 @@ export class SkillBar {
       cdText.className = 'cdtext'
       slot.appendChild(cdText)
 
-      // pointerdown으로 받아야 터치에서 반응이 즉각적이다.
-      // click은 모바일에서 최대 300ms 지연될 수 있다.
+      let activePointerId: number | null = null
+
+      const clearPointer = (cancel: boolean): void => {
+        if (activePointerId === null) return
+        const pointerId = activePointerId
+        activePointerId = null
+        delete slot.dataset.targeting
+        if (slot.hasPointerCapture(pointerId)) {
+          slot.releasePointerCapture(pointerId)
+        }
+        if (cancel) handlers.cancel(m.id)
+      }
+      this.cancelPointers.push(() => clearPointer(true))
+
       slot.addEventListener('pointerdown', (e) => {
         e.preventDefault()
         e.stopPropagation()
-        if (slot.dataset.state === 'locked') return
-        onPress(m.id)
+        if (slot.dataset.state === 'locked' || activePointerId !== null) return
+        activePointerId = e.pointerId
+        slot.setPointerCapture(e.pointerId)
+        slot.dataset.targeting = 'true'
+        handlers.start(m.id)
+      })
+
+      slot.addEventListener('pointerup', (e) => {
+        if (e.pointerId !== activePointerId) return
+        e.preventDefault()
+        e.stopPropagation()
+        clearPointer(false)
+        handlers.release(m.id)
+      })
+
+      const cancelPointer = (e: PointerEvent): void => {
+        if (e.pointerId !== activePointerId) return
+        e.preventDefault()
+        e.stopPropagation()
+        clearPointer(true)
+      }
+      slot.addEventListener('pointercancel', cancelPointer)
+      slot.addEventListener('pointerleave', cancelPointer)
+      slot.addEventListener('lostpointercapture', (e) => {
+        if (e.pointerId !== activePointerId) return
+        activePointerId = null
+        delete slot.dataset.targeting
+        handlers.cancel(m.id)
+      })
+      // 터치는 브라우저의 암시적 포인터 캡처 때문에 pointerleave가 생략될 수
+      // 있다. 캡처 중에도 좌표를 직접 검사해 버튼 밖 드래그를 취소한다.
+      slot.addEventListener('pointermove', (e) => {
+        if (e.pointerId !== activePointerId) return
+        const bounds = slot.getBoundingClientRect()
+        if (
+          e.clientX < bounds.left ||
+          e.clientX > bounds.right ||
+          e.clientY < bounds.top ||
+          e.clientY > bounds.bottom
+        ) {
+          cancelPointer(e)
+        }
+      })
+
+      // 포인터 click은 pointerdown/up에서 이미 처리했다. 키보드와 보조기술이
+      // 만드는 detail=0 click만 한 번의 완결된 시전으로 바꾼다.
+      slot.addEventListener('click', (e) => {
+        e.preventDefault()
+        e.stopPropagation()
+        if (e.detail !== 0 || slot.dataset.state === 'locked') return
+        handlers.start(m.id)
+        handlers.release(m.id)
       })
 
       this.root.appendChild(slot)
@@ -117,6 +188,11 @@ export class SkillBar {
     this.setClass('ranged')
   }
 
+  /** Clears any held pointer before an overlay, restart, or menu takes control. */
+  cancelTargeting(): void {
+    for (const cancel of this.cancelPointers) cancel()
+  }
+
   /** 매 프레임 호출한다. DOM 쓰기는 값이 바뀔 때만 일어나게 막아뒀다. */
   update(book: SkillBook, playerClass?: PlayerClass): void {
     if (playerClass && playerClass !== this.currentClass) this.setClass(playerClass)
@@ -125,6 +201,7 @@ export class SkillBar {
       const s = book[view.meta.id]
 
       if (!s.unlocked) {
+        view.root.disabled = true
         if (view.root.dataset.state !== 'locked') {
           view.root.dataset.state = 'locked'
           view.cd.style.setProperty('--p', '0')
@@ -134,6 +211,7 @@ export class SkillBar {
         continue
       }
 
+      view.root.disabled = false
       const ready = s.cooldown <= 0
 
       if (ready) {
