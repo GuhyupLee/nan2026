@@ -1,4 +1,11 @@
-import { ARENA_RADIUS, DT, PLAYER_ACCEL, RUN_TIME_LIMIT } from './constants.ts'
+import {
+  ARENA_RADIUS,
+  DT,
+  KILL_HEAL_CAP,
+  KILL_HEAL_RATE,
+  PLAYER_ACCEL,
+  RUN_TIME_LIMIT,
+} from './constants.ts'
 import { MELEE_W_DASH_END, MELEE_W_PREPARE_END } from './action-timing.ts'
 import { currentSpeed, stepAbilities } from './abilities.ts'
 import { releaseFinishedPlayerAction } from './actions.ts'
@@ -43,6 +50,9 @@ export function createWorld(seed: number, playerClass: PlayerClass = 'ranged'): 
     attackCooldown: 0,
     speedBoostUntil: -1,
     invulnUntil: -1,
+    // 예산은 가득 찬 채로 시작한다. 첫 교전에서 회복이 없으면 초반 난이도가
+    // 실제 설계보다 급해 보인다.
+    killHealBudget: KILL_HEAL_CAP,
     gauge: 0,
     empowered: false,
   }
@@ -228,6 +238,9 @@ function stepPlayer(world: World, input: Input): void {
   const p = world.player
   const action = world.playerAction
   const meleeDash = action?.meleeDash
+
+  // 처치 회복 예산을 채운다. 상한이 있어야 회복이 피해를 압도하지 않는다.
+  p.killHealBudget = Math.min(KILL_HEAL_CAP, p.killHealBudget + KILL_HEAL_RATE * DT)
 
   // 렌더 보간용으로 직전 상태를 먼저 보관한다.
   p.prevPos.x = p.pos.x

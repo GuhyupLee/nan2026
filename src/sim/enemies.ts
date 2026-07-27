@@ -42,13 +42,29 @@ export interface EnemyTypeDef {
  * 실수 한 번으로 즉사하지는 않는 선으로 낮춘다.
  */
 export const ENEMY_TYPES: readonly EnemyTypeDef[] = [
-  { id: 'walker', name: '워커', hp: 20, speed: 3.4, radius: 0.42, contactDamage: 3, xp: 1, knockbackResist: 0 },
-  { id: 'rusher', name: '러셔', hp: 12, speed: 6.4, radius: 0.33, contactDamage: 4, xp: 1, knockbackResist: 0 },
-  { id: 'brute', name: '브루트', hp: 90, speed: 2.1, radius: 0.62, contactDamage: 9, xp: 4, knockbackResist: 0.55 },
+  // 속도가 이 게임의 위험도를 지배한다.
+  //
+  // 계측 결과 플레이어가 5분 동안 받는 총 피해가 **1~6**이었다(최대 체력 120).
+  // 접촉 시간은 전체의 0%. 원인은 피해량이 아니라 속도였다 — 플레이어가 10.0,
+  // 가장 빠른 적이 6.4라 카이팅하면 물리적으로 절대 잡히지 않는다. 그 상태에서
+  // 접촉 피해를 아무리 올려도 0에 곱하는 것이라 아무 일도 일어나지 않는다.
+  //
+  // 그래서 세 종류에 서로 다른 역할을 준다:
+  //   워커  — 느리지만 수가 많다. 벽을 만들어 도망칠 공간을 좁힌다
+  //   러셔  — **플레이어보다 빠르다**. 도망은 답이 아니고 죽여야 한다.
+  //           대신 종잇장이라 스쳐도 죽는다. 위협의 주된 원천
+  //   브루트 — 느리고 단단하고 아프다. 무시하면 누적된다
+  { id: 'walker', name: '워커', hp: 26, speed: 7.6, radius: 0.42, contactDamage: 6, xp: 1, knockbackResist: 0.1 },
+  { id: 'rusher', name: '러셔', hp: 14, speed: 11.4, radius: 0.33, contactDamage: 9, xp: 1, knockbackResist: 0 },
+  { id: 'brute', name: '브루트', hp: 110, speed: 5.2, radius: 0.62, contactDamage: 17, xp: 4, knockbackResist: 0.6 },
   {
     id: 'rift-sovereign',
     name: '균열의 군주',
-    hp: 6500,
+    // 6,500은 아무도 못 잡는 수치였다. 12시드 × 2클래스 계측에서 승리 0/24,
+    // 90초 동안 깎아낸 양이 근접 23% · 원거리 6%였다. 클라이맥스가 "격파"인데
+    // 격파가 구조적으로 불가능하면 5분 아크가 완성되지 않는다.
+    // 스킬 밸류를 올리는 작업(별건)이 끝나면 다시 올려 잡는다.
+    hp: 2600,
     speed: 2.45,
     radius: 1.55,
     // 돌진 중 붙어도 회피 한 번을 쓸 시간은 남도록 초당 피해를 낮게 잡는다.
@@ -212,14 +228,18 @@ export interface DeathEvent {
  * 예전 계획의 150~250마리는 필요 없다 — 100마리면 화면이 가득 찬다.
  */
 const SPAWN_CURVE: ReadonlyArray<readonly [number, number]> = [
-  [0, 4], // 0:00  조작 학습
-  [20, 12], // 0:20  첫 스킬 해금
-  [50, 20], // 0:50  두번째 해금
-  [100, 40], // 1:40  마지막 스킬 → 파워스파이크 시작
-  [160, 72], // 2:40  압박 구간 진입
-  [200, 100], // 3:20  밀도 최대
-  [210, 62], // 3:30  보스 등장 — 잡몹을 한 번 정리해 무대를 비운다
-  [300, 78], // 5:00  보스전 내내 압박 유지
+  // 밀도가 두 번째 위험 축이다. 러셔가 속도로 압박한다면 워커는 **공간**으로
+  // 압박한다 — 뱀서라이크에서 죽는 이유는 한 마리가 세서가 아니라 도망칠
+  // 틈이 없어서다. 반지름 30 아레나에서 100마리는 마리당 28유닛²라 걸어서
+  // 빠져나가진다. 그래서 후반 밀도를 크게 올렸다.
+  [0, 5], // 0:00  조작 학습
+  [20, 16], // 0:20  첫 스킬 해금
+  [50, 30], // 0:50  두번째 해금
+  [100, 62], // 1:40  마지막 스킬 → 파워스파이크 시작
+  [160, 118], // 2:40  압박 구간 진입
+  [200, 165], // 3:20  밀도 최대 — 이 구간이 "어? 위험한데"를 만든다
+  [210, 96], // 3:30  보스 등장 — 잡몹을 한 번 정리해 무대를 비운다
+  [300, 130], // 5:00  보스전 내내 압박 유지
 ]
 
 export function targetAliveCount(time: number): number {
@@ -403,7 +423,10 @@ const SEPARATION = 14
  * 초과분은 버리지 않고 비례 축소한다 — 마릿수가 늘수록 위험이 커지되
  * 선형으로 커지지는 않게 한다.
  */
-const MAX_CONTACT_ATTACKERS = 4
+const MAX_CONTACT_ATTACKERS = 6
+
+/** 몸 겹침 위로 더 주는 접촉 여유 사거리. 위 주석 참조. */
+const CONTACT_REACH = 0.35
 
 const neighborBuf = new Int32Array(96)
 const impulseOut = { x: 0, y: 0 }
@@ -567,7 +590,11 @@ export function stepEnemies(
     // --- 플레이어 접촉 ---
     const cdx = nx - px
     const cdy = ny - py
-    const touch = def.radius + playerRadius
+    // 몸이 정확히 겹칠 때만 피해를 주면 접촉이 거의 성립하지 않는다. 적끼리
+    // 서로 밀어내는 분리 조향 때문에 플레이어 주위에 고리를 만들고, 그 고리에서
+    // 실제로 반경 안에 들어오는 건 한두 마리뿐이다. 계측상 접촉 시간이 전체의
+    // 2%였다. 조금의 여유 사거리를 줘야 "둘러싸였다"가 피해로 이어진다.
+    const touch = def.radius + playerRadius + CONTACT_REACH
     if (bossPhase !== 'arrival' && cdx * cdx + cdy * cdy < touch * touch) {
       contactDamage += def.contactDamage * DT
       contactCount++

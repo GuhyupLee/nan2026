@@ -35,9 +35,18 @@ export function damageEnemy(world: World, i: number, amount: number): boolean {
   grantXp(world, def.xp)
 
   // 점등된 적이 죽으면 빛이 돌아온다 — 원거리의 지속 회복.
+  //
+  // 예산(토큰 버킷)을 거쳐 나간다. 상한이 없던 시절에는 한 판 3,000킬에
+  // 최대 1,800을 회복해 받은 피해 54를 완전히 덮었다. 이제는 초당
+  // KILL_HEAL_RATE를 넘길 수 없어서, 몰아서 쓸어담아도 그 순간 예산만큼만
+  // 돌아온다.
   const heal = world.stats.markKillHeal
   if (heal > 0 && pool.markExpire[i]! > world.time) {
-    world.player.hp = Math.min(world.stats.maxHp, world.player.hp + heal)
+    const amount = Math.min(heal, world.player.killHealBudget)
+    if (amount > 0) {
+      world.player.killHealBudget -= amount
+      world.player.hp = Math.min(world.stats.maxHp, world.player.hp + amount)
+    }
   }
 
   if (world.deaths.length < 128) {

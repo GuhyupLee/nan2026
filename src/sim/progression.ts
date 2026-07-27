@@ -13,26 +13,32 @@ import type { Rng } from './rng.ts'
  * 인덱스 i = 레벨 (i+1). 즉 [1] = Lv2 = 20초.
  */
 export const TARGET_LEVEL_TIMES = [
-  0, //   Lv1  0:00
-  20, //  Lv2  0:20
-  38, //  Lv3  0:38
-  55, //  Lv4  0:55
-  72, //  Lv5  1:12
-  89, //  Lv6  1:29
-  106, // Lv7  1:46
-  123, // Lv8  2:03
-  140, // Lv9  2:20
-  157, // Lv10 2:37
-  174, // Lv11 2:54
-  191, // Lv12 3:11
-  208, // Lv13 3:28
-  225, // Lv14 3:45
-  240, // Lv15 4:00
-  252, // Lv16 4:12
-  264, // Lv17 4:24
-  276, // Lv18 4:36
-  282, // Lv19 4:42
-  290, // Lv20 4:50
+  0, // Lv1  0:00
+  14, // Lv2  0:14
+  27, // Lv3  0:27
+  40, // Lv4  0:40
+  53, // Lv5  0:53
+  66, // Lv6  1:06
+  79, // Lv7  1:19
+  92, // Lv8  1:32
+  105, // Lv9  1:45
+  118, // Lv10  1:58
+  131, // Lv11  2:11
+  144, // Lv12  2:24
+  156, // Lv13  2:36
+  168, // Lv14  2:48
+  180, // Lv15  3:00
+  192, // Lv16  3:12
+  204, // Lv17  3:24
+  215, // Lv18  3:35
+  226, // Lv19  3:46
+  236, // Lv20  3:56
+  246, // Lv21  4:06
+  256, // Lv22  4:16
+  265, // Lv23  4:25
+  274, // Lv24  4:34
+  283, // Lv25  4:43
+  292, // Lv26  4:52
 ] as const
 
 export const MAX_LEVEL = TARGET_LEVEL_TIMES.length
@@ -48,32 +54,38 @@ export const MAX_LEVEL = TARGET_LEVEL_TIMES.length
  * 스폰 또는 적 체력을 바꾸면 반드시 npm run balance로 곡선을 다시 확인한다.
  */
 export const XP_FOR_NEXT = [
-  29,
-  49,
+  21,
+  43,
   60,
-  78,
-  121,
-  156,
-  199,
-  236,
+  76,
+  97,
+  101,
+  163,
+  187,
+  210,
+  249,
+  270,
+  309,
+  326,
+  328,
+  385,
+  394,
+  327,
   271,
-  347,
-  406,
-  407,
-  276,
-  252,
-  190,
-  231,
-  226,
-  128,
-  145,
+  268,
+  275,
+  254,
+  237,
+  234,
+  259,
+  299,
 ] as const
 
 /**
  * QWER까지 포함한 근접의 실제 XP 획득 속도가 원거리보다 약 14% 높다.
  * 요구 XP는 공통으로 유지하고 획득량만 보정해 두 클래스의 선택 타이밍을 맞춘다.
  */
-export const MELEE_XP_GAIN_MULTIPLIER = 0.86
+export const MELEE_XP_GAIN_MULTIPLIER = 0.54
 
 /** 레벨업 시 무엇을 주는가. */
 export type LevelReward =
@@ -102,7 +114,13 @@ export const LEVEL_REWARDS: Readonly<Record<number, LevelReward>> = {
   17: 'skill-rank',
   18: 'upgrade',
   19: 'skill-rank',
-  20: 'skill-rank',
+  20: 'upgrade',
+  21: 'skill-rank',
+  22: 'upgrade',
+  23: 'skill-rank',
+  24: 'upgrade',
+  25: 'skill-rank',
+  26: 'upgrade',
 }
 
 export interface Progression {

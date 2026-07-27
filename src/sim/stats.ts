@@ -85,15 +85,20 @@ export interface Stats {
 export function createStats(cls: PlayerClass): Stats {
   const melee = cls === 'melee'
   return {
-    // 실효 체력 격차는 8시드 실측으로 좁힌 값이다.
-    // 처음 명세대로 100 vs 194(1.94배)로 두니 원딜이 0/8 전멸,
-    // 근딜이 8/8 완주였다. 원딜은 "안 맞으면 된다"를 전제했지만
-    // 적 100마리가 수렴하는 서바이버류에서 그 전제는 성립하지 않는다.
-    // 현재 격차 133 vs 162(1.22배) — 근딜이 더 단단하되 원딜이 즉사하지 않는다.
-    maxHp: melee ? 130 : 120,
+    // 체력 격차가 클래스 정체성이다.
+    //
+    // 이전에는 120 vs 130(1.08배)이라 사실상 같은 캐릭터였다. 격차를 넓힌 근거는
+    // 적 재설계 쪽에 있다 — 러셔가 플레이어보다 빨라지면서 "안 맞으면 된다"가
+    // 더 이상 공짜가 아니게 됐고, 그래서 원거리에 진짜 대가를 지울 수 있다.
+    // 원거리는 한 번 붙잡히면 위험하고, 근접은 붙어서 버티는 것이 일이다.
+    maxHp: melee ? 130 : 100,
     speed: melee ? 10.5 : PLAYER_SPEED,
     radius: melee ? 0.62 : PLAYER_RADIUS,
-    damageTakenMul: melee ? 0.8 : 0.9,
+    // 근접은 붙어 있는 것이 일이라 실제로 맞는 시간이 원거리보다 길다
+    // (계측: 접촉 15% 대 12%, 총피해 560 대 306). 감소율을 0.8로 두니
+    // 실효 체력이 181이 되어 12시드 전부 무사 완주했다 — 근접이 "버틴다"를
+    // 넘어 "안 죽는다"가 되면 위치 게임이 사라진다.
+    damageTakenMul: melee ? 0.88 : 0.9,
 
     atkDamage: melee ? 22 : ATK_DAMAGE,
     atkInterval: melee ? 0.42 : ATK_INTERVAL,
