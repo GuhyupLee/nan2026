@@ -1,6 +1,6 @@
 import * as THREE from 'three'
 
-import { PLAYER_ACTION_DURATION as ACTION_DURATION } from '../sim/action-timing.ts'
+import { playerActionDuration } from '../sim/action-timing.ts'
 import type { PlayerClass } from '../sim/types.ts'
 import {
   type BodyPalette,
@@ -435,6 +435,7 @@ const POSES: Record<CharacterAction, Pose> = {
 }
 
 function makeRig(
+  cls: PlayerClass,
   body: BodyRig,
   weapon: THREE.Group | null,
   onUpdate: ((time: number, moving: number, gait: number) => void) | null,
@@ -448,13 +449,21 @@ function makeRig(
     group: body.root,
     source: 'procedural',
 
-    playAction(kind, time) {
+    playAction(kind, time, startedAt = time) {
       const progress = action.kind
-        ? (time - action.start) / ACTION_DURATION[action.kind]
+        ? (time - action.start) / playerActionDuration(cls, action.kind)
         : 1
-      if (!canStartVrmAction(action.kind, progress, kind)) return false
+      const newerPrimarySkill =
+        (kind === 'q' || kind === 'w' || kind === 'e' || kind === 'r') &&
+        startedAt > action.start + 1e-6
+      if (
+        !newerPrimarySkill &&
+        !canStartVrmAction(action.kind, progress, kind)
+      ) {
+        return false
+      }
       action.kind = kind
-      action.start = time
+      action.start = startedAt
       return true
     },
 
@@ -469,7 +478,7 @@ function makeRig(
       let env = 0
       let pose = ZERO
       if (action.kind) {
-        const dur = ACTION_DURATION[action.kind]
+        const dur = playerActionDuration(cls, action.kind)
         const t = (time - action.start) / dur
         if (t >= 1) action.kind = null
         else {
@@ -584,7 +593,7 @@ export function createCharacterRig(cls: PlayerClass): CharacterRig {
     extras.katana.userData.baseY = extras.katana.position.y
     const baseRot = extras.katana.rotation.clone()
     const sayaBaseY = extras.saya.position.y
-    return makeRig(body, extras.katana, (_t, _mv, _gait) => {
+    return makeRig(cls, body, extras.katana, (_t, _mv, _gait) => {
       extras.saya.position.y = sayaBaseY + body.root.position.y * 0.6
     }, baseRot)
   }
@@ -594,7 +603,7 @@ export function createCharacterRig(cls: PlayerClass): CharacterRig {
   const baseRot = extras.staff.rotation.clone()
   const prismGeoCount = extras.prisms.length
 
-  return makeRig(body, extras.staff, (time) => {
+  return makeRig(cls, body, extras.staff, (time) => {
     // 궤도 프리즘 — 서로 120도, 높이가 어긋나 평면으로 안 보인다
     for (let i = 0; i < prismGeoCount; i++) {
       const a = time * 1.2 + (i * Math.PI * 2) / prismGeoCount

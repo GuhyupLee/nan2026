@@ -11,7 +11,7 @@ import { nearestEnemy, queryCircle, queryCone, querySegment } from './query.ts'
 import { consumeCooldown, skillDamageMul, type SkillId } from './skills.ts'
 import { effectiveAtkDamage } from './stats.ts'
 import { applyImpulse, applyMark, applyPull, applyRoot, applySlow } from './status.ts'
-import type { World } from './types.ts'
+import type { PendingPlayerAction, World } from './types.ts'
 import { pushBlast, pushZone } from './zones.ts'
 
 /**
@@ -351,40 +351,33 @@ function meleeW(world: World, context?: SkillCastContext): void {
   const pool = world.enemies
 
   // 이동 방향 우선 — 도망칠 때 손이 이미 그쪽을 향하고 있다.
-  let dx = context ? Math.cos(context.angle) : p.vel.x
-  let dy = context ? Math.sin(context.angle) : p.vel.y
-  if (!context && Math.hypot(dx, dy) < 0.5) {
-    aimDir(world, dir)
-    dx = dir.x
-    dy = dir.y
-  } else if (!context) {
-    const l = Math.hypot(dx, dy)
-    dx /= l
-    dy /= l
-  }
-
-  const fromX = p.pos.x
-  const fromY = p.pos.y
-  const toX = fromX + dx * 7
-  const toY = fromY + dy * 7
-
-  teleport(world, toX, toY)
-  p.invulnUntil = now + 0.3
+  const dash = world.playerAction?.meleeDash
+  const angle = context?.angle ?? p.facing
+  const dx = Math.cos(angle)
+  const dy = Math.sin(angle)
+  const fromX = dash?.originX ?? p.pos.x
+  const fromY = dash?.originY ?? p.pos.y
+  const toX = dash?.destinationX ?? p.pos.x
+  const toY = dash?.destinationY ?? p.pos.y
 
   // 지나온 경로
-  querySegment(pool, world.enemyHash, fromX, fromY, p.pos.x, p.pos.y, 2.2, (i) => {
+  // 돌진이 0.16초 동안 실제로 전진하므로, 프레임 사이를 스친 적도 검 궤적에
+  // 포함되도록 기존 순간이동 판정보다 아주 조금 넓은 폭을 쓴다.
+  querySegment(pool, world.enemyHash, fromX, fromY, toX, toY, 2.3, (i) => {
     applyMark(pool, i, now, MARK_DURATION)
     damageEnemy(world, i, dmg(world, 'w', 60))
   })
+
   // 착지 지점 — 경로와 겹치면 120이 들어가 브루트가 정확히 한 사이클에 죽는다.
-  queryCircle(pool, world.enemyHash, p.pos.x, p.pos.y, 3.5, (i) => {
-    applyImpulse(pool, i, pool.x[i]! - p.pos.x, pool.y[i]! - p.pos.y, 30)
+  queryCircle(pool, world.enemyHash, toX, toY, 3.5, (i) => {
+    applyMark(pool, i, now, MARK_DURATION)
     damageEnemy(world, i, dmg(world, 'w', 60))
+    applyImpulse(pool, i, pool.x[i]! - toX, pool.y[i]! - toY, 30)
   })
 
-  emitBeam(world, fromX, fromY, p.pos.x, p.pos.y, 3, 3)
-  emitRing(world, p.pos.x, p.pos.y, 3.5, 3)
-  emitCast(world, 'w', Math.atan2(dy, dx), fromX, fromY, p.pos.x, p.pos.y)
+  emitBeam(world, fromX, fromY, toX, toY, 3, 3)
+  emitRing(world, toX, toY, 3.5, 3)
+  emitCast(world, 'w', Math.atan2(dy, dx), fromX, fromY, toX, toY)
 }
 
 /** E 월륜(月輪) — 주변을 한 겹 밀어낸 뒤 끌어모아 통째로 벤다. */
@@ -468,7 +461,7 @@ function stepMeleeUlt(world: World): void {
   if (world.attacks.length < 16) {
     world.attacks.push({ angle: attackAngle, kind: 'ult' })
   }
-  emitActionStart(world, 'ult', attackAngle)
+  emitActionStart(world, 'ult', attackAngle, now)
 
   const radius = last ? 7 : 3.4
   const damage = last ? 430 : 260
@@ -531,7 +524,7 @@ export function castSkill(world: World, slot: SkillId): boolean {
     if (dx * dx + dy * dy > 1e-8) angle = Math.atan2(dy, dx)
   }
 
-  return beginPlayerAction(
+  const accepted = beginPlayerAction(
     world,
     'skill',
     slot,
@@ -540,6 +533,35 @@ export function castSkill(world: World, slot: SkillId): boolean {
     world.lastAim.y,
     slot,
   )
+  if (!accepted) return false
+
+  if (world.playerClass === 'melee' && slot === 'w') {
+    const action = world.playerAction as PendingPlayerAction | null
+    if (!action) return false
+
+    const originX = p.pos.x
+    const originY = p.pos.y
+    let destinationX = originX + Math.cos(angle) * 7
+    let destinationY = originY + Math.sin(angle) * 7
+    const limit = world.arenaRadius - world.stats.radius
+    const distanceFromCenter = Math.hypot(destinationX, destinationY)
+    if (distanceFromCenter > limit && distanceFromCenter > 1e-9) {
+      const scale = limit / distanceFromCenter
+      destinationX *= scale
+      destinationY *= scale
+    }
+
+    action.meleeDash = {
+      originX,
+      originY,
+      destinationX,
+      destinationY,
+    }
+    p.vel.x = 0
+    p.vel.y = 0
+  }
+
+  return true
 }
 
 /** 매 틱 도는 킷 상태(지속 궁극기 등). */
@@ -606,7 +628,7 @@ export function tryEmpoweredAttack(world: World, angle?: number): boolean {
   }
 
   if (world.playerAction?.source !== 'skill') {
-    emitActionStart(world, 'empowered', Math.atan2(dir.y, dir.x))
+    emitActionStart(world, 'empowered', Math.atan2(dir.y, dir.x), world.time)
   }
   if (world.attacks.length < 16) {
     world.attacks.push({ angle: Math.atan2(dir.y, dir.x), kind: 'empowered' })

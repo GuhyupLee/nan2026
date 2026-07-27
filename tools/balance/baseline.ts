@@ -19,7 +19,7 @@ export const BALANCE_REGRESSION_SAMPLES: readonly BalanceRegressionSample[] = [
   { playerClass: 'ranged', seed: 1, qwerKills: 3587, autoKills: 1951, level20Time: 277.2 },
   { playerClass: 'ranged', seed: 17, qwerKills: 3821, autoKills: 2039, level20Time: 269.0 },
   { playerClass: 'ranged', seed: 59, qwerKills: 3266, autoKills: 1686, level20Time: 295.5 },
-  { playerClass: 'melee', seed: 1, qwerKills: 4339, autoKills: 2475, level20Time: 271.2 },
-  { playerClass: 'melee', seed: 17, qwerKills: 3957, autoKills: 2401, level20Time: 285.5 },
-  { playerClass: 'melee', seed: 59, qwerKills: 3924, autoKills: 2237, level20Time: 287.8 },
+  { playerClass: 'melee', seed: 1, qwerKills: 4337, autoKills: 2475, level20Time: 273.1 },
+  { playerClass: 'melee', seed: 17, qwerKills: 3955, autoKills: 2401, level20Time: 288.4 },
+  { playerClass: 'melee', seed: 59, qwerKills: 3742, autoKills: 2237, level20Time: 298.8 },
 ]

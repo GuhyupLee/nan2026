@@ -1,4 +1,5 @@
 import { ARENA_RADIUS, DT, PLAYER_ACCEL, RUN_TIME_LIMIT } from './constants.ts'
+import { MELEE_W_DASH_END, MELEE_W_PREPARE_END } from './action-timing.ts'
 import { currentSpeed, stepAbilities } from './abilities.ts'
 import { releaseFinishedPlayerAction } from './actions.ts'
 import { stepAutoAttack } from './combat.ts'
@@ -225,6 +226,8 @@ const moveDir = vec2()
 
 function stepPlayer(world: World, input: Input): void {
   const p = world.player
+  const action = world.playerAction
+  const meleeDash = action?.meleeDash
 
   // 렌더 보간용으로 직전 상태를 먼저 보관한다.
   p.prevPos.x = p.pos.x
@@ -232,7 +235,7 @@ function stepPlayer(world: World, input: Input): void {
   p.prevFacing = p.facing
 
   // --- 이동 ---
-  if (world.ult.active) {
+  if (world.ult.active || meleeDash) {
     moveDir.x = 0
     moveDir.y = 0
     p.vel.x = 0
@@ -253,8 +256,29 @@ function stepPlayer(world: World, input: Input): void {
     p.vel.y += (targetVy - p.vel.y) * k
   }
 
-  p.pos.x += p.vel.x * DT
-  p.pos.y += p.vel.y * DT
+  if (meleeDash && action) {
+    // 이번 고정 틱 뒤의 상태는 다음 시뮬레이션 시각을 나타낸다.
+    // 그 시각을 샘플링해야 0.16..0.32초 돌진과 애니메이션이 맞고,
+    // prevPos -> pos 렌더 보간도 순간이동 없이 유지된다.
+    const sampleAt = (world.tick + 1) * DT
+    const elapsed = sampleAt - action.startedAt
+    const linearProgress = Math.max(
+      0,
+      Math.min(1, (elapsed - MELEE_W_PREPARE_END) / (MELEE_W_DASH_END - MELEE_W_PREPARE_END)),
+    )
+    const progress = linearProgress * linearProgress * (3 - 2 * linearProgress)
+    p.pos.x =
+      meleeDash.originX + (meleeDash.destinationX - meleeDash.originX) * progress
+    p.pos.y =
+      meleeDash.originY + (meleeDash.destinationY - meleeDash.originY) * progress
+
+    if (linearProgress > 0 && elapsed <= MELEE_W_DASH_END + DT) {
+      p.invulnUntil = Math.max(p.invulnUntil, action.startedAt + MELEE_W_DASH_END)
+    }
+  } else {
+    p.pos.x += p.vel.x * DT
+    p.pos.y += p.vel.y * DT
+  }
 
   // --- 아레나 경계 ---
   const maxDist = world.arenaRadius - world.stats.radius
@@ -274,7 +298,7 @@ function stepPlayer(world: World, input: Input): void {
   }
 
   // --- 조준 방향 ---
-  if (!world.ult.active) {
+  if (!world.ult.active && !meleeDash) {
     const ax = input.aim.x - p.pos.x
     const ay = input.aim.y - p.pos.y
     if (ax * ax + ay * ay > 1e-6) {

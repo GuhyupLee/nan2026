@@ -61,16 +61,27 @@ export interface PendingPlayerAction {
   /** 지면 지정 스킬을 위해 시작 시 고정한 조준점. */
   targetX: number
   targetY: number
+  /** 입력을 받아들인 정확한 시뮬레이션 시각. */
+  startedAt: number
   /** 실제 판정이 발생하는 월드 시각. */
   impactAt: number
   /** 후딜까지 끝나 다음 행동을 받을 수 있는 월드 시각. */
   endAt: number
   resolved: boolean
+  /** 근거리 W의 결정론적 월드 이동. 애니메이션은 인플레이스 상태를 유지한다. */
+  meleeDash?: {
+    originX: number
+    originY: number
+    destinationX: number
+    destinationY: number
+  }
 }
 
 export interface ActionStartEvent {
   kind: PlayerActionKind
   angle: number
+  /** 액션이 시작된 정확한 시뮬레이션 시각. */
+  startedAt: number
 }
 
 export interface Player {

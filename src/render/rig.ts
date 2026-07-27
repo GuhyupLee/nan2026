@@ -23,7 +23,14 @@ export interface CharacterRig {
   source: 'vrm' | 'procedural'
   update(time: number, speed: number): void
   /** 재생이 수락됐으면 true. 더 높은 우선순위 모션이 잠갔으면 false. */
-  playAction(action: CharacterAction, time: number): boolean
+  /**
+   * 시뮬레이션이 승인한 전투 동작을 재생한다.
+   *
+   * `time`은 현재 시각화용 시뮬레이션 시계이고 `startedAt`은 액션이 실제로
+   * 시작된 시뮬레이션 시각이다. 렌더 프레임이 늦게 도착해도 클립을 처음부터
+   * 재생하지 않고 이미 지난 만큼 건너뛸 수 있다.
+   */
+  playAction(action: CharacterAction, time: number, startedAt?: number): boolean
   /**
    * 발사점의 월드 좌표를 `out`에 채운다. 없으면 false.
    *

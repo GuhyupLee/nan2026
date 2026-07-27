@@ -5,7 +5,7 @@ import {
   VRMAnimationLoaderPlugin,
   type VRMAnimation,
 } from '@pixiv/three-vrm-animation'
-import { PLAYER_ACTION_DURATION as ACTION_DURATION } from '../sim/action-timing.ts'
+import { playerActionDuration } from '../sim/action-timing.ts'
 import type { PlayerClass } from '../sim/types.ts'
 import { CHARACTER_HEIGHT, type CharacterAction, type CharacterRig } from './rig.ts'
 import {
@@ -714,8 +714,8 @@ export function createVrmRig(cls: PlayerClass): CharacterRig | null {
   const weapon = wep.group
   const rawHand = humanoid.getRawBoneNode('rightHand')
   if (rawHand) {
-    // 손 본은 무기의 **위치**만 나른다. 방향은 매 프레임 월드 기준으로 다시
-    // 잡으므로 여기서 회전을 줄 필요가 없다.
+    // 위치와 방향 모두 raw 손 본을 따라간다. 아래에서 휴식 자세의 로컬 그립만
+    // 한 번 맞추고, 전투 중 회전은 VRMA 손목 트랙에 맡긴다.
     rawHand.add(weapon)
   }
   // 손 본의 월드 스케일이 1이 아니면(VRoid는 1.2 안팎) 무기까지 같이 커진다.
@@ -727,10 +727,22 @@ export function createVrmRig(cls: PlayerClass): CharacterRig | null {
   weapon.scale.multiplyScalar(1 / handScale)
 
   const restAim = WEAPON_REST[cls]
-  const aimEuler = new THREE.Euler()
-  const aimQuat = new THREE.Quaternion()
-  const handQuat = new THREE.Quaternion()
-  const groupQuat = new THREE.Quaternion()
+  if (rawHand) {
+    // 휴식 자세에서 손→무기 로컬 그립을 한 번만 계산한다. 이후에는 raw hand의
+    // 자식으로 그대로 두어 VRMA의 손목 회전이 검과 지팡이에 온전히 전달된다.
+    vrm.update(0)
+    group.updateWorldMatrix(true, true)
+    const handWorld = rawHand.getWorldQuaternion(new THREE.Quaternion())
+    const characterWorld = group.getWorldQuaternion(new THREE.Quaternion())
+    const restQuaternion = new THREE.Quaternion().setFromEuler(
+      new THREE.Euler(...restAim),
+    )
+    weapon.quaternion
+      .copy(handWorld)
+      .invert()
+      .multiply(characterWorld)
+      .multiply(restQuaternion)
+  }
 
   const poses = POSES[cls]
   const animation = VrmAnimationController.create(vrm, cls, animationLibrary)
@@ -753,21 +765,29 @@ export function createVrmRig(cls: PlayerClass): CharacterRig | null {
     group,
     source: 'vrm',
 
-    playAction(kind, time) {
+    playAction(kind, time, startedAt = time) {
       if (animation) {
-        if (!animation.playAction(kind, time)) return false
+        if (!animation.playAction(kind, time, startedAt)) return false
       } else {
         const progress = actionKind
-          ? (time - actionStart) / ACTION_DURATION[actionKind]
+          ? (time - actionStart) / playerActionDuration(cls, actionKind)
           : 1
-        if (!canStartVrmAction(actionKind, progress, kind)) return false
+        const newerPrimarySkill =
+          (kind === 'q' || kind === 'w' || kind === 'e' || kind === 'r') &&
+          startedAt > actionStart + 1e-6
+        if (
+          !newerPrimarySkill &&
+          !canStartVrmAction(actionKind, progress, kind)
+        ) {
+          return false
+        }
       }
       actionKind = kind
-      actionStart = time
+      actionStart = startedAt
       // 원거리 평타는 몸이 아니라 보주가 쏜다. 발사 이벤트를 여기서 받아
       // 보주만 반응시킨다.
       if (wep.orb && (kind === 'attack' || kind === 'empowered')) {
-        orbFiredAt = time
+        orbFiredAt = startedAt
         orbPower = kind === 'empowered' ? 1.6 : 1
       }
       return true
@@ -789,7 +809,8 @@ export function createVrmRig(cls: PlayerClass): CharacterRig | null {
       let env = 0
       let p = ZERO
       if (actionKind) {
-        const t = (time - actionStart) / ACTION_DURATION[actionKind]
+        const t =
+          (time - actionStart) / playerActionDuration(cls, actionKind)
         if (t >= 1) actionKind = null
         else {
           p = poses[actionKind]
@@ -926,26 +947,9 @@ export function createVrmRig(cls: PlayerClass): CharacterRig | null {
         wep.orb.rotation.x = time * 0.45
       }
 
-      // 스프링본(머리카락·치마·리본)과 MToon 갱신. 손으로 짠 관성 코드가
-      // 하던 일을 규격이 대신한다. 정규화 본 → raw 본 복사도 여기서 일어나므로
-      // 무기 방향은 반드시 이 뒤에 잡아야 한 프레임 늦지 않는다.
+      // 스프링본(머리카락·치마·리본), MToon, 정규화 본 → raw 본 복사를
+      // 갱신한다. 무기는 raw hand의 자식이라 별도 역보정 없이 함께 움직인다.
       vrm.update(dt)
-
-      // --- 무기 방향 ---
-      // 손 본의 월드 회전을 상쇄하고 캐릭터 공간 방향을 그대로 씌운다.
-      if (rawHand) {
-        // 렌더러가 월드 행렬을 갱신하기 전이라 손의 최신 회전을 직접 구한다.
-        rawHand.updateWorldMatrix(true, false)
-        rawHand.getWorldQuaternion(handQuat)
-        group.getWorldQuaternion(groupQuat)
-        aimEuler.set(
-          restAim[0] + p.aim[0] * env,
-          restAim[1] + p.aim[1] * env,
-          restAim[2] + p.aim[2] * env,
-        )
-        aimQuat.setFromEuler(aimEuler)
-        weapon.quaternion.copy(handQuat).invert().multiply(groupQuat).multiply(aimQuat)
-      }
     },
 
     blade: { base: wep.base, tip: wep.tip },

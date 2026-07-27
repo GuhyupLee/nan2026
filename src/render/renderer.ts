@@ -1,6 +1,7 @@
 import * as THREE from 'three'
 
-import { PLAYER_ACTION_DURATION } from '../sim/action-timing.ts'
+import { playerActionDuration } from '../sim/action-timing.ts'
+import { DT } from '../sim/constants.ts'
 import { TYPE_BOSS } from '../sim/enemies.ts'
 import type { SkillId } from '../sim/skills.ts'
 import type { PlayerClass, World } from '../sim/types.ts'
@@ -8,7 +9,6 @@ import type { Vec2 } from '../sim/vec.ts'
 import { length, lerp, lerpAngle } from '../sim/vec.ts'
 import { createArena } from './arena.ts'
 import {
-  type CharacterAction,
   type CharacterRig,
   createCharacterRig,
 } from './characters.ts'
@@ -83,6 +83,8 @@ export class Renderer {
   private actionFacingUntil = -Infinity
   /** 렌더 프레임 간격(초). 이벤트 수명 애니메이션에 쓴다. */
   private lastFrameTime = 0
+  /** pause에서 accumulator가 0으로 비워져도 시각화 시계가 뒤로 가지 않게 한다. */
+  private lastVisualSimTime = 0
 
   private readonly camTarget = new THREE.Vector3()
   private readonly raycaster = new THREE.Raycaster()
@@ -337,12 +339,31 @@ export class Renderer {
     // 첫 프레임과 탭 복귀 시 dt가 튀지 않게 막는다.
     const dt = this.lastFrameTime === 0 ? 1 / 60 : Math.min(now - this.lastFrameTime, 0.1)
     this.lastFrameTime = now
+    // prevPos → pos는 [world.time - DT, world.time] 구간을 나타낸다.
+    // 애니메이션도 같은 구간을 샘플링해야 타격 자세와 월드 착지가 한 틱
+    // 어긋나지 않는다.
+    const tickStart = Math.max(0, world.time - DT)
+    const requestedVisualTime =
+      world.time <= 0
+        ? 0
+        : tickStart + THREE.MathUtils.clamp(alpha, 0, 1) * DT
+    const visualTime =
+      this.renderedWorld !== world
+        ? requestedVisualTime
+        : Math.max(this.lastVisualSimTime, requestedVisualTime)
+    this.lastVisualSimTime = visualTime
+    // 일시정지에서 accumulator가 0으로 돌아가도 위치와 클립이 함께 같은
+    // 보간 지점에 머물도록 최종 시각에서 표시용 alpha를 다시 계산한다.
+    const visualAlpha =
+      world.time <= 0
+        ? 0
+        : THREE.MathUtils.clamp((visualTime - tickStart) / DT, 0, 1)
 
     const p = world.player
 
-    const px = lerp(p.prevPos.x, p.pos.x, alpha)
-    const pz = lerp(p.prevPos.y, p.pos.y, alpha)
-    const facing = lerpAngle(p.prevFacing, p.facing, alpha)
+    const px = lerp(p.prevPos.x, p.pos.x, visualAlpha)
+    const pz = lerp(p.prevPos.y, p.pos.y, visualAlpha)
+    const facing = lerpAngle(p.prevFacing, p.facing, visualAlpha)
 
     // 클래스가 바뀌면 리그를 갈아끼운다. 캐릭터 선택 직후 한 번 일어난다.
     //
@@ -350,32 +371,53 @@ export class Renderer {
     // 기본 클래스로 리그를 한 번 만드는데, 그때는 VRM(20MB)이 아직 안 받아져
     // 프로시저럴 폴백이 잡힌다. 그 기본 클래스를 그대로 고르면 클래스 비교가
     // 성립하지 않아 폴백 모델이 판 내내 남는다 — 실제로 원거리에서 그렇게 됐다.
+    const restartingRun =
+      this.renderedWorld !== null && this.renderedWorld !== world
+    let replacedRig = false
     if (
+      restartingRun ||
       world.playerClass !== this.charClass ||
       (this.charRig.source === 'procedural' && hasVrm(world.playerClass))
     ) {
       this.swapCharacter(world.playerClass)
+      replacedRig = true
     }
 
     if (this.renderedWorld !== world) {
       this.renderedWorld = world
       this.skillFx.reset()
+      this.actionFacingUntil = -Infinity
     }
 
-    this.consumeCharacterActions(world, now)
+    // VRM 다운로드가 스킬 도중 끝나 절차 리그를 교체한 경우, 시작 이벤트는
+    // 이미 지난 프레임에 비워졌을 수 있다. 시뮬이 보관한 현재 QWER을 원래
+    // startedAt으로 복구해 새 mixer가 동작 중간 위치부터 이어받게 한다.
+    const pending = world.playerAction
+    if (
+      replacedRig &&
+      pending &&
+      visualTime < pending.endAt &&
+      this.charRig.playAction(pending.kind, visualTime, pending.startedAt)
+    ) {
+      this.actionFacing = pending.angle
+      this.actionFacingUntil = pending.endAt
+    }
+
+    this.consumeCharacterActions(world, visualTime)
 
     this.charRig.group.position.set(px, 0, pz)
     // sim의 facing(+X 기준, XZ 평면)을 three의 Y축 회전으로 옮기면 부호가 뒤집힌다.
-    const displayFacing = now < this.actionFacingUntil ? this.actionFacing : facing
+    const displayFacing =
+      visualTime < this.actionFacingUntil ? this.actionFacing : facing
     this.charRig.group.rotation.y = -displayFacing
-    // 절차적 애니메이션은 시뮬 시간이 아니라 벽시계로 돈다 —
-    // 레벨업으로 시뮬이 멈춘 동안에도 캐릭터는 숨을 쉬어야 한다.
-    this.charRig.update(now, length(p.vel))
+    // VRMA와 판정은 같은 시뮬레이션 시계를 쓴다. 히트스톱·저프레임에서도
+    // 타격 자세와 실제 impactAt이 서로 앞서거나 뒤처지지 않는다.
+    this.charRig.update(visualTime, length(p.vel))
     // 리그가 본을 갱신한 **뒤**에 샘플해야 한 프레임 늦지 않는다.
     this.weaponTrail.update(now, dt)
 
-    this.enemyRenderer.update(world, alpha, dt)
-    this.skillFx.update(world, alpha, now, dt)
+    this.enemyRenderer.update(world, visualAlpha, dt)
+    this.skillFx.update(world, visualAlpha, now, dt)
     // 히트스톱으로 스케일한 dt를 주면 안 된다 — 화면이 멈춘 동안 흔들림과
     // 숫자까지 멈춰서 타격감이 아니라 프레임 드랍으로 읽힌다.
     this.impact.update(now, dt)
@@ -534,37 +576,20 @@ export class Renderer {
   }
 
   /**
-   * 한 렌더 프레임에 여러 시뮬 틱이 들어와도 가장 중요한 모션 하나만 고른다.
-   * 우선순위는 스킬 > 궁극 후속타 > 강화 평타 > 평타다.
+   * 한 렌더 프레임에 여러 시뮬 틱이 들어오면 액션을 발생 순서대로 전달한다.
+   * 각 이벤트의 시뮬레이션 시작 시각으로 늦어진 클립 위치를 복원한다.
    */
-  private consumeCharacterActions(world: World, now: number): void {
-    let next: CharacterAction | null = null
-    let angle = world.player.facing
-    let priority = -1
-    let facingHold = 0
+  private consumeCharacterActions(world: World, visualTime: number): void {
     for (const action of world.actionStarts) {
-      const p =
-        action.kind === 'q' ||
-        action.kind === 'w' ||
-        action.kind === 'e' ||
-        action.kind === 'r'
-          ? 4
-          : action.kind === 'ult'
-            ? 3
-            : action.kind === 'empowered'
-              ? 2
-              : 1
-      if (p < priority) continue
-      priority = p
-      next = action.kind
-      angle = action.angle
-      facingHold = PLAYER_ACTION_DURATION[action.kind]
+      // 여러 고정 tick이 한 렌더 프레임에 몰렸을 수 있으므로 가장 높은 우선순위
+      // 하나만 고르지 않고 발생 순서대로 모두 전달한다. 컨트롤러는 startedAt으로
+      // 이미 지난 클립 위치를 바로 샘플링하고 최신 승인 스킬을 남긴다.
+      const startedAt = action.startedAt
+      if (!this.charRig.playAction(action.kind, visualTime, startedAt)) continue
+      this.actionFacing = action.angle
+      this.actionFacingUntil =
+        startedAt + playerActionDuration(world.playerClass, action.kind)
     }
-
-    if (next === null || priority < 0) return
-    if (!this.charRig.playAction(next, now)) return
-    this.actionFacing = angle
-    this.actionFacingUntil = now + facingHold
   }
 
   dispose(): void {

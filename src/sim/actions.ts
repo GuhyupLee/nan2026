@@ -1,4 +1,4 @@
-import { PLAYER_ACTION_TIMING } from './action-timing.ts'
+import { playerActionTiming } from './action-timing.ts'
 import type {
   PendingPlayerAction,
   PlayerActionKind,
@@ -12,8 +12,11 @@ export function emitActionStart(
   world: World,
   kind: PlayerActionKind,
   angle: number,
+  startedAt = world.time,
 ): void {
-  if (world.actionStarts.length < 16) world.actionStarts.push({ kind, angle })
+  if (world.actionStarts.length < 16) {
+    world.actionStarts.push({ kind, angle, startedAt })
+  }
 }
 
 /**
@@ -32,7 +35,8 @@ export function beginPlayerAction(
 ): boolean {
   if (world.playerAction) return false
 
-  const timing = PLAYER_ACTION_TIMING[kind]
+  const timing = playerActionTiming(world.playerClass, kind)
+  const startedAt = world.time
   world.playerAction = {
     source,
     kind,
@@ -40,12 +44,13 @@ export function beginPlayerAction(
     angle,
     targetX,
     targetY,
-    impactAt: world.time + timing.impact,
-    endAt: world.time + timing.duration,
+    startedAt,
+    impactAt: startedAt + timing.impact,
+    endAt: startedAt + timing.duration,
     resolved: false,
   }
   world.player.facing = angle
-  emitActionStart(world, kind, angle)
+  emitActionStart(world, kind, angle, startedAt)
   return true
 }
 

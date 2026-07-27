@@ -13,7 +13,13 @@ import {
   FLASH_COOLDOWN,
   RUN_TIME_LIMIT,
 } from '../src/sim/constants.ts'
-import { PLAYER_ACTION_TIMING } from '../src/sim/action-timing.ts'
+import {
+  MELEE_W_DASH_END,
+  MELEE_W_PREPARE_END,
+  MELEE_W_TIMING,
+  PLAYER_ACTION_TIMING,
+  playerActionTiming,
+} from '../src/sim/action-timing.ts'
 import { damageEnemy } from '../src/sim/damage.ts'
 import { castSkill } from '../src/sim/kits.ts'
 import {
@@ -459,7 +465,7 @@ console.log('\nsim smoke check\n')
       const input = createInput()
       input.aim.x = -9
       input.aim.y = -4
-      const ticks = Math.ceil(PLAYER_ACTION_TIMING[slot].impact / DT) + 1
+      const ticks = Math.ceil(playerActionTiming(playerClass, slot).impact / DT) + 1
       for (let i = 0; i < ticks; i++) stepWorld(w, input)
 
       const cast = w.casts[0]
@@ -952,6 +958,186 @@ console.log('\nsim smoke check\n')
       pool.markExpire[0] === 321 &&
       pool.slowUntil[0] === 654 &&
       pool.rootUntil[0] === 987,
+  )
+}
+
+// --- 근거리 W: 발도 준비 -> 연속 무적 돌진 -> 착지 베기 ---
+{
+  const w = createWorld(820, 'melee')
+  w.spawnEnabled = false
+  for (let i = 0; i < 3; i++) stepWorld(w, createInput())
+
+  spawnEnemy(w.enemies, w.rng, 0, 0, TYPE_WALKER)
+  w.enemies.x[0] = 4
+  w.enemies.y[0] = 0
+  w.enemies.prevX[0] = 4
+  w.enemies.prevY[0] = 0
+  w.enemies.hp[0] = 200
+  w.enemies.maxHp[0] = 200
+  w.enemies.rootUntil[0] = Infinity
+  w.player.attackCooldown = Infinity
+  w.lastAim.x = 20
+  w.lastAim.y = 0
+  unlockSkill(w.skills, 'w', 1)
+
+  const startedAt = w.time
+  const accepted = castSkill(w, 'w')
+  const action = w.playerAction
+  const startEvent = w.actionStarts.find((event) => event.kind === 'w')
+  const destinationX = action?.meleeDash?.destinationX ?? NaN
+  check(
+    '근거리 W 시작 이벤트가 정확한 시뮬레이션 시각을 보존한다',
+    accepted &&
+      action?.startedAt === startedAt &&
+      startEvent?.startedAt === startedAt,
+    `action=${action?.startedAt} event=${startEvent?.startedAt} expected=${startedAt}`,
+  )
+  check(
+    '근거리 W는 캐릭터 전용 0.16/0.32/0.56초 타이밍을 사용한다',
+    action?.impactAt === startedAt + MELEE_W_DASH_END &&
+      action?.endAt === startedAt + MELEE_W_TIMING.duration,
+    `impact=${action?.impactAt} end=${action?.endAt}`,
+  )
+
+  const input = createInput()
+  input.move.x = -1
+  input.aim.x = 20
+  input.aim.y = 0
+  while ((w.tick + 1) * DT <= startedAt + MELEE_W_PREPARE_END + 1e-9) {
+    stepWorld(w, input)
+  }
+  check(
+    '발도 준비 중에는 일반 이동 입력을 억제한다',
+    Math.abs(w.player.pos.x) < 1e-9 &&
+      Math.abs(w.player.pos.y) < 1e-9 &&
+      w.player.vel.x === 0 &&
+      w.player.vel.y === 0,
+    `x=${w.player.pos.x} vx=${w.player.vel.x}`,
+  )
+
+  const hpBeforeDash = w.player.hp
+  const enemyHpBeforeImpact = w.enemies.hp[0]!
+  let maxTickTravel = 0
+  let sawInterpolatedFrame = false
+  while (w.time < startedAt + 0.25) {
+    const beforeX = w.player.pos.x
+    const beforeY = w.player.pos.y
+    stepWorld(w, input)
+    maxTickTravel = Math.max(
+      maxTickTravel,
+      Math.hypot(w.player.pos.x - beforeX, w.player.pos.y - beforeY),
+    )
+    if (
+      w.player.prevPos.x < w.player.pos.x &&
+      w.player.pos.x > 0 &&
+      w.player.pos.x < destinationX
+    ) {
+      sawInterpolatedFrame = true
+    }
+  }
+  check(
+    '돌진 중간에는 시작점과 착지점 사이의 실제 월드 위치에 있다',
+    w.player.pos.x > 0 && w.player.pos.x < destinationX,
+    `x=${w.player.pos.x} destination=${destinationX}`,
+  )
+  check(
+    '근거리 W는 순간이동하지 않고 prevPos에서 pos로 연속 보간된다',
+    sawInterpolatedFrame && maxTickTravel < 2,
+    `maxTickTravel=${maxTickTravel}`,
+  )
+  check(
+    '0.16~0.32초 돌진 구간은 접촉 피해에 무적이다',
+    w.player.hp === hpBeforeDash &&
+      w.player.invulnUntil >= startedAt + MELEE_W_DASH_END,
+    `hp=${w.player.hp}/${hpBeforeDash} invulnUntil=${w.player.invulnUntil}`,
+  )
+  check(
+    '착지 시각 전에는 W 경로·착지 피해가 발생하지 않는다',
+    w.enemies.hp[0] === enemyHpBeforeImpact,
+    `hp=${w.enemies.hp[0]} expected=${enemyHpBeforeImpact}`,
+  )
+
+  while ((w.tick + 1) * DT < startedAt + MELEE_W_DASH_END) {
+    stepWorld(w, input)
+  }
+  check(
+    '착지 직전까지 같은 적에게 중간 틱 중복 피해가 없다',
+    w.enemies.hp[0] === enemyHpBeforeImpact,
+    `hp=${w.enemies.hp[0]} expected=${enemyHpBeforeImpact}`,
+  )
+
+  while (w.time < startedAt + 0.35) stepWorld(w, input)
+  check(
+    '돌진 종료 시 경계 안의 결정된 착지점에 정확히 도착한다',
+    Math.abs(w.player.pos.x - destinationX) < 1e-9 &&
+      Math.abs(w.player.pos.y) < 1e-9,
+    `x=${w.player.pos.x} destination=${destinationX}`,
+  )
+  check(
+    '경로 타격과 착지 타격은 각각 한 번만 적용되어 기존 총 120 피해를 유지한다',
+    Math.abs(w.enemies.hp[0]! - (enemyHpBeforeImpact - 120)) < 1e-9,
+    `hp=${w.enemies.hp[0]} expected=${enemyHpBeforeImpact - 120}`,
+  )
+  check(
+    '근거리 W 착지는 마크와 넉백 및 단일 시전 이벤트를 남긴다',
+    w.enemies.markExpire[0]! > w.time &&
+      w.enemies.pushVx[0]! < 0 &&
+      w.casts.filter((cast) => cast.slot === 'w').length === 1,
+  )
+
+  while (w.time < startedAt + MELEE_W_TIMING.duration - DT / 2) {
+    stepWorld(w, input)
+  }
+  check(
+    '베기 회복 구간에도 일반 걷기가 돌진 착지 위치와 경쟁하지 않는다',
+    Math.abs(w.player.pos.x - destinationX) < 1e-9 && w.playerAction !== null,
+    `x=${w.player.pos.x} action=${w.playerAction?.kind}`,
+  )
+  for (let guard = 0; guard < 3 && w.playerAction; guard++) stepWorld(w, input)
+  check(
+    '0.56초 회복이 끝난 뒤에만 일반 이동을 다시 받는다',
+    w.playerAction === null && w.player.pos.x < destinationX,
+    `time=${w.time} x=${w.player.pos.x}`,
+  )
+
+  const boundary = createWorld(821, 'melee')
+  boundary.spawnEnabled = false
+  const limit = boundary.arenaRadius - boundary.stats.radius
+  boundary.player.pos.x = limit - 1
+  boundary.player.prevPos.x = limit - 1
+  boundary.lastAim.x = 100
+  boundary.lastAim.y = 0
+  unlockSkill(boundary.skills, 'w', 1)
+  castSkill(boundary, 'w')
+  while (boundary.time < MELEE_W_DASH_END + 2 * DT) {
+    stepWorld(boundary, createInput())
+  }
+  check(
+    '근거리 W 착지점은 원형 경기장 경계를 넘지 않는다',
+    Math.abs(boundary.player.pos.x - limit) < 1e-9 &&
+      Math.abs(boundary.player.pos.y) < 1e-9,
+    `x=${boundary.player.pos.x} limit=${limit}`,
+  )
+
+  const deterministicDash = (seed: number) => {
+    const world = createWorld(seed, 'melee')
+    world.spawnEnabled = false
+    world.lastAim.x = 12
+    world.lastAim.y = -5
+    unlockSkill(world.skills, 'w', 1)
+    castSkill(world, 'w')
+    const positions: number[] = []
+    for (let i = 0; i < 36; i++) {
+      stepWorld(world, createInput())
+      positions.push(world.player.pos.x, world.player.pos.y)
+    }
+    return positions
+  }
+  const deterministicA = deterministicDash(822)
+  const deterministicB = deterministicDash(822)
+  check(
+    '같은 시드와 입력의 근거리 W 경로는 결정론적으로 동일하다',
+    deterministicA.every((value, index) => value === deterministicB[index]),
   )
 }
 

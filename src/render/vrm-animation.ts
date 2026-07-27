@@ -4,10 +4,10 @@ import {
   type VRMAnimation,
 } from '@pixiv/three-vrm-animation'
 import type { VRM } from '@pixiv/three-vrm'
+import { playerActionDuration } from '../sim/action-timing.ts'
 import type { PlayerClass } from '../sim/types.ts'
 import type { CharacterAction } from './rig.ts'
 import {
-  VRM_ACTION_DURATION,
   VRMA_CLIP_ORDER,
   type VrmAnimationState,
 } from './animation-data.ts'
@@ -22,7 +22,11 @@ const ACTION_PRIORITY: Record<CharacterAction, number> = {
   r: 40,
 }
 
-const ACTION_CROSS_FADE = 0.08
+/** 새 동작의 짧은 예비 자세가 걷기 블렌드에 묻히지 않는 최대 진입 시간. */
+const ACTION_FADE_IN = 0.018
+/** 이전 one-shot만 빠르게 걷어내는 교차 페이드. */
+const ACTION_CROSS_FADE = 0.035
+const ACTION_TIME_EPSILON = 1e-6
 
 export interface ActiveVrmAction {
   kind: CharacterAction
@@ -57,10 +61,15 @@ function smoothstep(edge0: number, edge1: number, value: number): number {
   return t * t * (3 - 2 * t)
 }
 
-function actionWeight(progress: number): number {
-  const enter = smoothstep(0, 0.1, progress)
-  const leave = 1 - smoothstep(0.82, 1, progress)
+function actionWeight(elapsed: number, duration: number): number {
+  const fadeOut = Math.min(0.07, duration * 0.18)
+  const enter = smoothstep(0, ACTION_FADE_IN, elapsed)
+  const leave = 1 - smoothstep(duration - fadeOut, duration, elapsed)
   return enter * leave
+}
+
+function isPrimarySkill(kind: CharacterAction): boolean {
+  return kind === 'q' || kind === 'w' || kind === 'e' || kind === 'r'
 }
 
 interface Playback {
@@ -68,6 +77,7 @@ interface Playback {
   action: THREE.AnimationAction
   startedAt: number
   duration: number
+  clipDuration: number
 }
 
 interface Outgoing {
@@ -94,7 +104,7 @@ export class VrmAnimationController {
 
   private constructor(
     private readonly vrm: VRM,
-    cls: PlayerClass,
+    private readonly cls: PlayerClass,
     animations: readonly VRMAnimation[],
   ) {
     this.mixer = new THREE.AnimationMixer(vrm.scene)
@@ -145,10 +155,36 @@ export class VrmAnimationController {
     }
   }
 
-  playAction(kind: CharacterAction, time: number): boolean {
+  playAction(
+    kind: CharacterAction,
+    time: number,
+    startedAt = time,
+  ): boolean {
+    const eventStartedAt = Number.isFinite(startedAt) ? startedAt : time
+    const previous = this.activePlayback
     const current = this.active(time)
-    if (!canStartVrmAction(current?.kind ?? null, current?.progress ?? 1, kind)) {
-      return false
+
+    if (previous) {
+      const sameEvent =
+        previous.kind === kind &&
+        Math.abs(previous.startedAt - eventStartedAt) <= ACTION_TIME_EPSILON
+      if (sameEvent) return true
+
+      // 늦게 도착한 과거 이벤트가 최신 동작을 되감지 못하게 한다.
+      if (eventStartedAt < previous.startedAt - ACTION_TIME_EPSILON) return false
+
+      // QWER는 이미 시뮬레이션이 승인한 이벤트다. 렌더러의 이전 클립 잔여
+      // 상태 때문에 같은 우선순위의 다음 스킬을 버리지 않는다. 평타와 궁극
+      // 후속타는 R 같은 상위 동작을 끊을 수 없도록 기존 우선순위를 유지한다.
+      const authoritativeSuccessor =
+        isPrimarySkill(kind) &&
+        eventStartedAt > previous.startedAt + ACTION_TIME_EPSILON
+      if (
+        !authoritativeSuccessor &&
+        !canStartVrmAction(current?.kind ?? null, current?.progress ?? 1, kind)
+      ) {
+        return false
+      }
     }
 
     const next = this.actions.get(kind)
@@ -160,12 +196,12 @@ export class VrmAnimationController {
       this.outgoing = null
     }
 
-    const previous = this.activePlayback
     if (previous) {
       if (previous.kind !== kind) {
+        this.syncPlaybackTime(previous, time)
         this.outgoing = {
           action: previous.action,
-          weight: actionWeight(this.progress(previous, time)),
+          weight: actionWeight(this.elapsed(previous, time), previous.duration),
           remaining: ACTION_CROSS_FADE,
         }
       } else {
@@ -176,17 +212,22 @@ export class VrmAnimationController {
     next
       .reset()
       .setLoop(THREE.LoopOnce, 1)
-      .setEffectiveTimeScale(clip.duration / VRM_ACTION_DURATION[kind])
+      // one-shot은 시뮬레이션 시각으로 직접 샘플링한다. 브라우저 wall-clock이나
+      // 프레임 드롭이 클립 진행률에 영향을 주지 않는다.
+      .setEffectiveTimeScale(1)
       .setEffectiveWeight(0)
     next.clampWhenFinished = true
     next.play()
+    next.paused = true
 
     this.activePlayback = {
       kind,
       action: next,
-      startedAt: time,
-      duration: VRM_ACTION_DURATION[kind],
+      startedAt: eventStartedAt,
+      duration: playerActionDuration(this.cls, kind),
+      clipDuration: clip.duration,
     }
+    this.syncPlaybackTime(this.activePlayback, time)
     return true
   }
 
@@ -208,12 +249,14 @@ export class VrmAnimationController {
     let activeWeight = 0
     const active = this.activePlayback
     if (active) {
-      const progress = this.progress(active, time)
+      const elapsed = this.elapsed(active, time)
+      const progress = elapsed / active.duration
       if (progress >= 1) {
         active.action.stop()
         this.activePlayback = null
       } else {
-        activeWeight = actionWeight(progress)
+        this.syncPlaybackTime(active, time)
+        activeWeight = actionWeight(elapsed, active.duration)
         active.action.setEffectiveWeight(activeWeight)
       }
     }
@@ -263,6 +306,16 @@ export class VrmAnimationController {
   }
 
   private progress(playback: Playback, time: number): number {
-    return Math.max(0, (time - playback.startedAt) / playback.duration)
+    return this.elapsed(playback, time) / playback.duration
+  }
+
+  private elapsed(playback: Playback, time: number): number {
+    return Math.max(0, time - playback.startedAt)
+  }
+
+  private syncPlaybackTime(playback: Playback, time: number): void {
+    playback.action.time =
+      playback.clipDuration *
+      clamp01(this.elapsed(playback, time) / playback.duration)
   }
 }
