@@ -45,6 +45,31 @@ const MODEL_URL: Record<PlayerClass, string> = {
   ranged: 'models/ilhyeon.vrm',
 }
 
+type NavigatorWithMobileHint = Navigator & {
+  userAgentData?: { mobile?: boolean }
+}
+
+/**
+ * 모바일에서는 VRM 파일 다운로드·파싱·스프링본 갱신을 전부 건너뛴다.
+ *
+ * UA Client Hints를 우선하고, iPadOS의 데스크톱 UA와 coarse pointer를 보완한다.
+ * 터치 노트북은 보통 기본 포인터가 fine이라 불필요하게 경량 모드로 내려가지 않는다.
+ */
+function detectMobileDevice(): boolean {
+  const nav = navigator as NavigatorWithMobileHint
+  if (nav.userAgentData?.mobile === true) return true
+  if (/Android|iPhone|iPad|iPod|Mobile|IEMobile|Opera Mini/i.test(nav.userAgent)) return true
+  if (nav.platform === 'MacIntel' && nav.maxTouchPoints > 1) return true
+  return nav.maxTouchPoints > 0 && window.matchMedia('(pointer: coarse)').matches
+}
+
+const vrmModelsEnabled = !detectMobileDevice()
+
+/** 현재 기기에서 VRM 모델을 사용해도 되는지 알려준다. */
+export function shouldUseVrmModels(): boolean {
+  return vrmModelsEnabled
+}
+
 const ACCENT: Record<PlayerClass, number> = {
   melee: 0xff5a6e,
   ranged: 0x4dd0ff,
@@ -430,6 +455,7 @@ async function load(cls: PlayerClass): Promise<VRM | null> {
 
 /** 두 모델을 백그라운드로 받기 시작한다. 메인 메뉴가 뜨는 동안 돌아간다. */
 export function startVrmPreload(): void {
+  if (!vrmModelsEnabled) return
   for (const cls of ['ranged', 'melee'] as PlayerClass[]) {
     if (!pending.has(cls)) pending.set(cls, load(cls))
   }
@@ -437,13 +463,14 @@ export function startVrmPreload(): void {
 
 /** 해당 클래스의 VRM이 준비될 때까지 기다린다. 실패하면 false. */
 export async function ensureVrm(cls: PlayerClass): Promise<boolean> {
+  if (!vrmModelsEnabled) return false
   if (ready.has(cls)) return true
   if (!pending.has(cls)) pending.set(cls, load(cls))
   return (await pending.get(cls)!) !== null
 }
 
 export function hasVrm(cls: PlayerClass): boolean {
-  return ready.has(cls)
+  return vrmModelsEnabled && ready.has(cls)
 }
 
 // ---------------------------------------------------------------------------
@@ -566,6 +593,7 @@ function set(node: THREE.Object3D | null, x: number, y: number, z: number): void
  * 모델을 파괴하지 않고 무기만 정리한다 — 파괴하면 다음 판에서 빈 캐릭터가 뜬다.
  */
 export function createVrmRig(cls: PlayerClass): CharacterRig | null {
+  if (!vrmModelsEnabled) return null
   const vrm = ready.get(cls)
   if (!vrm) return null
 
