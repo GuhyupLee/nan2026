@@ -1,6 +1,12 @@
 import * as THREE from 'three'
 
-import { ENEMY_TYPES, MAX_ENEMIES, type EnemyPool } from '../sim/enemies.ts'
+import {
+  BOSS_CHARGE_AT,
+  ENEMY_TYPES,
+  MAX_ENEMIES,
+  TYPE_BOSS,
+  bossCycleTime,
+} from '../sim/enemies.ts'
 import type { TracerEvent, World } from '../sim/types.ts'
 import { lerp } from '../sim/vec.ts'
 
@@ -12,7 +18,7 @@ import { lerp } from '../sim/vec.ts'
  * 그 순간 프레임이 죽는다. 대신 비스킨드 저폴리를 쓰고 회전·스케일 펄스로
  * 생동감을 준다. 원작 뱀파이어 서바이버즈도 적은 2프레임 스프라이트다.
  *
- * 종류 3개 = 드로우콜 3회. 마릿수가 늘어도 늘지 않는다.
+ * 잡몹 3종 + 보스 = 드로우콜 4회. 마릿수가 늘어도 늘지 않는다.
  */
 
 /** 적 색상. 플레이어 팔레트(시안/크림슨)와 충돌하지 않게 고른다. */
@@ -20,11 +26,19 @@ const ENEMY_COLORS = [
   0x9b6cf5, // 워커 — 보라
   0xc8f04a, // 러셔 — 산성 연두. 빠른 놈은 눈에 확 띄어야 피할 수 있다
   0xff7a3c, // 브루트 — 주황. 크고 무겁다
+  0xf02aff, // 보스 — 네온 마젠타. 플레이어와 잡몹 어느 팔레트에도 속하지 않는다
 ]
 
 /** 종류별 지오메트리. 실루엣만으로 위협을 구분할 수 있어야 한다. */
 function enemyGeometry(type: number, radius: number): THREE.BufferGeometry {
   switch (type) {
+    case TYPE_BOSS: {
+      // 보스: 속이 뚫린 비대칭 매듭. 다른 적의 닫힌 다면체와 실루엣부터 다르다.
+      const g = new THREE.TorusKnotGeometry(radius * 0.7, radius * 0.23, 64, 8, 2, 3)
+      g.rotateX(Math.PI * 0.32)
+      g.scale(1, 1.12, 1)
+      return g
+    }
     case 1: {
       // 러셔: 뾰족한 다이아몬드 — 속도감
       const g = new THREE.OctahedronGeometry(radius, 0)
@@ -126,10 +140,10 @@ export class EnemyRenderer {
       const def = ENEMY_TYPES[t]!
       const mat = new THREE.MeshStandardMaterial({
         color: 0xffffff, // 인스턴스 컬러가 곱해지므로 흰색을 깔아둔다
-        roughness: 0.55,
-        metalness: 0.1,
+        roughness: t === TYPE_BOSS ? 0.24 : 0.55,
+        metalness: t === TYPE_BOSS ? 0.48 : 0.1,
         emissive: ENEMY_COLORS[t]!,
-        emissiveIntensity: 0.22,
+        emissiveIntensity: t === TYPE_BOSS ? 0.62 : 0.22,
       })
       const mesh = new THREE.InstancedMesh(enemyGeometry(t, def.radius), mat, MAX_ENEMIES)
       mesh.instanceMatrix.setUsage(THREE.DynamicDrawUsage)
@@ -307,7 +321,7 @@ export class EnemyRenderer {
    * @param dt    실제 경과 시간(초). 팝 수명에 쓴다.
    */
   update(world: World, alpha: number, dt: number): void {
-    this.drawEnemies(world.enemies, alpha)
+    this.drawEnemies(world, alpha)
     this.drawPops(world, dt)
     this.drawFields(world)
     this.drawTracers(world, dt)
@@ -432,8 +446,9 @@ export class EnemyRenderer {
     if (this.ringMesh.instanceColor) this.ringMesh.instanceColor.needsUpdate = true
   }
 
-  private drawEnemies(pool: EnemyPool, alpha: number): void {
-    const counts = [0, 0, 0]
+  private drawEnemies(world: World, alpha: number): void {
+    const pool = world.enemies
+    const counts = new Array<number>(this.batches.length).fill(0)
 
     for (let i = 0; i < pool.count; i++) {
       const t = pool.type[i]!
@@ -444,22 +459,38 @@ export class EnemyRenderer {
       const x = lerp(pool.prevX[i]!, pool.x[i]!, alpha)
       const z = lerp(pool.prevY[i]!, pool.y[i]!, alpha)
 
-      // 진행 방향을 보게 회전시키면 무리가 흐르는 것처럼 보인다.
-      const ang = Math.atan2(pool.vy[i]!, pool.vx[i]!)
-      this.q.setFromAxisAngle(this.axisY, -ang)
-
       const def = ENEMY_TYPES[t]!
-      this.pos.set(x, def.radius * 0.95, z)
-      this.scl.set(1, 1, 1)
+      const isBoss = t === TYPE_BOSS
+      const ang = Math.atan2(pool.vy[i]!, pool.vx[i]!)
+
+      if (isBoss) {
+        // 일정한 자전 위에 돌진 직전의 빠른 떨림을 더한다. 월드 시간을 써서
+        // 프레임률과 무관하고, 피격 플래시와 겹쳐도 실루엣이 무너지지 않는다.
+        const phase = bossCycleTime(world.time)
+        const charging = phase >= BOSS_CHARGE_AT
+        const spin = world.time * (charging ? 2.8 : 1.15)
+        const pulse = 1 + Math.sin(world.time * (charging ? 8.5 : 3.8)) * (charging ? 0.1 : 0.055)
+        this.q.setFromAxisAngle(this.axisY, spin)
+        this.pos.set(x, def.radius * 0.88, z)
+        this.scl.set(pulse, 1 / pulse, pulse)
+      } else {
+        // 진행 방향을 보게 회전시키면 무리가 흐르는 것처럼 보인다.
+        this.q.setFromAxisAngle(this.axisY, -ang)
+        this.pos.set(x, def.radius * 0.95, z)
+        this.scl.set(1, 1, 1)
+      }
       this.m.compose(this.pos, this.q, this.scl)
       batch.mesh.setMatrixAt(slot, this.m)
 
       // 피격 점멸: 흰색으로 튀었다가 원색으로 돌아온다
       const f = pool.flash[i]!
+      this.color.copy(batch.baseColor)
+      if (isBoss) {
+        const pulseLight = 0.1 + (Math.sin(world.time * 4.4) * 0.5 + 0.5) * 0.12
+        this.color.lerp(this.white, pulseLight)
+      }
       if (f > 0) {
-        this.color.copy(batch.baseColor).lerp(this.white, Math.min(1, f / 0.08))
-      } else {
-        this.color.copy(batch.baseColor)
+        this.color.lerp(this.white, Math.min(1, f / 0.08))
       }
       batch.mesh.setColorAt(slot, this.color)
 

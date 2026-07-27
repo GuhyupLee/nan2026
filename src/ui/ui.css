@@ -1,71 +1,95 @@
-/* ---------------------------------------------------------------------------
-   HUD — 캐릭터 위 체력바 + 하단 경험치 바
-   이터널 리턴 문법: 레벨 뱃지 + 분절된 체력바가 캐릭터를 따라다닌다.
---------------------------------------------------------------------------- */
+:root {
+  color-scheme: dark;
+  --ui-bg: #07090d;
+  --ui-panel: #10141b;
+  --ui-panel-raised: #171c24;
+  --ui-line: #343b47;
+  --ui-line-strong: #59616d;
+  --ui-text: #e6e9ee;
+  --ui-muted: #919aa7;
+  --ui-faint: #626b78;
+  --ui-cyan: #56c7e8;
+  --ui-crimson: #e25063;
+  --ui-warning: #d8ac55;
+  --ui-positive: #67bd78;
+  --ui-hairline: clamp(1px, 0.0625rem, 2px);
+}
+
+button {
+  font: inherit;
+}
+
+/* --------------------------------------------------------------------------
+   In-game HUD
+   -------------------------------------------------------------------------- */
 
 .floatbar {
   position: fixed;
   left: 0;
   top: 0;
+  z-index: 4;
   display: flex;
   align-items: center;
   gap: 0.22rem;
   transform: translate(-50%, -100%);
   pointer-events: none;
-  z-index: 4;
   will-change: transform;
 }
 
 .floatbar .lv {
-  min-width: 1.05rem;
-  height: 1.05rem;
-  padding: 0 0.15rem;
+  min-width: 1.12rem;
+  height: 1.12rem;
+  padding: 0 0.18rem;
   display: grid;
   place-items: center;
-  font-size: 0.62rem;
-  font-weight: 700;
-  color: #06202c;
-  background: #79dcff;
-  border-radius: 0.18rem;
+  border: var(--ui-hairline) solid #8b949f;
+  color: #f4f5f6;
+  background: #232933;
+  font-size: 0.6rem;
+  font-weight: 780;
+  line-height: 1;
   font-variant-numeric: tabular-nums;
+  box-shadow: 0 2px 0 rgba(0, 0, 0, 0.42);
 }
 
 .floatbar .track {
   position: relative;
-  width: 5.4rem;
-  height: 0.5rem;
-  background: #0a0f18;
-  border: 1px solid #2b3a4d;
-  border-radius: 0.12rem;
+  width: 5.6rem;
+  height: 0.55rem;
   overflow: hidden;
+  border: var(--ui-hairline) solid #59616d;
+  background: #080b10;
+  box-shadow:
+    0 2px 0 rgba(0, 0, 0, 0.48),
+    inset 0 1px rgba(255, 255, 255, 0.04);
 }
 
-.floatbar .fill {
-  position: absolute;
-  inset: 0 auto 0 0;
-  width: 100%;
-  background: linear-gradient(180deg, #5df08a 0%, #2fbf63 100%);
-  transition: width 0.12s linear;
-}
-
-/* 피해를 입은 만큼이 붉게 남았다가 천천히 줄어든다 — 얼마나 맞았는지 보인다. */
+.floatbar .fill,
 .floatbar .ghost {
   position: absolute;
   inset: 0 auto 0 0;
   width: 100%;
-  background: #d0424f;
+}
+
+.floatbar .ghost {
+  background: #9f3947;
   transition: width 0.5s ease-out 0.18s;
 }
 
-/* 체력이 낮으면 색이 바뀐다. 숫자를 읽지 않아도 위험이 전달된다. */
-.floatbar[data-danger='warn'] .fill {
-  background: linear-gradient(180deg, #ffd45e 0%, #e0a531 100%);
-}
-.floatbar[data-danger='crit'] .fill {
-  background: linear-gradient(180deg, #ff7a6e 0%, #d63a2c 100%);
+.floatbar .fill {
+  background: var(--ui-positive);
+  border-top: 1px solid rgba(255, 255, 255, 0.24);
+  transition: width 0.12s linear;
 }
 
-/* 분절선 — 통짜 바보다 남은 양이 눈에 잘 잡힌다 */
+.floatbar[data-danger='warn'] .fill {
+  background: var(--ui-warning);
+}
+
+.floatbar[data-danger='crit'] .fill {
+  background: var(--ui-crimson);
+}
+
 .floatbar .track::after {
   content: '';
   position: absolute;
@@ -74,49 +98,141 @@
     90deg,
     transparent 0,
     transparent calc(12.5% - 1px),
-    rgba(4, 8, 14, 0.85) calc(12.5% - 1px),
-    rgba(4, 8, 14, 0.85) 12.5%
+    rgba(4, 7, 11, 0.88) calc(12.5% - 1px),
+    rgba(4, 7, 11, 0.88) 12.5%
   );
 }
 
 .xpbar {
   position: fixed;
   left: 50%;
-  transform: translateX(-50%);
-  bottom: calc(5.4rem + env(safe-area-inset-bottom, 0px));
-  width: min(23rem, 74vw);
-  height: 0.28rem;
-  background: #0d1523;
-  border-radius: 999px;
-  overflow: hidden;
+  bottom: calc(var(--ui-safe-bottom) + 4.75rem);
   z-index: 5;
+  width: min(25rem, calc(100vw - var(--ui-safe-left) - var(--ui-safe-right) - 2rem));
+  height: 0.22rem;
+  overflow: hidden;
+  transform: translateX(-50%);
+  border-inline: var(--ui-hairline) solid #515965;
+  background: #171c23;
   pointer-events: none;
 }
+
+.xpbar::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  box-shadow: inset 0 1px rgba(255, 255, 255, 0.1);
+}
+
 .xpbar .fill {
   height: 100%;
   width: 0;
-  background: linear-gradient(90deg, #3aa9ff, #79dcff);
+  background: var(--ui-cyan);
   transition: width 0.16s ease-out;
 }
 
 .clock {
   position: fixed;
   left: 50%;
-  top: 0.7rem;
-  transform: translateX(-50%);
-  font-size: 1.05rem;
-  font-weight: 700;
-  letter-spacing: 0.06em;
-  color: #cfe0f2;
-  font-variant-numeric: tabular-nums;
-  text-shadow: 0 2px 8px rgba(0, 0, 0, 0.8);
+  top: var(--ui-safe-top);
   z-index: 5;
+  min-width: 4.7rem;
+  padding: 0.2rem 0.5rem 0.16rem;
+  transform: translateX(-50%);
+  border-block: var(--ui-hairline) solid #4b535e;
+  color: #e8ebef;
+  background: rgba(7, 9, 13, 0.76);
+  font-size: 0.92rem;
+  font-weight: 720;
+  line-height: 1.2;
+  letter-spacing: 0.1em;
+  text-align: center;
+  font-variant-numeric: tabular-nums;
+  text-shadow: 0 2px 3px #000;
   pointer-events: none;
 }
 
-/* ---------------------------------------------------------------------------
-   레벨업 카드 — 뱀서 문법의 3택
---------------------------------------------------------------------------- */
+/* Boss HUD contract: .bossbar > .boss-name + .boss-track > .boss-fill */
+.bossbar {
+  position: fixed;
+  left: 50%;
+  top: calc(var(--ui-safe-top) + 2.25rem);
+  z-index: 7;
+  width: min(34rem, calc(100vw - var(--ui-safe-left) - var(--ui-safe-right) - 2rem));
+  transform: translateX(-50%);
+  color: var(--ui-text);
+  pointer-events: none;
+}
+
+.bossbar[hidden] {
+  display: none;
+}
+
+.bossbar .boss-name {
+  margin-bottom: 0.28rem;
+  color: #c8cdd4;
+  font-size: 0.66rem;
+  font-weight: 720;
+  letter-spacing: 0.18em;
+  text-align: center;
+  text-transform: uppercase;
+}
+
+.bossbar .boss-track {
+  position: relative;
+  height: 0.78rem;
+  padding: 2px;
+  overflow: hidden;
+  border: var(--ui-hairline) solid #6a3c45;
+  background: #090b10;
+  box-shadow: 0 3px 0 rgba(0, 0, 0, 0.42);
+}
+
+.bossbar .boss-fill {
+  width: 100%;
+  height: 100%;
+  background: var(--ui-crimson);
+  transition: width 0.14s linear;
+}
+
+.bossbar .boss-track::after {
+  content: '';
+  position: absolute;
+  inset: 2px;
+  background: repeating-linear-gradient(
+    90deg,
+    transparent 0,
+    transparent calc(10% - 1px),
+    rgba(8, 10, 14, 0.52) calc(10% - 1px),
+    rgba(8, 10, 14, 0.52) 10%
+  );
+}
+
+.bossbar .boss-phase {
+  position: absolute;
+  top: 0;
+  right: 0.3rem;
+  color: #e9bcc3;
+  font-size: 0.55rem;
+  font-weight: 700;
+  letter-spacing: 0.12em;
+}
+
+.bossbar[data-phase='charge'] .boss-track {
+  border-color: #a85a41;
+}
+
+.bossbar[data-phase='charge'] .boss-fill {
+  background: var(--ui-warning);
+}
+
+.bossbar[data-phase='charge'] .boss-phase {
+  color: #f2d39a;
+}
+
+/* --------------------------------------------------------------------------
+   Level-up choice
+   -------------------------------------------------------------------------- */
 
 .levelup {
   position: fixed;
@@ -126,177 +242,190 @@
   flex-direction: column;
   align-items: center;
   justify-content: center;
-  gap: 1.3rem;
-  padding: 1.2rem;
-  background: rgba(4, 7, 13, 0.86);
-  backdrop-filter: blur(3px);
-  animation: levelup-in 0.16s ease-out;
+  gap: 1.45rem;
+  padding:
+    max(var(--ui-safe-top), 1rem)
+    max(var(--ui-safe-right), 1rem)
+    max(var(--ui-safe-bottom), 1rem)
+    max(var(--ui-safe-left), 1rem);
+  background: rgba(5, 7, 10, 0.92);
+  animation: levelup-in 0.14s ease-out;
 }
+
 @keyframes levelup-in {
-  from {
-    opacity: 0;
-  }
-  to {
-    opacity: 1;
-  }
+  from { opacity: 0; }
+  to { opacity: 1; }
 }
 
 .levelup .banner {
-  text-align: center;
+  width: min(46.8rem, 94vw);
+  padding-left: 0.8rem;
+  border-left: 3px solid var(--ui-cyan);
+  text-align: left;
 }
+
 .levelup .banner .lv {
-  font-size: 0.76rem;
+  color: var(--ui-cyan);
+  font-size: 0.65rem;
+  font-weight: 780;
   letter-spacing: 0.24em;
-  color: #79dcff;
-  font-weight: 700;
 }
+
 .levelup .banner h2 {
-  margin-top: 0.25rem;
-  font-size: clamp(1.3rem, 4vw, 1.8rem);
-  font-weight: 700;
-  letter-spacing: 0.05em;
-  color: #f0f6ff;
+  margin-top: 0.24rem;
+  color: var(--ui-text);
+  font-size: 1.65rem;
+  font-weight: 740;
+  line-height: 1.15;
+  letter-spacing: -0.025em;
 }
 
 .levelup .cards {
   display: flex;
-  gap: 0.85rem;
-  flex-wrap: wrap;
+  align-items: stretch;
   justify-content: center;
+  gap: 0.72rem;
+  max-width: 100%;
 }
 
 .lvcard {
-  --accent: #4dd0ff;
+  --accent: var(--ui-cyan);
   position: relative;
-  width: min(15rem, 84vw);
-  min-height: 12.5rem;
-  padding: 1.05rem 1rem 1rem;
-  border-radius: 0.85rem;
-  background: linear-gradient(170deg, #131c2c 0%, #0a1119 100%);
-  border: 1px solid #253449;
-  cursor: pointer;
-  text-align: left;
+  width: min(15.1rem, 84vw);
+  min-height: 12.2rem;
+  padding: 1rem 0.92rem 0.9rem;
   display: flex;
   flex-direction: column;
-  gap: 0.5rem;
-  transition:
-    transform 0.15s cubic-bezier(0.2, 0.9, 0.3, 1),
-    border-color 0.15s ease,
-    box-shadow 0.15s ease;
+  gap: 0.52rem;
+  overflow: hidden;
+  border: var(--ui-hairline) solid #3b424d;
+  border-radius: 1px;
+  color: var(--ui-text);
+  background: #11161d;
+  box-shadow: 0 0.42rem 0 rgba(0, 0, 0, 0.28);
+  cursor: pointer;
+  text-align: left;
   -webkit-tap-highlight-color: transparent;
+  transition:
+    transform 0.12s ease,
+    border-color 0.12s ease,
+    background-color 0.12s ease;
 }
+
+.lvcard::after {
+  content: '';
+  position: absolute;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  height: 2px;
+  background: #343b45;
+}
+
 .lvcard:hover,
 .lvcard:focus-visible {
-  transform: translateY(-5px);
-  border-color: var(--accent);
-  box-shadow: 0 12px 34px -12px var(--accent);
+  transform: translateY(-0.28rem);
+  border-color: #747d89;
+  background: #171d25;
   outline: none;
 }
 
-/* 신규 해금은 강화와 시각적으로 달라야 한다. 새 장난감이 도착한 순간이다. */
+.lvcard:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 3px;
+}
+
 .lvcard[data-kind='unlock'] {
-  background: linear-gradient(170deg, #1b2740 0%, #0c1420 100%);
-  border-color: var(--accent);
+  border-top: 2px solid var(--accent);
+  background: #131a22;
 }
-.lvcard[data-kind='unlock']::before {
-  content: '';
-  position: absolute;
-  inset: -1px;
-  border-radius: 0.85rem;
-  border: 1px solid var(--accent);
-  opacity: 0.35;
-  animation: unlock-pulse 1.5s ease-in-out infinite;
-  pointer-events: none;
-}
-@keyframes unlock-pulse {
-  0%,
-  100% {
-    opacity: 0.2;
-  }
-  50% {
-    opacity: 0.7;
-  }
+
+.lvcard[data-kind='unlock']::after {
+  background: var(--accent);
 }
 
 .lvcard .top {
   display: flex;
   align-items: center;
-  gap: 0.55rem;
+  gap: 0.58rem;
+  min-height: 2.65rem;
+  padding-right: 1.4rem;
 }
+
 .lvcard .icon {
-  width: 2.5rem;
-  height: 2.5rem;
+  width: 2.55rem;
+  height: 2.55rem;
   flex: none;
   display: grid;
   place-items: center;
-  border-radius: 0.5rem;
-  background: #0a121d;
-  border: 1px solid #2c3d54;
-  font-size: 1.15rem;
+  border: var(--ui-hairline) solid #49515e;
+  border-radius: 1px;
   color: var(--accent);
+  background: #090c11;
+  font-size: 1.18rem;
+  box-shadow: inset 0 -3px rgba(0, 0, 0, 0.28);
 }
+
+.lvcard .icon img {
+  width: 100%;
+  height: 100%;
+  display: block;
+  object-fit: cover;
+}
+
 .lvcard .slot {
-  font-size: 0.66rem;
-  font-weight: 700;
-  letter-spacing: 0.12em;
-  color: #05070d;
-  background: var(--accent);
-  padding: 0.1rem 0.4rem;
-  border-radius: 0.22rem;
+  padding: 0.12rem 0.32rem 0.1rem;
+  border: 1px solid color-mix(in srgb, var(--accent) 68%, #3a424d);
+  color: var(--accent);
+  background: transparent;
+  font-size: 0.59rem;
+  font-weight: 800;
+  line-height: 1;
+  letter-spacing: 0.08em;
 }
+
 .lvcard .tag {
-  font-size: 0.66rem;
-  letter-spacing: 0.1em;
-  color: #93a6bd;
+  color: var(--ui-muted);
+  font-size: 0.61rem;
+  font-weight: 620;
+  letter-spacing: 0.12em;
 }
+
 .lvcard h3 {
-  font-size: 1.08rem;
-  font-weight: 700;
-  color: #f2f7ff;
-  letter-spacing: 0.02em;
+  color: #f0f2f5;
+  font-size: 1.05rem;
+  font-weight: 720;
+  line-height: 1.25;
+  letter-spacing: -0.015em;
 }
+
 .lvcard p {
-  font-size: 0.8rem;
-  line-height: 1.65;
-  color: #9fb2c8;
   flex: 1;
+  color: #9ca5b1;
+  font-size: 0.74rem;
+  line-height: 1.62;
+  word-break: keep-all;
 }
+
 .lvcard .hotkey {
   position: absolute;
-  top: 0.6rem;
-  right: 0.6rem;
-  width: 1.35rem;
-  height: 1.35rem;
+  top: 0.58rem;
+  right: 0.58rem;
+  width: 1.28rem;
+  height: 1.28rem;
   display: grid;
   place-items: center;
-  border-radius: 0.32rem;
-  background: rgba(5, 9, 16, 0.8);
-  border: 1px solid #2c3f57;
-  font-size: 0.7rem;
-  font-weight: 700;
-  color: #cfe4f7;
+  border: var(--ui-hairline) solid #5c6572;
+  border-radius: 0;
+  color: #d4d8de;
+  background: #090c11;
+  font-size: 0.61rem;
+  font-weight: 760;
 }
 
-@media (max-width: 760px) {
-  .levelup .cards {
-    flex-direction: column;
-    gap: 0.55rem;
-    overflow-y: auto;
-    max-height: 70vh;
-  }
-  .lvcard {
-    min-height: auto;
-    width: min(20rem, 88vw);
-  }
-  .lvcard p {
-    display: none;
-  }
-}
-
-/* ---------------------------------------------------------------------------
-   캐릭터 선택 — 심사자가 보는 첫 화면
-   두 클래스의 색 대비(시안 vs 크림슨)가 곧 정체성이므로 UI가 그걸 증폭한다.
---------------------------------------------------------------------------- */
+/* --------------------------------------------------------------------------
+   Character select
+   -------------------------------------------------------------------------- */
 
 .charselect {
   position: fixed;
@@ -306,60 +435,128 @@
   flex-direction: column;
   align-items: center;
   justify-content: center;
-  gap: 1.6rem;
-  padding: 1.5rem;
-  background: radial-gradient(ellipse at 50% 40%, #0a1424 0%, #05070d 70%);
-  transition: opacity 0.4s ease;
+  gap: 1.35rem;
+  overflow: hidden;
+  padding:
+    max(var(--ui-safe-top), 1rem)
+    max(var(--ui-safe-right), 1rem)
+    max(var(--ui-safe-bottom), 1rem)
+    max(var(--ui-safe-left), 1rem);
+  background:
+    linear-gradient(90deg, transparent calc(50% - 1px), #151a21 50%, transparent calc(50% + 1px)),
+    #080b10;
+  transition: opacity 0.26s ease;
 }
+
+.charselect::before {
+  content: '';
+  position: absolute;
+  inset: 0;
+  opacity: 0.24;
+  background:
+    repeating-linear-gradient(0deg, transparent 0 3.95rem, #252b34 4rem),
+    repeating-linear-gradient(90deg, transparent 0 3.95rem, #252b34 4rem);
+  mask-image: linear-gradient(90deg, transparent, black 22%, black 78%, transparent);
+  pointer-events: none;
+}
+
 .charselect.closing {
   opacity: 0;
   pointer-events: none;
 }
 
+.charselect .title,
+.charselect .cards,
+.charselect .footnote {
+  position: relative;
+  z-index: 1;
+}
+
 .charselect .title {
-  text-align: center;
+  width: min(40.6rem, 92vw);
+  text-align: left;
 }
+
 .charselect .title h2 {
-  font-size: clamp(1.1rem, 3vw, 1.5rem);
-  font-weight: 700;
-  letter-spacing: 0.18em;
-  color: #e8eef8;
+  color: #eef0f3;
+  font-size: 1.42rem;
+  font-weight: 760;
+  line-height: 1.15;
+  letter-spacing: 0.06em;
 }
+
+.charselect .title h2::after {
+  content: '';
+  display: inline-block;
+  width: 3.2rem;
+  height: 2px;
+  margin-left: 0.65rem;
+  vertical-align: 0.28em;
+  background: #59616c;
+}
+
 .charselect .title p {
-  margin-top: 0.4rem;
-  font-size: 0.8rem;
-  letter-spacing: 0.1em;
-  color: #6d7f97;
+  margin-top: 0.36rem;
+  color: #858e9a;
+  font-size: 0.72rem;
+  font-weight: 520;
+  letter-spacing: 0.045em;
 }
 
 .charselect .cards {
   display: flex;
-  gap: 1.1rem;
   align-items: stretch;
+  gap: 0.9rem;
   max-width: 100%;
 }
 
 .charcard {
-  --accent: #4dd0ff;
+  --accent: var(--ui-cyan);
   position: relative;
-  width: min(21rem, 40vw);
-  border-radius: 1rem;
+  width: min(19.8rem, 40vw);
   overflow: hidden;
+  border: var(--ui-hairline) solid #3a414b;
+  border-radius: 1px;
+  color: var(--ui-text);
+  background: #0d1117;
+  clip-path: polygon(0 0, calc(100% - 0.8rem) 0, 100% 0.8rem, 100% 100%, 0 100%);
   cursor: pointer;
-  background: #0b1220;
-  border: 1px solid #1e2c40;
-  transition:
-    transform 0.18s cubic-bezier(0.2, 0.9, 0.3, 1),
-    border-color 0.18s ease,
-    box-shadow 0.18s ease;
   -webkit-tap-highlight-color: transparent;
+  transition:
+    transform 0.14s ease,
+    border-color 0.14s ease,
+    filter 0.14s ease;
 }
+
+.charcard:nth-child(2) {
+  transform: translateY(0.72rem);
+}
+
 .charcard:hover,
 .charcard:focus-visible {
-  transform: translateY(-6px);
+  transform: translateY(-0.3rem);
   border-color: var(--accent);
-  box-shadow: 0 14px 44px -12px var(--accent);
+  filter: brightness(1.06);
   outline: none;
+}
+
+.charcard:nth-child(2):hover,
+.charcard:nth-child(2):focus-visible {
+  transform: translateY(0.42rem);
+}
+
+.charcard:focus-visible {
+  box-shadow: inset 0 0 0 2px var(--accent);
+}
+
+.charcard::after {
+  content: '';
+  position: absolute;
+  inset: auto 0 0;
+  z-index: 3;
+  height: 3px;
+  background: var(--accent);
+  opacity: 0.72;
 }
 
 .charcard .portrait {
@@ -368,400 +565,709 @@
   aspect-ratio: 2 / 3;
   object-fit: cover;
   object-position: 50% 12%;
+  filter: saturate(0.86) contrast(1.04);
+  transition: transform 0.35s ease;
 }
 
-/* 초상 하단을 어둡게 덮어 글자가 항상 읽히게 한다. */
+.charcard:hover .portrait,
+.charcard:focus-visible .portrait {
+  transform: scale(1.018);
+}
+
 .charcard .veil {
   position: absolute;
-  inset: auto 0 0 0;
-  height: 62%;
-  background: linear-gradient(180deg, rgba(6, 10, 18, 0) 0%, rgba(6, 10, 18, 0.94) 62%);
+  inset: auto 0 0;
+  height: 64%;
+  background: linear-gradient(180deg, transparent 0%, rgba(7, 10, 14, 0.93) 54%, #070a0e 100%);
   pointer-events: none;
 }
 
 .charcard .info {
   position: absolute;
-  inset: auto 0 0 0;
-  padding: 1rem 1.1rem 1.15rem;
+  inset: auto 0 0;
+  z-index: 2;
+  padding: 0.95rem 1rem 1.05rem;
+  text-align: left;
 }
+
 .charcard .role {
   display: inline-block;
-  font-size: 0.66rem;
-  font-weight: 700;
-  letter-spacing: 0.14em;
-  color: #05070d;
-  background: var(--accent);
-  padding: 0.16rem 0.5rem;
-  border-radius: 0.25rem;
+  padding: 0.14rem 0.4rem 0.12rem;
+  border-left: 2px solid var(--accent);
+  color: #dce0e5;
+  background: rgba(12, 16, 22, 0.88);
+  font-size: 0.6rem;
+  font-weight: 760;
+  line-height: 1;
+  letter-spacing: 0.12em;
 }
+
 .charcard h3 {
-  margin-top: 0.5rem;
-  font-size: 1.5rem;
-  font-weight: 700;
-  letter-spacing: 0.04em;
-  color: #f2f7ff;
+  margin-top: 0.44rem;
+  color: #f3f4f6;
+  font-size: 1.48rem;
+  font-weight: 780;
+  line-height: 1.15;
+  letter-spacing: -0.035em;
 }
+
 .charcard .epithet {
-  font-size: 0.82rem;
+  margin-top: 0.08rem;
   color: var(--accent);
-  letter-spacing: 0.06em;
+  font-size: 0.76rem;
+  font-weight: 580;
+  letter-spacing: 0.04em;
 }
+
 .charcard .tagline {
-  margin-top: 0.5rem;
-  font-size: 0.8rem;
-  line-height: 1.6;
-  color: #93a6bd;
+  margin-top: 0.48rem;
+  color: #a2aab5;
+  font-size: 0.72rem;
+  line-height: 1.55;
+  word-break: keep-all;
 }
+
 .charcard .traits {
-  margin-top: 0.7rem;
+  margin-top: 0.62rem;
   display: flex;
   flex-wrap: wrap;
-  gap: 0.32rem;
+  gap: 0.28rem;
 }
+
 .charcard .traits span {
-  font-size: 0.66rem;
-  letter-spacing: 0.06em;
-  color: #b9cbe0;
-  border: 1px solid #2a3c53;
-  border-radius: 999px;
-  padding: 0.16rem 0.5rem;
+  padding: 0.14rem 0.36rem 0.12rem;
+  border: var(--ui-hairline) solid #444c57;
+  border-radius: 0;
+  color: #b5bdc8;
+  background: rgba(9, 12, 17, 0.6);
+  font-size: 0.58rem;
+  font-weight: 550;
+  line-height: 1.1;
+  letter-spacing: 0.04em;
 }
 
 .charcard .hotkey {
   position: absolute;
-  top: 0.7rem;
-  left: 0.7rem;
+  top: 0.62rem;
+  left: 0.62rem;
+  z-index: 3;
   width: 1.55rem;
   height: 1.55rem;
   display: grid;
   place-items: center;
-  border-radius: 0.4rem;
-  background: rgba(5, 9, 16, 0.72);
-  border: 1px solid #2c3f57;
-  font-size: 0.76rem;
-  font-weight: 700;
-  color: #cfe4f7;
+  border: var(--ui-hairline) solid #7b8490;
+  border-radius: 0;
+  color: #f2f3f5;
+  background: rgba(7, 10, 14, 0.86);
+  font-size: 0.7rem;
+  font-weight: 780;
 }
 
 .charselect .footnote {
-  font-size: 0.74rem;
-  letter-spacing: 0.08em;
-  color: #5e6f86;
-  text-align: center;
+  width: min(40.6rem, 92vw);
+  color: #68717d;
+  font-size: 0.61rem;
+  font-weight: 540;
+  letter-spacing: 0.06em;
+  text-align: right;
 }
 
-@media (max-width: 720px) {
-  .charselect .cards {
-    flex-direction: column;
-    gap: 0.8rem;
-    overflow-y: auto;
-  }
-  .charcard {
-    width: min(20rem, 82vw);
-  }
-  /* 세로로 쌓이면 초상 전체를 보여줄 공간이 없다. 얼굴 위주로 자른다. */
-  .charcard .portrait {
-    aspect-ratio: 16 / 11;
-    object-position: 50% 14%;
-  }
-  .charcard .veil {
-    height: 78%;
-  }
-}
-
-/* ---------------------------------------------------------------------------
-   스킬바 — 화면 하단 6슬롯 (Q W E R D F)
-   PC에서는 키보드와 클릭 둘 다, 모바일에서는 이것이 유일한 입력 수단이다.
-   쿨다운 부채꼴이 도는 이 UI가 곧 롤/이터널 리턴 룩 그 자체다.
---------------------------------------------------------------------------- */
+/* --------------------------------------------------------------------------
+   Skill bar
+   -------------------------------------------------------------------------- */
 
 .skillbar {
   position: fixed;
   left: 50%;
-  bottom: calc(1.1rem + env(safe-area-inset-bottom, 0px));
-  transform: translateX(-50%);
-  display: flex;
-  gap: 0.5rem;
+  bottom: var(--ui-safe-bottom);
   z-index: 6;
-  /* 슬롯 바깥의 빈 공간으로는 클릭이 통과해야 이동이 끊기지 않는다. */
+  display: flex;
+  align-items: flex-end;
+  gap: 0.34rem;
+  padding: 0.38rem 0.44rem 0.4rem;
+  transform: translateX(-50%);
+  border-block: var(--ui-hairline) solid #3f4651;
+  background: rgba(8, 11, 16, 0.88);
+  box-shadow: 0 0.28rem 0 rgba(0, 0, 0, 0.34);
   pointer-events: none;
 }
 
+.skillbar::before,
+.skillbar::after {
+  content: '';
+  position: absolute;
+  top: -1px;
+  bottom: -1px;
+  width: 0.45rem;
+  border-block: var(--ui-hairline) solid #3f4651;
+  background: rgba(8, 11, 16, 0.88);
+}
+
+.skillbar::before {
+  right: 100%;
+  clip-path: polygon(100% 0, 100% 100%, 0 70%, 0 30%);
+}
+
+.skillbar::after {
+  left: 100%;
+  clip-path: polygon(0 0, 100% 30%, 100% 70%, 0 100%);
+}
+
 .slot {
-  --p: 0; /* 쿨다운 진행률 0..1 */
+  --p: 0;
   position: relative;
-  width: 3.4rem;
-  height: 3.4rem;
-  border-radius: 0.7rem;
-  background: linear-gradient(180deg, #16202f 0%, #0c1420 100%);
-  border: 1px solid #2b3d55;
+  width: 3.25rem;
+  height: 3.25rem;
   display: grid;
   place-items: center;
-  pointer-events: auto;
+  overflow: hidden;
+  border: var(--ui-hairline) solid #4c5562;
+  border-radius: 1px;
+  color: var(--ui-text);
+  background: #151a22;
+  box-shadow:
+    inset 0 -0.24rem rgba(0, 0, 0, 0.22),
+    inset 0 1px rgba(255, 255, 255, 0.04);
   cursor: pointer;
+  pointer-events: auto;
   user-select: none;
   -webkit-tap-highlight-color: transparent;
   transition:
-    border-color 0.15s ease,
-    transform 0.08s ease;
-  overflow: hidden;
+    border-color 0.1s ease,
+    transform 0.07s ease,
+    background-color 0.1s ease;
 }
 
 .slot:active {
   transform: translateY(2px);
 }
 
-/* 소환사 주문(D·F)은 주력 스킬과 시각적으로 구분한다. 롤에서도 별개 슬롯이다. */
 .slot[data-kind='summoner'] {
-  width: 2.9rem;
-  height: 2.9rem;
-  border-radius: 50%;
-  align-self: center;
+  width: 2.7rem;
+  height: 2.7rem;
+  align-self: flex-end;
+  border-color: #5b5141;
+  background: #171813;
+}
+
+.slot:not([data-kind='summoner']) + .slot[data-kind='summoner'] {
+  margin-left: 0.42rem;
 }
 
 .slot .glyph {
-  font-size: 1.15rem;
-  font-weight: 700;
-  color: #cfe4f7;
-  letter-spacing: 0.02em;
+  position: relative;
+  z-index: 1;
+  width: 100%;
+  height: 100%;
+  display: grid;
+  place-items: center;
+  color: #cbd1d9;
+  font-size: 1.12rem;
+  font-weight: 720;
   line-height: 1;
+}
+
+.slot .glyph img,
+.slot .glyph picture {
+  width: 100%;
+  height: 100%;
+  display: block;
+  object-fit: cover;
+}
+
+.slot .glyph-fallback {
+  display: grid;
+  width: 100%;
+  height: 100%;
+  place-items: center;
 }
 
 .slot .key {
   position: absolute;
-  right: 0.28rem;
-  bottom: 0.16rem;
-  font-size: 0.62rem;
-  font-weight: 700;
-  color: #7f94ad;
-  letter-spacing: 0.04em;
+  top: 0.2rem;
+  left: 0.22rem;
+  z-index: 5;
+  min-width: 0.9rem;
+  padding: 0.08rem 0.14rem;
+  border: 1px solid rgba(178, 187, 198, 0.42);
+  color: #e0e3e7;
+  background: rgba(5, 7, 10, 0.78);
+  font-size: 0.52rem;
+  font-weight: 800;
+  line-height: 1;
+  letter-spacing: 0.02em;
+  text-align: center;
 }
 
-/* 쿨다운 부채꼴. 12시 방향에서 시계방향으로 줄어든다. */
 .slot .cd {
   position: absolute;
   inset: 0;
+  z-index: 3;
   background: conic-gradient(
-    rgba(4, 8, 15, 0.8) calc(var(--p) * 360deg),
+    rgba(3, 5, 8, 0.86) calc(var(--p) * 360deg),
     transparent calc(var(--p) * 360deg)
   );
   pointer-events: none;
 }
 
-/* 남은 초. 1초 미만이면 소수점 한 자리까지 — 롤과 같은 관습. */
 .slot .cdtext {
   position: absolute;
   inset: 0;
+  z-index: 4;
   display: grid;
   place-items: center;
-  font-size: 0.9rem;
-  font-weight: 700;
-  color: #eaf3ff;
-  text-shadow: 0 1px 3px rgba(0, 0, 0, 0.9);
+  color: #f2f3f5;
+  font-size: 0.82rem;
+  font-weight: 780;
+  text-shadow: 0 1px 3px #000;
+  font-variant-numeric: tabular-nums;
   pointer-events: none;
 }
 
-/* --- 상태 --- */
-
 .slot[data-state='ready'] {
-  border-color: #3c6f97;
+  border-color: #6c7581;
 }
+
 .slot[data-state='ready']:hover {
-  border-color: #4dd0ff;
+  border-color: var(--ui-cyan);
+  background: #1a222b;
 }
-.slot[data-state='ready'] .glyph {
-  color: #e8f6ff;
+
+.skillbar[data-class='melee'] .slot[data-state='ready']:hover {
+  border-color: var(--ui-crimson);
+}
+
+.slot[data-state='ready']::after {
+  content: '';
+  position: absolute;
+  right: 0;
+  bottom: 0;
+  z-index: 2;
+  width: 0.35rem;
+  height: 0.35rem;
+  background: var(--ui-cyan);
+  clip-path: polygon(100% 0, 100% 100%, 0 100%);
+}
+
+.skillbar[data-class='melee'] .slot[data-state='ready']::after {
+  background: var(--ui-crimson);
 }
 
 .slot[data-state='cooling'] {
-  border-color: #24374d;
+  border-color: #313842;
+  background: #0d1117;
 }
 
 .slot[data-state='locked'] {
-  cursor: default;
   border-style: dashed;
-  border-color: #22303f;
-  background: #0a111b;
+  border-color: #303640;
+  color: #4f5864;
+  background: #0c1015;
+  cursor: default;
 }
+
 .slot[data-state='locked'] .glyph,
 .slot[data-state='locked'] .key {
-  color: #3a4a5e;
+  opacity: 0.38;
 }
 
-/* 쿨다운이 막 끝난 순간의 번쩍임. 준비됐다는 신호를 눈으로 준다. */
 @keyframes slot-ready-flash {
-  0% {
-    box-shadow: 0 0 0 0 rgba(77, 208, 255, 0.75);
-  }
-  100% {
-    box-shadow: 0 0 0 0.7rem rgba(77, 208, 255, 0);
-  }
+  0% { border-color: #e4f8ff; filter: brightness(1.45); }
+  100% { border-color: #6c7581; filter: brightness(1); }
 }
+
 .slot.flash {
-  animation: slot-ready-flash 0.42s ease-out;
+  animation: slot-ready-flash 0.32s ease-out;
 }
 
-/* 모바일에서는 터치 타겟을 키운다. 손가락은 마우스보다 뭉툭하다. */
-@media (pointer: coarse) {
-  .skillbar {
-    gap: 0.6rem;
-    bottom: calc(1.4rem + env(safe-area-inset-bottom, 0px));
-  }
-  .slot {
-    width: 4.1rem;
-    height: 4.1rem;
-  }
-  .slot[data-kind='summoner'] {
-    width: 3.5rem;
-    height: 3.5rem;
-  }
-  .slot .glyph {
-    font-size: 1.3rem;
-  }
-}
-
-/* 아주 좁은 화면에서 6칸이 넘치지 않게 */
-@media (max-width: 420px) {
-  .slot {
-    width: 3.2rem;
-    height: 3.2rem;
-  }
-  .slot[data-kind='summoner'] {
-    width: 2.8rem;
-    height: 2.8rem;
-  }
-  .skillbar {
-    gap: 0.35rem;
-  }
-}
-
-/* ---------------------------------------------------------------------------
-   결과 화면 — 판을 확실히 멈추고 같은 조건으로 즉시 재시작
---------------------------------------------------------------------------- */
+/* --------------------------------------------------------------------------
+   Outcome
+   -------------------------------------------------------------------------- */
 
 .outcome {
-  --accent: #ff5a6e;
+  --accent: var(--ui-crimson);
   position: fixed;
   inset: 0;
   z-index: 30;
   display: grid;
   place-items: center;
-  padding: 1.5rem;
-  background:
-    radial-gradient(circle at 50% 42%, color-mix(in srgb, var(--accent) 16%, transparent), transparent 36%),
-    rgba(4, 7, 13, 0.9);
-  backdrop-filter: blur(5px);
-  animation: outcome-in 0.24s ease-out;
+  padding:
+    max(var(--ui-safe-top), 1rem)
+    max(var(--ui-safe-right), 1rem)
+    max(var(--ui-safe-bottom), 1rem)
+    max(var(--ui-safe-left), 1rem);
+  background: rgba(5, 7, 10, 0.93);
+  animation: outcome-in 0.18s ease-out;
 }
 
 .outcome[data-result='victory'] {
-  --accent: #ffd56a;
+  --accent: var(--ui-warning);
 }
 
 .outcome .panel {
-  width: min(28rem, 92vw);
-  padding: clamp(1.8rem, 5vw, 2.8rem);
-  text-align: center;
-  border: 1px solid color-mix(in srgb, var(--accent) 42%, #263449);
-  border-radius: 1rem;
-  background: linear-gradient(165deg, rgba(22, 31, 47, 0.97), rgba(7, 12, 20, 0.98));
-  box-shadow:
-    0 1.5rem 5rem rgba(0, 0, 0, 0.58),
-    0 0 2.4rem color-mix(in srgb, var(--accent) 12%, transparent);
+  position: relative;
+  width: min(30rem, 92vw);
+  padding: 2.1rem 2.25rem 1.8rem 2.5rem;
+  overflow: hidden;
+  border: var(--ui-hairline) solid #444c57;
+  border-left: 4px solid var(--accent);
+  border-radius: 0;
+  color: var(--ui-text);
+  background: #10141b;
+  box-shadow: 0 1rem 0 rgba(0, 0, 0, 0.28);
+  text-align: left;
+}
+
+.outcome .panel::after {
+  content: '';
+  position: absolute;
+  top: 0;
+  right: 0;
+  width: 1.2rem;
+  height: 1.2rem;
+  background: #2b323c;
+  clip-path: polygon(100% 0, 100% 100%, 0 0);
 }
 
 .outcome .eyebrow {
   color: var(--accent);
-  font-size: 0.72rem;
-  font-weight: 800;
-  letter-spacing: 0.28em;
+  font-size: 0.65rem;
+  font-weight: 820;
+  letter-spacing: 0.25em;
 }
 
 .outcome h2 {
-  margin-top: 0.55rem;
-  color: #f3f7ff;
-  font-size: clamp(1.8rem, 7vw, 2.7rem);
-  line-height: 1.15;
-  letter-spacing: 0.04em;
+  margin-top: 0.42rem;
+  color: #f2f3f5;
+  font-size: 2.35rem;
+  font-weight: 780;
+  line-height: 1.12;
+  letter-spacing: -0.045em;
 }
 
 .outcome p {
-  margin-top: 0.75rem;
-  color: #91a3ba;
-  font-size: 0.86rem;
-  line-height: 1.7;
+  max-width: 24rem;
+  margin-top: 0.65rem;
+  color: #99a2ae;
+  font-size: 0.8rem;
+  line-height: 1.65;
+  word-break: keep-all;
+}
+
+.outcome .actions {
+  margin-top: 1.55rem;
+  display: flex;
+  align-items: stretch;
+  gap: 0.48rem;
+}
+
+.outcome .restart,
+.outcome .menu {
+  min-width: 0;
+  padding: 0.72rem 0.9rem 0.66rem;
+  border-radius: 0;
+  color: #f0f1f3;
+  cursor: pointer;
+  text-align: left;
+  -webkit-tap-highlight-color: transparent;
+  transition:
+    transform 0.08s ease,
+    border-color 0.12s ease,
+    background-color 0.12s ease;
 }
 
 .outcome .restart {
-  width: min(18rem, 100%);
-  margin-top: 1.7rem;
-  padding: 0.8rem 1rem 0.7rem;
-  border: 1px solid var(--accent);
-  border-radius: 0.6rem;
-  color: #071019;
-  background: var(--accent);
-  cursor: pointer;
-  font: inherit;
-  transition:
-    transform 0.12s ease,
-    box-shadow 0.15s ease,
-    filter 0.15s ease;
-  -webkit-tap-highlight-color: transparent;
+  flex: 1.45;
+  border: var(--ui-hairline) solid color-mix(in srgb, var(--accent) 72%, #58616d);
+  background: #1d232c;
+}
+
+.outcome .menu {
+  flex: 1;
+  border: var(--ui-hairline) solid #424a55;
+  color: #b9c0c9;
+  background: #11161d;
 }
 
 .outcome .restart span,
-.outcome .restart small {
+.outcome .restart small,
+.outcome .menu span,
+.outcome .menu small {
   display: block;
 }
 
-.outcome .restart span {
-  font-size: 0.95rem;
-  font-weight: 800;
-  letter-spacing: 0.05em;
+.outcome .restart span,
+.outcome .menu span {
+  font-size: 0.88rem;
+  font-weight: 760;
+  letter-spacing: 0.02em;
 }
 
-.outcome .restart small {
-  margin-top: 0.18rem;
-  font-size: 0.58rem;
-  font-weight: 700;
-  letter-spacing: 0.13em;
-  opacity: 0.62;
+.outcome .restart small,
+.outcome .menu small {
+  margin-top: 0.16rem;
+  color: #8f98a4;
+  font-size: 0.54rem;
+  font-weight: 660;
+  letter-spacing: 0.12em;
 }
 
 .outcome .restart:hover,
-.outcome .restart:focus-visible {
-  filter: brightness(1.08);
-  box-shadow: 0 0.7rem 2rem color-mix(in srgb, var(--accent) 28%, transparent);
+.outcome .restart:focus-visible,
+.outcome .menu:hover,
+.outcome .menu:focus-visible {
+  border-color: var(--accent);
+  background: #252c36;
   outline: none;
 }
 
-.outcome .restart:active {
+.outcome .restart:focus-visible,
+.outcome .menu:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 3px;
+}
+
+.outcome .restart:active,
+.outcome .menu:active {
   transform: translateY(2px);
 }
 
 .outcome .note {
-  margin-top: 0.72rem;
-  color: #617189;
-  font-size: 0.66rem;
-  letter-spacing: 0.09em;
+  margin-top: 0.62rem;
+  color: #656e7a;
+  font-size: 0.58rem;
+  font-weight: 550;
+  letter-spacing: 0.065em;
 }
 
 @keyframes outcome-in {
   from {
     opacity: 0;
-    transform: scale(1.015);
+    transform: translateY(0.35rem);
   }
   to {
     opacity: 1;
-    transform: scale(1);
+    transform: translateY(0);
+  }
+}
+
+/* --------------------------------------------------------------------------
+   Responsive layouts
+   -------------------------------------------------------------------------- */
+
+@media (max-width: 760px), (max-aspect-ratio: 3 / 4) {
+  .charselect {
+    justify-content: flex-start;
+    gap: 0.85rem;
+    overflow-y: auto;
+  }
+
+  .charselect .title,
+  .charselect .footnote {
+    width: min(31rem, 92vw);
+  }
+
+  .charselect .cards {
+    width: min(31rem, 92vw);
+    flex-direction: column;
+    gap: 0.55rem;
+  }
+
+  .charcard,
+  .charcard:nth-child(2) {
+    width: 100%;
+    transform: none;
+  }
+
+  .charcard:hover,
+  .charcard:focus-visible,
+  .charcard:nth-child(2):hover,
+  .charcard:nth-child(2):focus-visible {
+    transform: translateX(0.22rem);
+  }
+
+  .charcard .portrait {
+    aspect-ratio: 16 / 8.2;
+    object-position: 50% 14%;
+  }
+
+  .charcard .veil {
+    height: 86%;
+  }
+
+  .charselect .footnote {
+    padding-bottom: var(--ui-safe-bottom);
+    text-align: left;
+  }
+
+  .levelup {
+    justify-content: flex-start;
+    gap: 0.85rem;
+    overflow-y: auto;
+  }
+
+  .levelup .banner {
+    width: min(31rem, 92vw);
+  }
+
+  .levelup .cards {
+    width: min(31rem, 92vw);
+    flex-direction: column;
+    gap: 0.48rem;
+  }
+
+  .lvcard {
+    width: 100%;
+    min-height: 0;
+    padding: 0.78rem 0.82rem;
+  }
+
+  .lvcard p {
+    margin-right: 1.2rem;
+    display: -webkit-box;
+    overflow: hidden;
+    -webkit-box-orient: vertical;
+    -webkit-line-clamp: 2;
+  }
+
+  .bossbar {
+    top: calc(var(--ui-safe-top) + 2.15rem);
+    width: min(29rem, calc(100vw - var(--ui-safe-left) - var(--ui-safe-right) - 1rem));
+  }
+}
+
+@media (max-width: 480px) {
+  .charcard .tagline,
+  .charcard .traits {
+    display: none;
+  }
+
+  .charcard .portrait {
+    aspect-ratio: 16 / 7.2;
+  }
+
+  .charcard .info {
+    padding: 0.7rem 0.82rem 0.78rem;
+  }
+
+  .charcard h3 {
+    font-size: 1.24rem;
+  }
+
+  .skillbar {
+    gap: 0.26rem;
+    padding-inline: 0.3rem;
+  }
+
+  .slot {
+    width: 3rem;
+    height: 3rem;
+  }
+
+  .slot[data-kind='summoner'] {
+    width: 2.5rem;
+    height: 2.5rem;
+  }
+
+  .slot:not([data-kind='summoner']) + .slot[data-kind='summoner'] {
+    margin-left: 0.2rem;
+  }
+
+  .xpbar {
+    bottom: calc(var(--ui-safe-bottom) + 4.42rem);
+  }
+
+  .outcome .panel {
+    padding: 1.55rem 1.35rem 1.35rem 1.55rem;
+  }
+
+  .outcome .actions {
+    flex-direction: column;
+  }
+}
+
+@media (pointer: coarse) {
+  .slot {
+    min-width: 3.25rem;
+    min-height: 3.25rem;
+  }
+
+  .slot[data-kind='summoner'] {
+    min-width: 2.75rem;
+    min-height: 2.75rem;
+  }
+}
+
+@media (max-height: 560px) and (orientation: landscape) {
+  .charselect {
+    gap: 0.52rem;
+  }
+
+  .charselect .title,
+  .charselect .footnote {
+    width: min(35rem, 84vw);
+  }
+
+  .charselect .cards {
+    width: auto;
+    flex-direction: row;
+    gap: 0.6rem;
+  }
+
+  .charcard,
+  .charcard:nth-child(2) {
+    width: min(14.5rem, 38vw);
+    transform: none;
+  }
+
+  .charcard .portrait {
+    aspect-ratio: 16 / 9;
+  }
+
+  .charcard .tagline,
+  .charcard .traits {
+    display: none;
+  }
+
+  .levelup {
+    gap: 0.55rem;
+  }
+
+  .levelup .cards {
+    width: auto;
+    flex-direction: row;
+  }
+
+  .lvcard {
+    width: min(14rem, 29vw);
+  }
+
+  .lvcard p {
+    display: none;
+  }
+}
+
+@media (min-aspect-ratio: 21 / 9) {
+  .charselect .cards {
+    gap: 1.4rem;
   }
 }
 
 @media (prefers-reduced-motion: reduce) {
-  .outcome {
+  .floatbar .fill,
+  .floatbar .ghost,
+  .xpbar .fill,
+  .bossbar .boss-fill,
+  .levelup,
+  .lvcard,
+  .charselect,
+  .charcard,
+  .charcard .portrait,
+  .slot,
+  .outcome,
+  .outcome .restart,
+  .outcome .menu {
     animation: none;
-  }
-  .outcome .restart {
     transition: none;
   }
 }

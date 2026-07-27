@@ -18,6 +18,8 @@ export interface SkillDef {
   tag: string
   /** 카드에 뜨는 한 줄. 결과를 말하지 원리를 말하지 않는다. */
   oneLiner: string
+  /** public 기준 스킬 아이콘 경로. */
+  icon: string
   glyph: string
   cooldown: number
 }
@@ -30,6 +32,7 @@ const RANGED: Record<string, SkillDef> = {
     name: '섬광',
     tag: '단일',
     oneLiner: '적들을 꿰뚫어 좌우로 갈라내고, 맨 앞 하나를 못 박는다',
+    icon: 'art/skills/ranged-q.webp',
     glyph: '⟶',
     cooldown: 3.5,
   },
@@ -39,6 +42,7 @@ const RANGED: Record<string, SkillDef> = {
     name: '굴절',
     tag: '생존',
     oneLiner: '커서 반대쪽으로 도약하고, 있던 자리에 적을 밀어내는 빛기둥을 남긴다',
+    icon: 'art/skills/ranged-w.webp',
     glyph: '⤺',
     cooldown: 12,
   },
@@ -48,6 +52,7 @@ const RANGED: Record<string, SkillDef> = {
     name: '분광',
     tag: '광역',
     oneLiner: '빛덩이를 던져 터뜨린다. 사방으로 밀려나고 그 자리가 3초간 느려진다',
+    icon: 'art/skills/ranged-e.webp',
     glyph: '✷',
     cooldown: 14,
   },
@@ -57,6 +62,7 @@ const RANGED: Record<string, SkillDef> = {
     name: '일현',
     tag: '궁극',
     oneLiner: '화면 끝에서 끝까지. 직선 위의 모든 것이 사라진다',
+    icon: 'art/skills/ranged-r.webp',
     glyph: '☀',
     cooldown: 36,
   },
@@ -70,6 +76,7 @@ const MELEE: Record<string, SkillDef> = {
     name: '인월참',
     tag: '단일',
     oneLiner: '앞의 적을 칼끝 거리로 끌어다 꿰뚫는다. 붙은 적은 떼어낸다',
+    icon: 'art/skills/melee-q.webp',
     glyph: '⟡',
     cooldown: 3.5,
   },
@@ -79,6 +86,7 @@ const MELEE: Record<string, SkillDef> = {
     name: '이합참',
     tag: '생존',
     oneLiner: '가려는 쪽으로 꿰뚫고 나간다. 그동안 무적이고, 내린 자리가 열린다',
+    icon: 'art/skills/melee-w.webp',
     glyph: '⇉',
     cooldown: 12,
   },
@@ -88,6 +96,7 @@ const MELEE: Record<string, SkillDef> = {
     name: '월륜',
     tag: '광역',
     oneLiner: '주변을 한 겹 밀어낸 뒤 끌어모아 통째로 벤다',
+    icon: 'art/skills/melee-e.webp',
     glyph: '◯',
     cooldown: 16,
   },
@@ -97,6 +106,7 @@ const MELEE: Record<string, SkillDef> = {
     name: '만월난무',
     tag: '궁극',
     oneLiner: '사라져서 여섯 번 벤다. 마지막에 크게 회복한다',
+    icon: 'art/skills/melee-r.webp',
     glyph: '☾',
     cooldown: 45,
   },
@@ -110,6 +120,7 @@ export const SUMMONER: Record<string, SkillDef> = {
     name: '회복',
     tag: '회복',
     oneLiner: '즉시 체력을 회복하고 잠시 빨라진다',
+    icon: 'art/skills/heal.webp',
     glyph: '✚',
     cooldown: 45,
   },
@@ -119,6 +130,7 @@ export const SUMMONER: Record<string, SkillDef> = {
     name: '점멸',
     tag: '이동',
     oneLiner: '커서 쪽으로 순간이동한다',
+    icon: 'art/skills/flash.webp',
     glyph: '⚡',
     cooldown: 40,
   },

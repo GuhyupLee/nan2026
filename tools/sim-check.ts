@@ -8,7 +8,18 @@
  *   npx tsx tools/sim-check.ts
  */
 import { ARENA_RADIUS, DT, FLASH_COOLDOWN } from '../src/sim/constants.ts'
-import { targetAliveCount } from '../src/sim/enemies.ts'
+import { damageEnemy } from '../src/sim/damage.ts'
+import {
+  BOSS_MAX_HP,
+  BOSS_SPAWN_TIME,
+  TYPE_BOSS,
+  TYPE_WALKER,
+  createEnemyPool,
+  removeEnemy,
+  spawnBoss,
+  spawnEnemy,
+  targetAliveCount,
+} from '../src/sim/enemies.ts'
 import {
   MAX_LEVEL,
   TARGET_LEVEL_TIMES,
@@ -19,6 +30,7 @@ import {
 } from '../src/sim/progression.ts'
 import { createRng } from '../src/sim/rng.ts'
 import {
+  SKILL_Q,
   consumeCooldown,
   cooldownProgress,
   createSkillBook,
@@ -382,6 +394,119 @@ console.log('\nsim smoke check\n')
       a.progression.totalXp === b.progression.totalXp &&
       a.rng.state() === b.rng.state(),
     `${a.enemies.count}/${b.enemies.count} hp ${a.player.hp}/${b.player.hp}`,
+  )
+}
+
+// --- 보스 스폰·체력 상태·승리 ---
+{
+  const makeBossWorld = (seed: number) => {
+    const w = createWorld(seed)
+    // 긴 준비 구간을 돌리지 않고 정확히 3:30 경계에서 한 틱 진행한다.
+    w.tick = Math.round(BOSS_SPAWN_TIME / DT)
+    w.time = w.tick * DT
+    w.player.attackCooldown = Infinity
+    w.player.invulnUntil = Infinity
+    stepWorld(w, createInput())
+    return w
+  }
+
+  const w = makeBossWorld(808)
+  const bossCount = Array.from({ length: w.enemies.count }).filter(
+    (_, i) => w.enemies.type[i] === TYPE_BOSS,
+  ).length
+  check('3:30에 고유 보스가 한 번 등장한다', bossCount === 1, `count=${bossCount}`)
+  check(
+    'World가 활성 보스의 현재/최대 체력을 제공한다',
+    w.boss.spawned &&
+      w.boss.active &&
+      w.boss.hp === BOSS_MAX_HP &&
+      w.boss.maxHp === BOSS_MAX_HP,
+    `${w.boss.hp}/${w.boss.maxHp}`,
+  )
+
+  for (let i = 0; i < 120; i++) stepWorld(w, createInput())
+  const afterCount = Array.from({ length: w.enemies.count }).filter(
+    (_, i) => w.enemies.type[i] === TYPE_BOSS,
+  ).length
+  check('보스는 다음 틱에 중복 스폰되지 않는다', afterCount === 1, `count=${afterCount}`)
+
+  const bossIndex = Array.from({ length: w.enemies.count }).findIndex(
+    (_, i) => w.enemies.type[i] === TYPE_BOSS,
+  )
+  damageEnemy(w, bossIndex, BOSS_MAX_HP / 2)
+  check(
+    '보스 피격 시 World 체력이 즉시 동기화된다',
+    Math.abs(w.boss.hp - BOSS_MAX_HP / 2) < 1e-3,
+    `hp=${w.boss.hp}`,
+  )
+  damageEnemy(w, bossIndex, BOSS_MAX_HP)
+  check(
+    '보스 처치 즉시 victory가 되고 보스바가 비활성화된다',
+    w.outcome === 'victory' && !w.boss.active && w.boss.hp === 0,
+    `outcome=${w.outcome} active=${w.boss.active}`,
+  )
+
+  // 스킬은 접촉 피해보다 먼저 처리된다. 보스를 쓰러뜨린 바로 그 틱에
+  // 플레이어 체력도 0이 되더라도 최종 일격을 승리로 인정한다.
+  const simultaneous = createWorld(810, 'ranged')
+  simultaneous.spawnEnabled = false
+  spawnBoss(
+    simultaneous.enemies,
+    simultaneous.rng,
+    simultaneous.player.pos.x,
+    simultaneous.player.pos.y,
+  )
+  simultaneous.boss.spawned = true
+  simultaneous.boss.active = true
+  simultaneous.boss.hp = 1
+  const simultaneousBoss = simultaneous.enemies.count - 1
+  simultaneous.enemies.x[simultaneousBoss] = 0.5
+  simultaneous.enemies.y[simultaneousBoss] = 0
+  simultaneous.enemies.prevX[simultaneousBoss] = 0.5
+  simultaneous.enemies.prevY[simultaneousBoss] = 0
+  simultaneous.enemies.hp[simultaneousBoss] = 1
+  simultaneous.player.hp = 0.001
+  unlockSkill(simultaneous.skills, 'q', 3.5)
+  const finalBlow = createInput()
+  finalBlow.aim.x = 4
+  finalBlow.skillsPressed = SKILL_Q
+  stepWorld(simultaneous, finalBlow)
+  check(
+    '보스 처치와 플레이어 사망이 같은 틱이면 승리가 우선된다',
+    simultaneous.outcome === 'victory',
+    `outcome=${simultaneous.outcome}`,
+  )
+
+  const a = makeBossWorld(909)
+  const b = makeBossWorld(909)
+  const ai = Array.from({ length: a.enemies.count }).findIndex((_, i) => a.enemies.type[i] === TYPE_BOSS)
+  const bi = Array.from({ length: b.enemies.count }).findIndex((_, i) => b.enemies.type[i] === TYPE_BOSS)
+  check(
+    '보스 스폰과 첫 이동도 같은 시드에서 결정론적이다',
+    a.enemies.x[ai] === b.enemies.x[bi] &&
+      a.enemies.y[ai] === b.enemies.y[bi] &&
+      a.rng.state() === b.rng.state(),
+  )
+}
+
+// --- 보스 슬롯이 swap-remove로 이동해도 상태 배열이 함께 이동하는가 ---
+{
+  const pool = createEnemyPool()
+  const rng = createRng(77)
+  spawnEnemy(pool, rng, 0, 0, TYPE_WALKER)
+  spawnBoss(pool, rng, 0, 0)
+  pool.markExpire[1] = 321
+  pool.slowUntil[1] = 654
+  pool.hitToken[1] = 987
+  removeEnemy(pool, 0)
+  check(
+    'swap-remove가 보스 타입과 모든 상태 배열을 함께 옮긴다',
+    pool.count === 1 &&
+      pool.type[0] === TYPE_BOSS &&
+      pool.maxHp[0] === BOSS_MAX_HP &&
+      pool.markExpire[0] === 321 &&
+      pool.slowUntil[0] === 654 &&
+      pool.hitToken[0] === 987,
   )
 }
 

@@ -1,4 +1,6 @@
+import { getSkillDef } from '../content/skills.ts'
 import { SKILL_IDS, type SkillBook, type SkillId, cooldownProgress } from '../sim/skills.ts'
+import type { PlayerClass } from '../sim/types.ts'
 
 /**
  * 화면 하단 스킬바.
@@ -42,6 +44,8 @@ export const DEFAULT_SLOTS: SlotMeta[] = [
 interface SlotView {
   meta: SlotMeta
   root: HTMLDivElement
+  icon: HTMLImageElement
+  fallback: HTMLSpanElement
   cd: HTMLDivElement
   cdText: HTMLDivElement
   /** 직전 프레임에 사용 가능했는가. 쿨다운이 막 끝난 순간을 잡는다. */
@@ -51,6 +55,7 @@ interface SlotView {
 export class SkillBar {
   private readonly root: HTMLDivElement
   private readonly slots: SlotView[] = []
+  private currentClass: PlayerClass | null = null
 
   constructor(
     parent: HTMLElement,
@@ -69,7 +74,17 @@ export class SkillBar {
 
       const glyph = document.createElement('div')
       glyph.className = 'glyph'
-      glyph.textContent = m.glyph
+
+      const icon = document.createElement('img')
+      icon.className = 'skill-icon'
+      icon.alt = ''
+      icon.draggable = false
+      glyph.appendChild(icon)
+
+      const fallback = document.createElement('span')
+      fallback.className = 'glyph-fallback'
+      fallback.textContent = m.glyph
+      glyph.appendChild(fallback)
       slot.appendChild(glyph)
 
       const key = document.createElement('div')
@@ -95,14 +110,17 @@ export class SkillBar {
       })
 
       this.root.appendChild(slot)
-      this.slots.push({ meta: m, root: slot, cd, cdText, wasReady: false })
+      this.slots.push({ meta: m, root: slot, icon, fallback, cd, cdText, wasReady: false })
     }
 
     parent.appendChild(this.root)
+    this.setClass('ranged')
   }
 
   /** 매 프레임 호출한다. DOM 쓰기는 값이 바뀔 때만 일어나게 막아뒀다. */
-  update(book: SkillBook): void {
+  update(book: SkillBook, playerClass?: PlayerClass): void {
+    if (playerClass && playerClass !== this.currentClass) this.setClass(playerClass)
+
     for (const view of this.slots) {
       const s = book[view.meta.id]
 
@@ -135,6 +153,29 @@ export class SkillBar {
       }
 
       view.wasReady = ready
+    }
+  }
+
+  /** QWER 아이콘과 슬롯 강조색을 선택한 클래스에 맞춘다. */
+  setClass(playerClass: PlayerClass): void {
+    if (playerClass === this.currentClass) return
+    this.currentClass = playerClass
+    this.root.dataset.class = playerClass
+
+    for (const view of this.slots) {
+      const def = getSkillDef(playerClass, view.meta.id)
+      if (!def) continue
+
+      view.root.title = `${def.name} (${view.meta.key})`
+      view.root.setAttribute('aria-label', `${def.name} — ${view.meta.key}`)
+      view.icon.src = `${import.meta.env.BASE_URL}${def.icon}`
+      view.icon.hidden = false
+      view.fallback.textContent = def.glyph
+      view.fallback.hidden = true
+      view.icon.onerror = () => {
+        view.icon.hidden = true
+        view.fallback.hidden = false
+      }
     }
   }
 

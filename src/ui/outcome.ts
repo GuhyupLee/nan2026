@@ -1,6 +1,7 @@
 import type { World } from '../sim/types.ts'
 
 export type GameOutcome = Exclude<World['outcome'], 'alive'>
+export type OutcomeAction = 'restart' | 'menu'
 
 interface OutcomeCopy {
   eyebrow: string
@@ -27,7 +28,7 @@ const COPY: Record<GameOutcome, OutcomeCopy> = {
  * R은 궁극기 입력이므로 결과 화면에서도 쓰지 않는다. 키보드는 Enter/Space,
  * 포인터는 명시적인 버튼만 받는다.
  */
-export function showOutcome(parent: HTMLElement, outcome: GameOutcome): Promise<void> {
+export function showOutcome(parent: HTMLElement, outcome: GameOutcome): Promise<OutcomeAction> {
   return new Promise((resolve) => {
     const copy = COPY[outcome]
     const root = document.createElement('div')
@@ -45,35 +46,54 @@ export function showOutcome(parent: HTMLElement, outcome: GameOutcome): Promise<
       `<p>${copy.description}</p>`
     root.appendChild(panel)
 
+    const actions = document.createElement('div')
+    actions.className = 'actions'
+    panel.appendChild(actions)
+
     const restart = document.createElement('button')
     restart.className = 'restart'
     restart.type = 'button'
     restart.innerHTML =
-      `<span>다시 시작</span>` +
+      `<span>같은 캐릭터로 재시작</span>` +
       `<small>ENTER 또는 SPACE</small>`
-    panel.appendChild(restart)
+    actions.appendChild(restart)
+
+    const menu = document.createElement('button')
+    menu.className = 'menu'
+    menu.type = 'button'
+    menu.innerHTML =
+      `<span>메인 메뉴</span>` +
+      `<small>ESC</small>`
+    actions.appendChild(menu)
 
     const note = document.createElement('div')
     note.className = 'note'
-    note.textContent = '같은 캐릭터 · 같은 시드'
+    note.textContent = '재시작은 같은 캐릭터 · 같은 시드'
     panel.appendChild(note)
 
     let done = false
-    const finish = (): void => {
+    const finish = (action: OutcomeAction): void => {
       if (done) return
       done = true
       window.removeEventListener('keydown', onKey)
       root.remove()
-      resolve()
+      resolve(action)
     }
 
     const onKey = (e: KeyboardEvent): void => {
-      if (e.repeat || (e.key !== 'Enter' && e.key !== ' ')) return
+      if (e.repeat) return
+      if (e.key === 'Escape') {
+        e.preventDefault()
+        finish('menu')
+        return
+      }
+      if (e.key !== 'Enter' && e.key !== ' ') return
       e.preventDefault()
-      finish()
+      finish('restart')
     }
 
-    restart.addEventListener('click', finish)
+    restart.addEventListener('click', () => finish('restart'))
+    menu.addEventListener('click', () => finish('menu'))
     window.addEventListener('keydown', onKey)
     parent.appendChild(root)
     restart.focus()

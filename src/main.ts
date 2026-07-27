@@ -4,6 +4,7 @@ import { ARENA_RADIUS, DT, MAX_TICKS_PER_FRAME } from './sim/constants.ts'
 import { createInput } from './sim/types.ts'
 import type { PlayerClass, World } from './sim/types.ts'
 import { createWorld, drainEvents, resolveLevelUp, stepWorld } from './sim/world.ts'
+import { BossBar } from './ui/bossbar.ts'
 import { showCharacterSelect } from './ui/charselect.ts'
 import { Hud } from './ui/hud.ts'
 import { showLevelUp } from './ui/levelup.ts'
@@ -60,6 +61,7 @@ const skillBar = new SkillBar(document.body, DEFAULT_SLOTS, (id) => input.pressS
 skillBar.setVisible(false)
 
 const hud = new Hud(document.body)
+const bossBar = new BossBar(document.body)
 const project = renderer.worldToScreen.bind(renderer)
 
 /**
@@ -98,6 +100,7 @@ if (import.meta.env.DEV) {
       renderer,
       input,
       skillBar,
+      bossBar,
       // rAF가 멈춘 환경(백그라운드 탭)에서도 시뮬을 손으로 돌려
       // 렌더 결과를 검증할 수 있게 열어둔다.
       stepWorld,
@@ -141,8 +144,9 @@ function frame(now: number): void {
   }
 
   renderer.render(world, accumulator / DT)
-  skillBar.update(world.skills)
+  skillBar.update(world.skills, world.playerClass)
   hud.update(world, project, Math.min(rawDt, 0.1))
+  bossBar.update(world)
   // 렌더러가 사망·예광선 이벤트를 소비했으므로 비운다.
   drainEvents(world)
 
@@ -157,11 +161,16 @@ function frame(now: number): void {
     hint.classList.add('hidden')
     skillBar.setVisible(false)
     hud.setVisible(false)
+    bossBar.setVisible(false)
 
     const result = world.outcome
     const restartClass = world.playerClass
-    void showOutcome(document.body, result).then(() => {
-      beginRun(restartClass)
+    void showOutcome(document.body, result).then((action) => {
+      if (action === 'restart') {
+        beginRun(restartClass)
+      } else {
+        void start()
+      }
     })
   }
 
@@ -218,10 +227,12 @@ function beginRun(playerClass: PlayerClass): void {
   simInput.skillsPressed = 0
 
   // 숨겨진 동안 새 월드 상태를 먼저 반영해 낡은 쿨다운·체력바가 비치지 않게 한다.
-  skillBar.update(world.skills)
+  skillBar.update(world.skills, world.playerClass)
   hud.update(world, project, 0)
+  bossBar.update(world)
   skillBar.setVisible(true)
   hud.setVisible(true)
+  bossBar.setVisible(true)
   hint.classList.remove('hidden')
 
   // 결과 화면에 머문 시간이 새 판의 첫 프레임과 FPS 통계에 섞이지 않게 한다.

@@ -45,11 +45,36 @@ export const ENEMY_TYPES: readonly EnemyTypeDef[] = [
   { id: 'walker', name: '워커', hp: 20, speed: 3.4, radius: 0.42, contactDamage: 3, xp: 1, knockbackResist: 0 },
   { id: 'rusher', name: '러셔', hp: 12, speed: 6.4, radius: 0.33, contactDamage: 4, xp: 1, knockbackResist: 0 },
   { id: 'brute', name: '브루트', hp: 90, speed: 2.1, radius: 0.62, contactDamage: 9, xp: 4, knockbackResist: 0.55 },
+  {
+    id: 'rift-sovereign',
+    name: '균열의 군주',
+    hp: 6500,
+    speed: 2.45,
+    radius: 1.55,
+    // 돌진 중 붙어도 회피 한 번을 쓸 시간은 남도록 초당 피해를 낮게 잡는다.
+    contactDamage: 12,
+    xp: 0,
+    knockbackResist: 0.92,
+  },
 ]
 
 export const TYPE_WALKER = 0
 export const TYPE_RUSHER = 1
 export const TYPE_BRUTE = 2
+export const TYPE_BOSS = 3
+
+/** 보스는 3:30에 한 번만 등장한다. */
+export const BOSS_SPAWN_TIME = 210
+/** UI와 World 초기 상태가 타입 테이블을 뒤질 필요 없게 한 단일 진실 원천. */
+export const BOSS_MAX_HP = ENEMY_TYPES[TYPE_BOSS]!.hp
+/** 추적/선회 뒤 돌진하는 7초 패턴. 시간만 읽으므로 리플레이 결정론을 해치지 않는다. */
+export const BOSS_CYCLE_TIME = 7
+export const BOSS_CHARGE_AT = 4.6
+
+export function bossCycleTime(now: number): number {
+  const elapsed = Math.max(0, now - BOSS_SPAWN_TIME)
+  return elapsed % BOSS_CYCLE_TIME
+}
 
 export interface EnemyPool {
   /** 살아있는 적 수. 배열 앞쪽 count개만 유효하다. */
@@ -262,6 +287,18 @@ export function spawnEnemy(pool: EnemyPool, rng: Rng, px: number, py: number, ty
   pool.hitToken[i] = 0
 }
 
+/**
+ * 고유 보스를 스폰한다.
+ *
+ * 한 번만이라는 규칙은 World.boss.spawned가 맡고, 이 함수는 풀 용량 때문에
+ * 실패했는지만 반환한다. 일반 스폰보다 먼저 호출해 보스 자리를 보장한다.
+ */
+export function spawnBoss(pool: EnemyPool, rng: Rng, px: number, py: number): boolean {
+  const before = pool.count
+  spawnEnemy(pool, rng, px, py, TYPE_BOSS)
+  return pool.count > before
+}
+
 /** swap-remove. 배열을 조밀하게 유지한다. */
 export function removeEnemy(pool: EnemyPool, i: number): void {
   const last = --pool.count
@@ -336,11 +373,15 @@ export function stepEnemies(
       pool.flash[i] = Math.max(0, pool.flash[i]! - DT)
     }
 
-    const def = ENEMY_TYPES[pool.type[i]!]!
+    const type = pool.type[i]!
+    const def = ENEMY_TYPES[type]!
+    const isBoss = type === TYPE_BOSS
     const ex = pool.x[i]!
     const ey = pool.y[i]!
 
-    const pulled = pool.pullUntil[i]! > now
+    // 보스는 견인으로 패턴이 통째로 취소되지 않는다. 넉백은 타입 저항으로
+    // 아주 조금만 남겨 타격 피드백은 유지한다.
+    const pulled = !isBoss && pool.pullUntil[i]! > now
     let targetVx: number
     let targetVy: number
 
@@ -395,9 +436,27 @@ export function stepEnemies(
 
       // 둔화·속박은 추적 속도에만 걸린다. 분리 밀어냄까지 막으면
       // 속박된 적들이 서로 겹쳐 한 덩어리가 된다.
-      const mul = speedMultiplier(pool, i, now)
-      targetVx = dx * def.speed * mul + sx * SEPARATION
-      targetVy = dy * def.speed * mul + sy * SEPARATION
+      // 보스 패턴: 4.6초 동안 반시계로 선회하며 거리를 좁히고, 2.4초 동안
+      // 직선 돌진한다. 별도 난수나 타이머 배열 없이 월드 시간만 써서 결정론적이다.
+      if (isBoss) {
+        const phase = bossCycleTime(now)
+        // 속박·둔화가 패턴을 삭제하지 않게 최소 55% 속도는 보장한다.
+        const mul = Math.max(0.55, speedMultiplier(pool, i, now))
+        if (phase < BOSS_CHARGE_AT) {
+          const orbit = 0.78
+          const pursue = 0.64
+          targetVx = (dx * pursue - dy * orbit) * def.speed * mul + sx * SEPARATION * 0.35
+          targetVy = (dy * pursue + dx * orbit) * def.speed * mul + sy * SEPARATION * 0.35
+        } else {
+          const chargeSpeed = def.speed * 2.15 * mul
+          targetVx = dx * chargeSpeed
+          targetVy = dy * chargeSpeed
+        }
+      } else {
+        const mul = speedMultiplier(pool, i, now)
+        targetVx = dx * def.speed * mul + sx * SEPARATION
+        targetVy = dy * def.speed * mul + sy * SEPARATION
+      }
     }
 
     // 즉시 목표 속도로 가지 않고 감쇠시켜야 무리가 유체처럼 흐른다.

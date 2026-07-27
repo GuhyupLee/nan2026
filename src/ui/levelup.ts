@@ -22,6 +22,7 @@ interface Card {
   id: string
   kind: 'unlock' | 'upgrade'
   accent: string
+  icon?: string
   glyph: string
   slotLabel?: string
   tag: string
@@ -44,6 +45,7 @@ function skillCard(world: World, id: SkillId): Card | null {
     id,
     kind: 'unlock',
     accent: world.playerClass === 'melee' ? '#ff5a6e' : '#4dd0ff',
+    icon: def.icon,
     glyph: def.glyph,
     slotLabel: def.key,
     tag: def.tag,
@@ -153,7 +155,11 @@ export function showLevelUp(parent: HTMLElement, world: World): Promise<void> {
       el.innerHTML =
         `<div class="hotkey">${i + 1}</div>` +
         `<div class="top">` +
-        `<div class="icon">${card.glyph}</div>` +
+        `<div class="icon">${
+          card.icon
+            ? `<img class="skill-icon" src="${import.meta.env.BASE_URL}${card.icon}" alt="">`
+            : card.glyph
+        }</div>` +
         (card.slotLabel ? `<span class="slot">${card.slotLabel}</span>` : '') +
         `<span class="tag">${card.tag}</span>` +
         `</div>` +

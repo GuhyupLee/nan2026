@@ -104,6 +104,24 @@ export interface AttackEvent {
   kind: 'ranged' | 'melee' | 'empowered' | 'ult'
 }
 
+/**
+ * UI가 보스 체력바를 그릴 때 읽는 최소 상태.
+ *
+ * 보스 슬롯 인덱스는 의도적으로 저장하지 않는다. 적 풀은 swap-remove를 쓰므로
+ * 인덱스는 사망할 때마다 바뀔 수 있다. 보스는 고유 타입으로 찾고 이 스냅샷만
+ * 피해 관문에서 동기화한다.
+ */
+export interface BossState {
+  /** 이번 판에 이미 한 번 등장했는가. 재스폰 방지용. */
+  spawned: boolean
+  /** 지금 전장에 살아 있는가. 보스바 표시 조건. */
+  active: boolean
+  /** 현재 체력. 비활성 상태에서는 0이다. */
+  hp: number
+  /** 보스 최대 체력. 등장 전에도 UI가 레이아웃을 준비할 수 있게 고정값을 둔다. */
+  maxHp: number
+}
+
 export interface World {
   seed: number
   /** 경과 틱 수. 시간의 유일한 원천. */
@@ -126,6 +144,7 @@ export interface World {
 
   enemies: EnemyPool
   enemyHash: SpatialHash
+  boss: BossState
   /**
    * 스폰을 돌릴 것인가.
    * 단위 테스트에서 이동·시간 같은 성질만 격리해 보려면 꺼야 한다.

@@ -5,9 +5,12 @@ import { sweepDead } from './damage.ts'
 import { stepGauge, stepKits } from './kits.ts'
 import { stepZones } from './zones.ts'
 import {
+  BOSS_MAX_HP,
+  BOSS_SPAWN_TIME,
   createEnemyHash,
   createEnemyPool,
   rebuildEnemyHash,
+  spawnBoss,
   stepEnemies,
   updateSpawner,
 } from './enemies.ts'
@@ -56,6 +59,12 @@ export function createWorld(seed: number, playerClass: PlayerClass = 'ranged'): 
     lastAim: vec2(1, 0),
     enemies: createEnemyPool(),
     enemyHash: createEnemyHash(),
+    boss: {
+      spawned: false,
+      active: false,
+      hp: 0,
+      maxHp: BOSS_MAX_HP,
+    },
     spawnEnabled: true,
     zones: [],
     blasts: [],
@@ -95,6 +104,15 @@ export function stepWorld(world: World, input: Input): void {
 
   const p = world.player
   if (world.spawnEnabled) {
+    // 일반 스폰보다 먼저 보스 슬롯을 확보한다. 용량 부족으로 실패하면
+    // spawned를 올리지 않아 다음 틱에 안전하게 다시 시도한다.
+    if (!world.boss.spawned && world.time >= BOSS_SPAWN_TIME) {
+      if (spawnBoss(world.enemies, world.rng, p.pos.x, p.pos.y)) {
+        world.boss.spawned = true
+        world.boss.active = true
+        world.boss.hp = world.boss.maxHp
+      }
+    }
     updateSpawner(world.enemies, world.rng, world.time, p.pos.x, p.pos.y)
   }
 
@@ -110,7 +128,9 @@ export function stepWorld(world: World, input: Input): void {
   if (res.contactDamage > 0 && world.time >= p.invulnUntil) {
     // 클래스별 피해 감소를 여기 한 곳에서만 적용한다.
     p.hp = Math.max(0, p.hp - res.contactDamage * world.stats.damageTakenMul)
-    if (p.hp <= 0) world.outcome = 'dead'
+    // 같은 틱에 보스를 먼저 쓰러뜨렸다면 승리를 사망으로 덮지 않는다.
+    // 반대 순서에서도 damageEnemy가 victory를 설정하므로 동시 판정은 승리 우선이다.
+    if (p.hp <= 0 && world.outcome === 'alive') world.outcome = 'dead'
   }
 
   // 근접 패시브 게이지는 적을 센 뒤에 돌려야 이번 틱 배치를 반영한다.
