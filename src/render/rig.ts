@@ -22,6 +22,14 @@ export interface CharacterRig {
   source: 'vrm' | 'procedural'
   update(time: number, speed: number): void
   playAction(action: CharacterAction, time: number): void
+  /**
+   * 발사점의 월드 좌표를 `out`에 채운다. 없으면 false.
+   *
+   * 시뮬은 예광선을 플레이어 중심(발밑 높이)에서 쏜다 — 판정에는 그게 맞지만
+   * 그림으로는 빔이 배에서 나온다. 원거리 캐릭터는 지팡이 보주가 쏘는
+   * 연출이라 렌더러가 시작점을 여기로 옮겨야 한다.
+   */
+  muzzleWorld?(out: THREE.Vector3): boolean
   dispose(): void
 }
 

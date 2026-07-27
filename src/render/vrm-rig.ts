@@ -139,15 +139,21 @@ const ACTION_DURATION: Record<CharacterAction, number> = {
 const POSES: Record<PlayerClass, Record<CharacterAction, VrmPose>> = {
   // 일현 — 지팡이로 선을 긋는다. 상체를 열고 팔을 뻗는 계열.
   ranged: {
-    // 평타: 지팡이를 앞으로 툭 내민다. 짧고 반복되므로 크게 쓰지 않는다.
+    // 평타: **모션이 거의 없다.**
+    //
+    // 일현의 평타는 초당 3~4회 나간다. 그때마다 팔을 휘두르면 화면이
+    // 지저분해지고, 무엇보다 마법사가 활을 쏘는 것처럼 보인다. 이 캐릭터는
+    // 지팡이 보주가 알아서 쏘는 쪽이 문법에 맞다 — 그래서 몸은 표적 쪽으로
+    // 살짝 돌아보기만 하고, 발사는 보주(`orbPulse`)가 담당한다.
+    // 지팡이가 아주 조금 뒤로 밀리는 반동만 남겨 발사감을 준다.
     attack: {
-      hips: [0, -0.1, 0],
-      spine: [0.04, -0.16, 0.04],
-      chest: [0, -0.1, 0],
-      head: [0.02, 0.14, 0],
-      armR: [0.45, 0.15, 0.85, 0.55],
-      armL: [0.20, 0.00, 0.30, 0.35],
-      aim: [0, 0, 0.3],
+      hips: [0, -0.04, 0],
+      spine: [0.01, -0.09, 0.02],
+      chest: [0, -0.06, 0],
+      head: [0.01, 0.1, 0],
+      armR: [0.04, 0.02, 0.06, 0.03],
+      armL: [0.02, 0, 0.03, 0.04],
+      aim: [0, 0, -0.07],
       lift: 0,
     },
     // 강화 평타: 같은 동작을 크게. 몸이 따라 열린다.
@@ -480,7 +486,20 @@ function mesh(
  * 원점이 **손잡이 한가운데**다. 손 본의 원점이 주먹 안쪽이라 여기에 맞춰야
  * 쥔 것처럼 보인다. Y+가 칼끝/지팡이 끝 방향.
  */
-function buildWeapon(cls: PlayerClass): THREE.Group {
+interface Weapon {
+  group: THREE.Group
+  /**
+   * 지팡이 보주와 그 궤도 링. 원거리 평타는 캐릭터가 팔을 휘두르는 게 아니라
+   * **보주가 알아서 쏜다** — 그래서 발사 순간 여기만 반응하면 된다.
+   * 근접에는 없다.
+   */
+  orb: THREE.Mesh | null
+  rings: THREE.Mesh[]
+  /** 무기 로컬 기준 발사점(보주 중심). 렌더러가 빔 시작점을 여기로 옮긴다. */
+  muzzle: THREE.Vector3
+}
+
+function buildWeapon(cls: PlayerClass): Weapon {
   const g = new THREE.Group()
   const accent = glow(ACCENT[cls])
 
@@ -502,18 +521,21 @@ function buildWeapon(cls: PlayerClass): THREE.Group {
     // 자루
     mesh(g, new THREE.CylinderGeometry(0.021, 0.019, 0.24, 12), wrap, [0, -0.04, 0])
     mesh(g, new THREE.SphereGeometry(0.025, 12, 8), accent, [0, -0.17, 0])
-    return g
+    return { group: g, orb: null, rings: [], muzzle: new THREE.Vector3(0, 1.06, 0.04) }
   }
 
   // 그립이 원점이고 y+가 지팡이 끝이다. 손 높이(≈0.99)에서 보주가 머리 위로
   // 오도록 전체를 내려 잡았다 — 처음에는 보주가 화면 밖으로 나갔다.
   const gold = metal(0xe0bc6a, 0.3)
+  const ORB_Y = 0.75
   mesh(g, new THREE.CylinderGeometry(0.017, 0.017, 1.24, 12), gold, [0, 0.17, 0])
   mesh(g, new THREE.TorusGeometry(0.058, 0.012, 8, 20), gold, [0, 0.65, 0], [Math.PI / 2, 0, 0])
-  mesh(g, new THREE.OctahedronGeometry(0.09, 1), accent, [0, 0.75, 0])
-  mesh(g, new THREE.TorusGeometry(0.125, 0.01, 8, 24), accent, [0, 0.75, 0], [0.5, 0.35, 0])
-  mesh(g, new THREE.TorusGeometry(0.16, 0.008, 8, 28), accent, [0, 0.75, 0], [-0.4, -0.2, 0.3])
-  return g
+  const orb = mesh(g, new THREE.OctahedronGeometry(0.09, 1), accent, [0, ORB_Y, 0])
+  const rings = [
+    mesh(g, new THREE.TorusGeometry(0.125, 0.01, 8, 24), accent, [0, ORB_Y, 0], [0.5, 0.35, 0]),
+    mesh(g, new THREE.TorusGeometry(0.16, 0.008, 8, 28), accent, [0, ORB_Y, 0], [-0.4, -0.2, 0.3]),
+  ]
+  return { group: g, orb, rings, muzzle: new THREE.Vector3(0, ORB_Y, 0) }
 }
 
 // ---------------------------------------------------------------------------
@@ -598,7 +620,8 @@ export function createVrmRig(cls: PlayerClass): CharacterRig | null {
 
   // 무기는 raw 본에 붙인다. 정규화 본은 매 프레임 raw로 복사되는 프록시라
   // 실제 스킨이 따라가는 건 raw 쪽이다.
-  const weapon = buildWeapon(cls)
+  const wep = buildWeapon(cls)
+  const weapon = wep.group
   const rawHand = humanoid.getRawBoneNode('rightHand')
   if (rawHand) {
     // 손 본은 무기의 **위치**만 나른다. 방향은 매 프레임 월드 기준으로 다시
@@ -628,7 +651,12 @@ export function createVrmRig(cls: PlayerClass): CharacterRig | null {
   let lastYaw = 0
   /** 머리 요가 몸통을 지연해 따라오게 하는 필터 상태. */
   let headYaw = 0
+  /** 보주가 마지막으로 발사한 시각과 그 세기. 원거리 평타 연출의 전부다. */
+  let orbFiredAt = -99
+  let orbPower = 1
   const hips0 = j.hips.position.y
+  const orbMat = wep.orb ? (wep.orb.material as THREE.MeshStandardMaterial) : null
+  const orbEmissive0 = orbMat ? orbMat.emissiveIntensity : 0
 
   const rig: CharacterRig = {
     group,
@@ -637,6 +665,12 @@ export function createVrmRig(cls: PlayerClass): CharacterRig | null {
     playAction(kind, time) {
       actionKind = kind
       actionStart = time
+      // 원거리 평타는 몸이 아니라 보주가 쏜다. 발사 이벤트를 여기서 받아
+      // 보주만 반응시킨다.
+      if (wep.orb && (kind === 'attack' || kind === 'empowered')) {
+        orbFiredAt = time
+        orbPower = kind === 'empowered' ? 1.6 : 1
+      }
     },
 
     update(time, speed) {
@@ -763,6 +797,28 @@ export function createVrmRig(cls: PlayerClass): CharacterRig | null {
         set(j.foot[i]!, -knee * 0.45, 0, 0)
       }
 
+      // --- 지팡이 보주 ---
+      // 원거리 평타의 발사감을 여기서만 만든다. 캐릭터가 팔을 휘두르지
+      // 않으므로 이 반응이 유일한 "쏘았다" 신호다. 그래서 확실히 보여야 한다.
+      if (wep.orb && orbMat) {
+        // 링은 항상 천천히 돈다. 멈춰 있으면 보주가 죽은 장식으로 보인다.
+        for (let i = 0; i < wep.rings.length; i++) {
+          const r = wep.rings[i]!
+          r.rotation.y = time * (0.9 + i * 0.55) * (i % 2 === 0 ? 1 : -1)
+          r.rotation.x = 0.5 - i * 0.9 + Math.sin(time * 0.7 + i) * 0.12
+        }
+        // 발사: 0.18초 동안 부풀었다 수축한다. 수축이 팽창보다 길어야
+        // "터져 나갔다"로 읽힌다 — 대칭이면 그냥 깜빡이는 전구다.
+        const ft = (time - orbFiredAt) / 0.18
+        const kick = ft >= 0 && ft < 1 ? (ft < 0.25 ? ft / 0.25 : 1 - (ft - 0.25) / 0.75) : 0
+        const k = kick * orbPower
+        wep.orb.scale.setScalar(1 + k * 0.55)
+        orbMat.emissiveIntensity = orbEmissive0 * (1 + k * 2.4)
+        // 상시 숨쉬기. 대기 중에도 보주가 살아 있어야 한다.
+        wep.orb.rotation.y = time * 0.8
+        wep.orb.rotation.x = time * 0.45
+      }
+
       // 스프링본(머리카락·치마·리본)과 MToon 갱신. 손으로 짠 관성 코드가
       // 하던 일을 규격이 대신한다. 정규화 본 → raw 본 복사도 여기서 일어나므로
       // 무기 방향은 반드시 이 뒤에 잡아야 한 프레임 늦지 않는다.
@@ -783,6 +839,12 @@ export function createVrmRig(cls: PlayerClass): CharacterRig | null {
         aimQuat.setFromEuler(aimEuler)
         weapon.quaternion.copy(handQuat).invert().multiply(groupQuat).multiply(aimQuat)
       }
+    },
+
+    muzzleWorld(out) {
+      if (!wep.orb) return false
+      wep.orb.getWorldPosition(out)
+      return true
     },
 
     dispose() {
