@@ -116,7 +116,9 @@ button {
 
 .floatbar .ghost {
   background: #9f3947;
-  transition: width 0.5s ease-out 0.18s;
+  /* transition을 걸지 않는다. hud.ts가 매 프레임 width를 직접 보간하는데
+     CSS 지연 0.18s가 매번 갱신되어 만료되지 않으므로, 두 애니메이션이
+     싸우다가 결국 아무 연출도 보이지 않게 된다. */
 }
 
 .floatbar .fill {

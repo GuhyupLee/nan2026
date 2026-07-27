@@ -1,7 +1,8 @@
 import { DT } from './constants.ts'
 import { damageEnemy } from './damage.ts'
+import { ENEMY_TYPES } from './enemies.ts'
 import { queryCircle } from './query.ts'
-import { applyImpulse, applyMark, applySlow, newHitToken } from './status.ts'
+import { applyImpulse, applyMark, applySlow } from './status.ts'
 import type { World } from './types.ts'
 
 /**
@@ -102,7 +103,14 @@ export function stepZones(world: World, now = world.time): void {
         if (d < 1e-4) return
         // 반경속도를 그대로 위치에 더한다. 임펄스로 주면 감쇠 때문에
         // "밀어내는 벽"이 아니라 "한 번 튕기는 것"이 된다.
-        const step = z.pushSpeed * DT
+        //
+        // 다만 넉백 저항은 반드시 적용한다. 위치를 직접 쓰는 유일한 경로라
+        // 그냥 두면 보스가 빛기둥에 밀려나 패턴이 무너진다 — 보스는 견인
+        // 면역과 넉백 저항 0.92로 자기 자리를 지키도록 설계돼 있는데
+        // 이 한 곳만 두 장치를 다 건너뛰고 있었다.
+        const resist = ENEMY_TYPES[pool.type[j]!]!.knockbackResist
+        if (resist >= 1) return
+        const step = z.pushSpeed * (1 - resist) * DT
         pool.x[j] = pool.x[j]! + (dx / d) * step
         pool.y[j] = pool.y[j]! + (dy / d) * step
       })
@@ -110,9 +118,6 @@ export function stepZones(world: World, now = world.time): void {
 
     if (now < z.nextTickAt) continue
     z.nextTickAt = now + z.tickInterval
-
-    const token = newHitToken()
-    void token
     queryCircle(pool, hash, z.x, z.y, z.radius, (j) => {
       if (z.markDuration > 0) applyMark(pool, j, now, z.markDuration)
       if (z.slowMul < 1) applySlow(pool, j, now, z.slowDuration, z.slowMul)

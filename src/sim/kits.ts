@@ -3,6 +3,7 @@ import { damageEnemy } from './damage.ts'
 import { ENEMY_TYPES } from './enemies.ts'
 import { nearestEnemy, queryCircle, queryCone, querySegment } from './query.ts'
 import { consumeCooldown, skillDamageMul, type SkillId } from './skills.ts'
+import { effectiveAtkDamage } from './stats.ts'
 import { applyImpulse, applyMark, applyPull, applyRoot, applySlow } from './status.ts'
 import type { World } from './types.ts'
 import { pushBlast, pushZone } from './zones.ts'
@@ -23,6 +24,12 @@ import { pushBlast, pushZone } from './zones.ts'
 
 /** 스킬 적중이 거는 점등 지속시간(초). 원거리 패시브의 원천. */
 export const MARK_DURATION = 4
+
+/**
+ * 「월참」(승격된 평타)의 평타 대비 배수.
+ * 근접 기본 공격력 22 기준으로 32였던 값을 배수로 환산한 것이다.
+ */
+const EMPOWERED_ATTACK_MUL = 1.45
 
 // ---------------------------------------------------------------------------
 // 공통 도구
@@ -174,7 +181,7 @@ function rangedW(world: World): void {
     expireAt: now + 3,
     nextTickAt: now,
     tickInterval: 0.25,
-    tickDamage: 4.5,
+    tickDamage: dmg(world, 'w', 4.5),
     pushSpeed: 7,
     slowMul: 1,
     slowDuration: 0,
@@ -224,7 +231,7 @@ function rangedE(world: World): void {
     expireAt: now + 3.3,
     nextTickAt: now + 0.3,
     tickInterval: 0.25,
-    tickDamage: 4,
+    tickDamage: dmg(world, 'e', 4),
     pushSpeed: 0,
     slowMul: 0.45,
     slowDuration: 0.4,
@@ -522,11 +529,17 @@ export function tryEmpoweredAttack(world: World): boolean {
     world.attacks.push({ angle: Math.atan2(dir.y, dir.x), kind: 'empowered' })
   }
 
+  // 월참은 "승격된 평타"다. 스킬이 아니라 평타 계열이므로 스킬 랭크가 아니라
+  // 공격력 스탯을 따라야 한다. 32를 하드코딩하고 있어서 「예리함」 같은
+  // 공격력 강화가 근접 클래스의 주력 딜에 전혀 안 먹었다 —
+  // 플레이어가 카드를 골라도 아무 일이 안 일어나는 부류의 버그다.
+  const swipeDamage = effectiveAtkDamage(world.stats) * EMPOWERED_ATTACK_MUL
+
   let heal = 0
   // 100도 부채꼴 = 반각 50도
   queryCone(pool, world.enemyHash, p.pos.x, p.pos.y, dir.x, dir.y, 3.4, Math.cos(0.873), (i) => {
     applyMark(pool, i, now, MARK_DURATION)
-    damageEnemy(world, i, 32)
+    damageEnemy(world, i, swipeDamage)
     heal += 1.5
   })
 

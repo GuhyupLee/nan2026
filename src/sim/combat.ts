@@ -78,6 +78,11 @@ function pickTarget(
   const cosCone = Math.cos(CONE_HALF)
 
   for (let i = 0; i < pool.count; i++) {
+    // 이번 틱에 이미 죽었지만 아직 스윕되지 않은 적을 조준하면 탄이 낭비된다.
+    // sweepDead는 자동 공격 뒤에 돌기 때문에, 같은 틱의 스킬이 죽인 적이
+    // 배열 앞쪽에 그대로 남아 있다.
+    if (pool.hp[i]! <= 0) continue
+
     const dx = pool.x[i]! - px
     const dy = pool.y[i]! - py
     const d2 = dx * dx + dy * dy
@@ -178,6 +183,8 @@ export function stepAutoAttack(
   // 선분에 걸리는 적을 가까운 순으로 모은다
   hitBuf.length = 0
   for (let i = 0; i < pool.count; i++) {
+    // 스윕 대기 중인 시체는 관통 상한을 잡아먹기만 한다.
+    if (pool.hp[i]! <= 0) continue
     const r = ENEMY_TYPES[pool.type[i]!]!.radius + ATTACK_WIDTH
     if (distSqToSegment(pool.x[i]!, pool.y[i]!, p.pos.x, p.pos.y, ex, ey) <= r * r) {
       hitBuf.push(i)

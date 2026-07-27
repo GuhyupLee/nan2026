@@ -117,11 +117,6 @@ export interface EnemyPool {
   /** 견인 속도(초당). */
   pullSpeed: Float32Array
 
-  /**
-   * 한 시전이 같은 적을 두 번 때리지 않게 하는 토큰.
-   * 링 확장처럼 여러 틱에 걸친 판정이 이걸 쓴다.
-   */
-  hitToken: Int32Array
 
   /**
    * swap-remove가 순회할 타입 배열 목록.
@@ -161,7 +156,6 @@ export function createEnemyPool(): EnemyPool {
     pullRing: new Float32Array(MAX_ENEMIES),
     pullSpeed: new Float32Array(MAX_ENEMIES),
 
-    hitToken: new Int32Array(MAX_ENEMIES),
     views: [],
   }
 
@@ -313,7 +307,6 @@ export function spawnEnemy(
   pool.pullUntil[i] = -1
   pool.pullRing[i] = 0
   pool.pullSpeed[i] = 0
-  pool.hitToken[i] = 0
 }
 
 /**

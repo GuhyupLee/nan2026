@@ -129,29 +129,3 @@ export function integrateImpulse(pool: EnemyPool, i: number, out: { x: number; y
   pool.pushVx[i] = Math.abs(nx) < 0.01 ? 0 : nx
   pool.pushVy[i] = Math.abs(ny) < 0.01 ? 0 : ny
 }
-
-/**
- * 시전마다 증가하는 히트 토큰.
- *
- * 여러 틱에 걸친 판정(확장 링, 지속 장판)이 같은 적을 중복 타격하지
- * 않게 한다. 0은 "아직 아무것도 안 맞음"이라 1부터 쓴다.
- */
-let nextToken = 1
-export function newHitToken(): number {
-  return nextToken++
-}
-
-/** 이 토큰으로 아직 안 맞았으면 표시하고 true. */
-export function claimHit(pool: EnemyPool, i: number, token: number): boolean {
-  if (pool.hitToken[i] === token) return false
-  pool.hitToken[i] = token
-  return true
-}
-
-/**
- * 토큰 카운터를 되돌린다. 헤드리스 밸런싱에서 판마다 초기화해
- * 판 사이에 상태가 새지 않게 한다.
- */
-export function resetHitTokens(): void {
-  nextToken = 1
-}

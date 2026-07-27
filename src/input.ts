@@ -135,6 +135,14 @@ export class InputState {
       return
     }
 
+    // 레벨업 카드처럼 오버레이가 뜨면 releaseMovement()가 점유를 버린다.
+    // 그런데 버튼은 계속 눌려 있으므로, 카드를 닫은 뒤 손을 뗐다 다시 누르기
+    // 전까지 이동이 멈춘 채로 남는다. buttons로 실제 눌림을 보고 되찾는다.
+    if (!this.pointerHeld && e.buttons !== 0) {
+      this.mousePointerId = e.pointerId
+      this.pointerHeld = true
+    }
+
     // 호버 조준은 마우스에서 기존대로 계속 갱신한다.
     this.pointerX = e.clientX
     this.pointerY = e.clientY

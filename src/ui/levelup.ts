@@ -10,6 +10,7 @@ import {
   type SkillId,
 } from '../sim/skills.ts'
 import type { World } from '../sim/types.ts'
+import { trapFocus } from './focus-trap.ts'
 
 /**
  * 레벨업 보상 화면.
@@ -184,12 +185,18 @@ export function showLevelUp(parent: HTMLElement, world: World): Promise<void> {
   return new Promise((resolve) => {
     const root = document.createElement('div')
     root.className = 'levelup'
+    // 프로젝트의 다른 모달(결과·일시정지·메인메뉴·캐릭터선택)은 전부
+    // 다이얼로그 시맨틱과 포커스 트랩을 갖는데 여기만 빠져 있었다.
+    // 트랩이 없으면 Tab이 뒤에 깔린 스킬바 버튼으로 새어 나간다.
+    root.setAttribute('role', 'dialog')
+    root.setAttribute('aria-modal', 'true')
+    root.setAttribute('aria-labelledby', 'levelup-title')
 
     const banner = document.createElement('div')
     banner.className = 'banner'
     banner.innerHTML =
       `<div class="lv">LEVEL ${world.progression.level}</div>` +
-      `<h2>${
+      `<h2 id="levelup-title">${
         isUnlock
           ? single
             ? '새로운 힘을 얻었다'
@@ -205,10 +212,12 @@ export function showLevelUp(parent: HTMLElement, world: World): Promise<void> {
     root.appendChild(list)
 
     let done = false
+    let releaseFocusTrap = (): void => {}
     const pick = (card: Card): void => {
       if (done) return
       done = true
       window.removeEventListener('keydown', onKey)
+      releaseFocusTrap()
       applyCard(world, card)
       root.remove()
       resolve()
@@ -251,6 +260,7 @@ export function showLevelUp(parent: HTMLElement, world: World): Promise<void> {
     window.addEventListener('keydown', onKey)
 
     parent.appendChild(root)
+    releaseFocusTrap = trapFocus(root)
     ;(list.firstElementChild as HTMLElement | null)?.focus()
   })
 }

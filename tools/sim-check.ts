@@ -652,7 +652,7 @@ console.log('\nsim smoke check\n')
   spawnBoss(pool, rng, 0, 0)
   pool.markExpire[1] = 321
   pool.slowUntil[1] = 654
-  pool.hitToken[1] = 987
+  pool.rootUntil[1] = 987
   removeEnemy(pool, 0)
   check(
     'swap-remove가 보스 타입과 모든 상태 배열을 함께 옮긴다',
@@ -661,7 +661,7 @@ console.log('\nsim smoke check\n')
       pool.maxHp[0] === BOSS_MAX_HP &&
       pool.markExpire[0] === 321 &&
       pool.slowUntil[0] === 654 &&
-      pool.hitToken[0] === 987,
+      pool.rootUntil[0] === 987,
   )
 }
 

@@ -173,7 +173,12 @@ function frame(now: number): void {
     activeRun && running && !world.awaitingChoice ? input.targetingSkill : null,
     accumulator / DT,
   )
-  renderer.render(world, accumulator / DT)
+
+  // 전면 불투명 오버레이가 떠 있으면 3D를 그릴 이유가 없다 —
+  // 그린 픽셀이 100% 가려져 버려진다. 메인 메뉴·캐릭터 선택·결과 화면이
+  // 그렇고, 특히 저사양 기기에서 이 낭비가 그대로 발열과 프레임으로 온다.
+  // 일시정지·레벨업은 반투명이라 계속 그린다.
+  if (activeRun) renderer.render(world, accumulator / DT)
   skillBar.update(world.skills, world.playerClass)
   hud.update(world, project, Math.min(rawDt, 0.1))
   bossBar.update(world)
