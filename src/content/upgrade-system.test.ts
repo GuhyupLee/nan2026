@@ -1,9 +1,12 @@
 import {
   UPGRADES,
+  applyRelicUpgrade,
   applyUpgrade,
+  applyUpgradeBurst,
   getUpgrade,
   getUpgradePresentation,
   getUpgradeRank,
+  getRelicFusionPreview,
   getUpgradeRollPriority,
 } from './upgrades.ts'
 import {
@@ -191,6 +194,58 @@ function candidatePool(world: World): UpgradeCandidate[] {
   )
 }
 
+// 정예 전리품은 같은 장비를 최대 두 랭크 올리고 최대치를 넘지 않는다.
+{
+  const world = createWorld(353, 'ranged')
+  unlockCombatSkills(world)
+  const first = applyUpgradeBurst(world, 'orbit-lens')
+  assert(
+    first.length === 2 && getUpgradeRank(world.upgradesTaken, 'orbit-lens') === 2,
+    '신규 장비가 전리품에서 I·II로 연속 각인되지 않음',
+  )
+  const second = applyUpgradeBurst(world, 'orbit-lens')
+  assert(
+    second.length === 1 &&
+      getUpgradeRank(world.upgradesTaken, 'orbit-lens') === 3 &&
+      world.skills.q.branch === 'orbital-prism',
+    'II 장비가 전리품에서 III 각성으로 승격되지 않음',
+  )
+
+  const fusionWorld = createWorld(355, 'ranged')
+  unlockCombatSkills(fusionWorld)
+  applyRelicUpgrade(fusionWorld, 'orbit-lens')
+  applyRelicUpgrade(fusionWorld, 'orbit-lens')
+  const fusionPreview = getRelicFusionPreview(fusionWorld, 'gravity-prism')
+  assert(
+    fusionPreview?.id === 'singularity-interferometer',
+    '세 번째 전리품 카드가 함께 발동할 융합을 예고하지 못함',
+  )
+  applyRelicUpgrade(fusionWorld, 'gravity-prism')
+  assert(
+    getUpgradeRank(fusionWorld.upgradesTaken, 'gravity-prism') === 3 &&
+      fusionWorld.upgradesTaken.has('singularity-interferometer'),
+    '세 번째 정예 전리품이 두 번째 재료와 융합을 한 번에 완성하지 못함',
+  )
+
+  const cardWorld = createWorld(354, 'ranged')
+  unlockCombatSkills(cardWorld)
+  cardWorld.pendingRelicChoices = 1
+  cardWorld.awaitingChoice = true
+  const cards = buildLevelUpCards(cardWorld)
+  assert(cards.length === 3, '전리품 3택이 만들어지지 않음')
+  assert(
+    cards.every(
+      (card) =>
+        card.kind === 'relic-upgrade' &&
+        card.badges?.includes('정예 전리품') &&
+        card.badges.includes('RANK II') &&
+        !card.badges.includes('RANK I') &&
+        card.rank === 2,
+    ),
+    '전리품 카드가 2단 연속 각인 정보를 표시하지 않음',
+  )
+}
+
 // UI는 다음 랭크가 III이면 수치 카드가 아니라 각성 이름·배지를 보여준다.
 {
   const world = createWorld(404, 'ranged')
@@ -220,4 +275,4 @@ function candidatePool(world: World): UpgradeCandidate[] {
   assert(cards[0]?.name.includes('귀환 궤도'), 'UI 카드에 각성 이름이 없음')
 }
 
-console.log('upgrade-system: 6 suites passed')
+console.log('upgrade-system: 7 suites passed')

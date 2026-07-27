@@ -4227,6 +4227,40 @@ button {
   box-shadow: 0 0.65rem 1.8rem rgba(85, 59, 20, 0.32);
 }
 
+/* 정예 전리품은 일반 레벨업과 같은 카드를 재사용하되, 화면 전체의 금빛
+   문법으로 "평소보다 큰 보상"임을 즉시 알린다. */
+.levelup.relic-reward {
+  background:
+    radial-gradient(circle at 50% 44%, rgba(190, 134, 55, 0.14), transparent 34rem),
+    linear-gradient(135deg, rgba(91, 39, 102, 0.12), transparent 50%),
+    rgba(5, 7, 10, 0.95);
+}
+
+.levelup.relic-reward .banner {
+  border-left-color: #e4bd70;
+}
+
+.levelup.relic-reward .banner .lv {
+  color: #e4bd70;
+  text-shadow: 0 0 1rem rgba(228, 189, 112, 0.35);
+}
+
+.lvcard[data-kind='relic-upgrade'] {
+  border-color: color-mix(in srgb, var(--accent) 72%, #a17b3d);
+  background:
+    radial-gradient(circle at 84% 12%, rgba(228, 189, 112, 0.16), transparent 36%),
+    linear-gradient(150deg, rgba(106, 48, 119, 0.12), transparent 50%),
+    #17150f;
+  box-shadow:
+    0 0.8rem 2.2rem rgba(0, 0, 0, 0.42),
+    inset 0 1px rgba(255, 232, 178, 0.08);
+}
+
+.lvcard[data-kind='relic-upgrade']::after {
+  height: 3px;
+  background: linear-gradient(90deg, transparent, #e4bd70, var(--accent), transparent);
+}
+
 /* 1280px에서 두 표를 억지로 반으로 나누면 기록일 열이 잘린다. 이 구간은
    한 열로 쌓아 실제 마지막 열까지 스크롤 없이 보이게 한다. */
 @media (max-width: 1280px) {

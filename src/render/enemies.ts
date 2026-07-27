@@ -5,6 +5,7 @@ import {
   ENEMY_TYPES,
   MAX_ENEMIES,
   TYPE_BOSS,
+  TYPE_ELITE,
   bossPhaseAt,
 } from '../sim/enemies.ts'
 import type { World } from '../sim/types.ts'
@@ -27,6 +28,7 @@ const ENEMY_COLORS = [
   0xc8f04a, // 러셔 — 산성 연두. 빠른 놈은 눈에 확 띄어야 피할 수 있다
   0xff7a3c, // 브루트 — 주황. 크고 무겁다
   0xf02aff, // 보스 — 네온 마젠타. 플레이어와 잡몹 어느 팔레트에도 속하지 않는다
+  0xe8bd61, // 정예 — 전리품과 같은 금색. 화면 속 목표물로 즉시 읽힌다
 ]
 
 /** 종류별 지오메트리. 실루엣만으로 위협을 구분할 수 있어야 한다. */
@@ -37,6 +39,12 @@ function enemyGeometry(type: number, radius: number): THREE.BufferGeometry {
       const g = new THREE.TorusKnotGeometry(radius * 0.7, radius * 0.23, 64, 8, 2, 3)
       g.rotateX(Math.PI * 0.32)
       g.scale(1, 1.12, 1)
+      return g
+    }
+    case TYPE_ELITE: {
+      // 정예: 왕관처럼 꼬인 금빛 인장. 일반 다면체와 보스 매듭의 중간 위계다.
+      const g = new THREE.TorusKnotGeometry(radius * 0.48, radius * 0.15, 48, 7, 2, 3)
+      g.rotateX(Math.PI * 0.5)
       return g
     }
     case 1: {
@@ -89,6 +97,7 @@ export class EnemyRenderer {
   private readonly batches: TypeBatch[] = []
   private readonly pops: Pop[] = []
   private readonly popMesh: THREE.InstancedMesh
+  private readonly relicMesh: THREE.InstancedMesh
 
   private readonly m = new THREE.Matrix4()
   private readonly q = new THREE.Quaternion()
@@ -128,6 +137,24 @@ export class EnemyRenderer {
     this.popMesh.frustumCulled = false
     scene.add(this.popMesh)
 
+    // 월식 인장은 최대 세 개뿐이다. 금빛 코어가 공중에서 회전하며 0.8초 뒤
+    // 플레이어에게 날아오므로, 사망 팝과 섞여도 전리품으로 구분된다.
+    this.relicMesh = new THREE.InstancedMesh(
+      new THREE.TorusKnotGeometry(0.24, 0.065, 48, 7, 2, 3),
+      new THREE.MeshStandardMaterial({
+        color: 0xffe3a1,
+        roughness: 0.22,
+        metalness: 0.82,
+        emissive: 0xd58c32,
+        emissiveIntensity: 1.15,
+      }),
+      3,
+    )
+    this.relicMesh.instanceMatrix.setUsage(THREE.DynamicDrawUsage)
+    this.relicMesh.count = 0
+    this.relicMesh.castShadow = true
+    this.relicMesh.frustumCulled = false
+    scene.add(this.relicMesh)
   }
 
   /**
@@ -144,6 +171,7 @@ export class EnemyRenderer {
   update(world: World, alpha: number, dt: number): void {
     this.drawEnemies(world, alpha)
     this.drawPops(world, dt)
+    this.drawRelics(world, alpha)
   }
 
   private drawEnemies(world: World, alpha: number): void {
@@ -253,6 +281,26 @@ export class EnemyRenderer {
     if (this.popMesh.instanceColor) this.popMesh.instanceColor.needsUpdate = true
   }
 
+  private drawRelics(world: World, alpha: number): void {
+    let n = 0
+    for (const relic of world.relicDrops) {
+      if (n >= 3) break
+      const x = lerp(relic.prevX, relic.x, alpha)
+      const z = lerp(relic.prevY, relic.y, alpha)
+      const age = Math.max(0, world.time - relic.spawnedAt)
+      const bob = 0.56 + Math.sin(age * 5.2 + n * 1.7) * 0.08
+      const pulse = 1 + Math.sin(age * 7.4) * 0.08
+      this.pos.set(x, bob, z)
+      this.q.setFromAxisAngle(this.axisY, age * 2.8)
+      this.scl.set(pulse, pulse, pulse)
+      this.m.compose(this.pos, this.q, this.scl)
+      this.relicMesh.setMatrixAt(n, this.m)
+      n++
+    }
+    this.relicMesh.count = n
+    this.relicMesh.instanceMatrix.needsUpdate = true
+  }
+
 
   private disposeMesh(mesh: THREE.InstancedMesh): void {
     mesh.geometry.dispose()
@@ -263,5 +311,6 @@ export class EnemyRenderer {
   dispose(): void {
     for (const b of this.batches) this.disposeMesh(b.mesh)
     this.disposeMesh(this.popMesh)
+    this.disposeMesh(this.relicMesh)
   }
 }

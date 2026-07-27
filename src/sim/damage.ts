@@ -1,4 +1,5 @@
-import { ENEMY_TYPES, removeEnemy, TYPE_BOSS } from './enemies.ts'
+import { ENEMY_TYPES, removeEnemy, TYPE_BOSS, TYPE_ELITE } from './enemies.ts'
+import { dropRelic } from './rewards.ts'
 import { grantXp } from './world.ts'
 import type { World } from './types.ts'
 
@@ -25,6 +26,7 @@ export function damageEnemy(world: World, i: number, amount: number): boolean {
   pool.hp[i] = pool.hp[i]! - amount
   pool.flash[i] = 0.08
   const isBoss = pool.type[i] === TYPE_BOSS
+  const isElite = pool.type[i] === TYPE_ELITE
   if (isBoss) world.boss.hp = Math.max(0, pool.hp[i]!)
 
   if (pool.hp[i]! > 0) return false
@@ -56,6 +58,7 @@ export function damageEnemy(world: World, i: number, amount: number): boolean {
   if (world.deaths.length < 128) {
     world.deaths.push({ x: pool.x[i]!, y: pool.y[i]!, type: pool.type[i]! })
   }
+  if (isElite) dropRelic(world, pool.x[i]!, pool.y[i]!)
   if (isBoss) {
     world.boss.active = false
     world.boss.hp = 0

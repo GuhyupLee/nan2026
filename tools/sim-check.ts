@@ -29,8 +29,10 @@ import {
   BOSS_RECOVER_AT,
   BOSS_SPAWN_TIME,
   BOSS_WINDUP_AT,
+  ELITE_SPAWN_TIMES,
   ENEMY_TYPES,
   TYPE_BOSS,
+  TYPE_ELITE,
   TYPE_WALKER,
   bossPhaseAt,
   createEnemyPool,
@@ -53,6 +55,11 @@ import {
 } from '../src/sim/progression.ts'
 import { createRng } from '../src/sim/rng.ts'
 import {
+  RELIC_ARM_DELAY,
+  stepEliteRewardBeats,
+  stepRelicDrops,
+} from '../src/sim/rewards.ts'
+import {
   SKILL_D,
   SKILL_F,
   SKILL_Q,
@@ -68,7 +75,13 @@ import {
 import { effectiveAtkDamage, effectiveAtkInterval } from '../src/sim/stats.ts'
 import { createInput } from '../src/sim/types.ts'
 import { length } from '../src/sim/vec.ts'
-import { createWorld, grantXp, resolveLevelUp, stepWorld } from '../src/sim/world.ts'
+import {
+  createWorld,
+  grantXp,
+  resolveLevelUp,
+  resolveRewardChoice,
+  stepWorld,
+} from '../src/sim/world.ts'
 import { pushBlast } from '../src/sim/zones.ts'
 import { BALANCE_REGRESSION_SAMPLES } from './balance/baseline.ts'
 import { runBalanceScenario } from './balance/model.ts'
@@ -770,6 +783,75 @@ console.log('\nsim smoke check\n')
     `${targetAliveCount(210)} vs ${targetAliveCount(200)}`,
   )
   check('커브가 음수로 가지 않는다', [0, 60, 120, 180, 240, 300].every((t) => targetAliveCount(t) > 0))
+}
+
+// --- 정예 비트 → 월식 인장 → 전리품 선택 ---
+{
+  const beats = createWorld(707, 'ranged')
+  beats.spawnEnabled = false
+
+  beats.time = ELITE_SPAWN_TIMES[0]! - DT
+  stepEliteRewardBeats(beats)
+  check('정예는 지정 비트 전에는 등장하지 않는다', beats.eliteBeatIndex === 0)
+
+  for (const time of ELITE_SPAWN_TIMES) {
+    beats.time = time
+    stepEliteRewardBeats(beats)
+    // 같은 시각에 다시 호출해도 다음 비트 전이라 중복 등장하지 않는다.
+    stepEliteRewardBeats(beats)
+  }
+  const eliteCount = Array.from({ length: beats.enemies.count }).filter(
+    (_, i) => beats.enemies.type[i] === TYPE_ELITE,
+  ).length
+  check(
+    '세 정예가 지정 비트에 각각 한 번만 등장한다',
+    beats.eliteBeatIndex === ELITE_SPAWN_TIMES.length && eliteCount === 3,
+    `beats=${beats.eliteBeatIndex} elites=${eliteCount}`,
+  )
+
+  const eliteIndex = Array.from({ length: beats.enemies.count }).findIndex(
+    (_, i) => beats.enemies.type[i] === TYPE_ELITE,
+  )
+  damageEnemy(beats, eliteIndex, 1_000_000)
+  check('정예 처치가 월식 인장을 정확히 하나 남긴다', beats.relicDrops.length === 1)
+
+  const ordinary = createWorld(708, 'ranged')
+  ordinary.spawnEnabled = false
+  spawnEnemy(ordinary.enemies, ordinary.rng, 0, 0, TYPE_WALKER)
+  damageEnemy(ordinary, 0, 1_000_000)
+  check('일반 적은 월식 인장을 떨어뜨리지 않는다', ordinary.relicDrops.length === 0)
+
+  const relic = beats.relicDrops[0]!
+  const startX = relic.x
+  beats.time = relic.spawnedAt + RELIC_ARM_DELAY - DT
+  stepRelicDrops(beats)
+  check(
+    '월식 인장은 0.8초 동안 사망 위치에서 읽힌다',
+    beats.relicDrops.length === 1 && beats.relicDrops[0]!.x === startX,
+  )
+
+  for (let i = 0; i < 240 && beats.relicDrops.length > 0; i++) {
+    beats.time += DT
+    stepRelicDrops(beats)
+  }
+  check(
+    '인장이 플레이어에게 귀환하면 전리품 선택으로 게임이 멈춘다',
+    beats.relicDrops.length === 0 &&
+      beats.pendingRelicChoices === 1 &&
+      beats.relicsClaimed === 1 &&
+      beats.awaitingChoice,
+  )
+
+  grantXp(beats, 10_000)
+  const queuedLevels = beats.progression.pendingLevelUps
+  resolveRewardChoice(beats)
+  check(
+    '전리품과 레벨업이 겹치면 전리품만 먼저 소진한다',
+    beats.pendingRelicChoices === 0 &&
+      beats.progression.pendingLevelUps === queuedLevels &&
+      beats.awaitingChoice,
+    `relic=${beats.pendingRelicChoices} levels=${beats.progression.pendingLevelUps}`,
+  )
 }
 
 // --- 후반 체력 스케일: 수는 그대로, 개체당 맷집만 증가 ---

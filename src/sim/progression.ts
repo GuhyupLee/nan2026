@@ -86,13 +86,13 @@ export const XP_FOR_NEXT = [
  * QWER까지 포함한 근접의 실제 XP 획득 속도가 원거리보다 약 14% 높다.
  * 요구 XP는 공통으로 유지하고 획득량만 보정해 두 클래스의 선택 타이밍을 맞춘다.
  */
-export const MELEE_XP_GAIN_MULTIPLIER = 0.54
+export const MELEE_XP_GAIN_MULTIPLIER = 0.525
 
 /**
  * 원거리는 넓은 Q/E와 관통 평타로 같은 시간에 더 많은 처치를 만든다.
  * 공통 XP 곡선을 유지하되 획득량을 보정해 두 클래스의 카드 선택 시점을 맞춘다.
  */
-export const RANGED_XP_GAIN_MULTIPLIER = 0.6
+export const RANGED_XP_GAIN_MULTIPLIER = 0.515
 
 /** 레벨업 시 무엇을 주는가. */
 export type LevelReward =

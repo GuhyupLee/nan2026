@@ -8,6 +8,7 @@ import type { SpatialHash } from './spatial.ts'
 import type { Stats } from './stats.ts'
 import type { Vec2 } from './vec.ts'
 import type { PendingBlast, Zone } from './zones.ts'
+import type { RelicDrop } from './rewards.ts'
 
 /**
  * 한 틱 분량의 플레이어 입력.
@@ -238,6 +239,14 @@ export interface World {
   enemies: EnemyPool
   enemyHash: SpatialHash
   boss: BossState
+  /** 다음에 등장할 정예 비트의 인덱스. 지정 비트는 각각 한 번만 소비한다. */
+  eliteBeatIndex: number
+  /** 정예가 남긴 월식 인장. 지연 뒤 플레이어를 추적한다. */
+  relicDrops: RelicDrop[]
+  /** 획득했지만 아직 선택하지 않은 전리품 보상 수. 레벨업보다 먼저 처리한다. */
+  pendingRelicChoices: number
+  /** 한 판에서 실제로 회수한 월식 인장 수. 결과·밸런스 계측용. */
+  relicsClaimed: number
   /**
    * 스폰을 돌릴 것인가.
    * 단위 테스트에서 이동·시간 같은 성질만 격리해 보려면 꺼야 한다.

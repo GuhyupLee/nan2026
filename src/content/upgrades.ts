@@ -688,6 +688,29 @@ export function getUpgradeRollPriority(
   return readRank(world.upgradesTaken, upgrade.id) > 0 ? 1 : 0
 }
 
+/**
+ * 정예 전리품은 기존 각성·합성 콘텐츠를 실제 런에서 보여주는 장치다.
+ * 처음부터 조합 재료를 한 칸에 보장하고, 시작한 재료→짝 재료→합성을
+ * 일반 레벨업보다 더 강하게 우선해 세 번의 인장이 하나의 빌드 서사가 된다.
+ */
+export function getRelicRollPriority(world: World, upgrade: UpgradeDef): number {
+  if (upgrade.fusion) return upgrade.isAvailable(world) ? 6 : 0
+
+  let isFusionPart = false
+  for (const fusion of FUSION_UPGRADES) {
+    const requirements = fusion.fusion?.requires
+    if (!requirements?.includes(upgrade.id)) continue
+    isFusionPart = true
+    const partner = requirements[0] === upgrade.id ? requirements[1] : requirements[0]
+    if (readRank(world.upgradesTaken, partner) >= 3) return 5
+  }
+
+  const currentRank = readRank(world.upgradesTaken, upgrade.id)
+  if (isFusionPart && currentRank > 0 && currentRank < upgrade.ranks.length) return 4
+  if (isFusionPart) return 2
+  return currentRank > 0 ? 1 : 0
+}
+
 export function isUpgradeAvailable(world: World, upgrade: UpgradeDef): boolean {
   return upgrade.isAvailable(world)
 }
@@ -759,6 +782,72 @@ export function applyUpgrade(world: World, id: string): UpgradeApplication | nul
     rank: nextRank,
     ...(rankDef.trait ? { trait: rankDef.trait } : {}),
   }
+}
+
+/**
+ * 정예 전리품은 짧은 런에서 각성까지 도달하게 같은 장비를 최대 두 번 새긴다.
+ * 합성처럼 최대 랭크가 1인 카드는 첫 적용 뒤 자연스럽게 멈춘다.
+ */
+export function applyUpgradeBurst(
+  world: World,
+  id: string,
+  count = 2,
+): UpgradeApplication[] {
+  const applied: UpgradeApplication[] = []
+  for (let i = 0; i < count; i++) {
+    const result = applyUpgrade(world, id)
+    if (!result) break
+    applied.push(result)
+  }
+  return applied
+}
+
+/**
+ * Apply an elite relic burst and immediately seal a fusion when this burst
+ * completes its second ingredient. This keeps the third elite beat capable of
+ * delivering the run's headline evolution instead of stopping one draft short.
+ */
+export function getRelicUpgradeBurstCount(world: World, id: string): number {
+  const completesRecipe = FUSION_UPGRADES.some((fusion) => {
+    const requirements = fusion.fusion?.requires
+    if (!requirements?.includes(id)) return false
+    const partner = requirements[0] === id ? requirements[1] : requirements[0]
+    return readRank(world.upgradesTaken, partner) >= 3
+  })
+  return completesRecipe ? 3 : 2
+}
+
+/** Fusion that will be completed by taking this relic card, before mutating the world. */
+export function getRelicFusionPreview(
+  world: World,
+  id: string,
+): UpgradeDef | undefined {
+  const upgrade = getUpgrade(id)
+  if (!upgrade) return undefined
+  const projectedRank = Math.min(
+    upgrade.ranks.length,
+    readRank(world.upgradesTaken, id) + getRelicUpgradeBurstCount(world, id),
+  )
+  return FUSION_UPGRADES.find((fusion) => {
+    if (world.upgradesTaken.has(fusion.id)) return false
+    const requirements = fusion.fusion?.requires
+    if (!requirements?.includes(id)) return false
+    return requirements.every((requirement) =>
+      requirement === id
+        ? projectedRank >= 3
+        : readRank(world.upgradesTaken, requirement) >= 3,
+    )
+  })
+}
+
+export function applyRelicUpgrade(world: World, id: string): UpgradeApplication[] {
+  const completedFusion = getRelicFusionPreview(world, id)
+  const applied = applyUpgradeBurst(world, id, getRelicUpgradeBurstCount(world, id))
+  if (completedFusion) {
+    const fusion = applyUpgrade(world, completedFusion.id)
+    if (fusion) applied.push(fusion)
+  }
+  return applied
 }
 
 function romanRank(rank: number): string {

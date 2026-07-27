@@ -7,7 +7,9 @@
 import {
   UPGRADES,
   applyUpgrade,
+  applyRelicUpgrade,
   getUpgradeRank,
+  getRelicRollPriority,
   getUpgradeRollPriority,
 } from '../src/content/upgrades.ts'
 import { getSkillDef } from '../src/content/skills.ts'
@@ -32,7 +34,12 @@ import {
   type SkillId,
 } from '../src/sim/skills.ts'
 import { createInput, type PlayerClass, type World } from '../src/sim/types.ts'
-import { createWorld, resolveLevelUp, stepWorld } from '../src/sim/world.ts'
+import {
+  createWorld,
+  resolveLevelUp,
+  resolveRewardChoice,
+  stepWorld,
+} from '../src/sim/world.ts'
 
 const SEEDS = [1, 5, 11, 17, 23, 31, 47, 59, 71, 89, 101, 127] as const
 const QWER = ['q', 'w', 'e', 'r'] as const satisfies readonly SkillId[]
@@ -54,9 +61,33 @@ interface Result {
   kills: number
   level: number
   upgradeRanks: number
+  relics: number
+  awakenings: number
+  fusions: number
 }
 
 function resolveFirstChoice(world: World): void {
+  if (world.pendingRelicChoices > 0) {
+    const candidates = UPGRADES.map((upgrade) => ({
+      id: upgrade.id,
+      available: upgrade.isAvailable(world),
+      weight: upgrade.weight,
+      classFilter: upgrade.classFilter,
+      currentRank: getUpgradeRank(world.upgradesTaken, upgrade.id),
+      maxRank: upgrade.ranks.length,
+      priority: getRelicRollPriority(world, upgrade),
+    }))
+    const choices = rollUpgrades(world.choiceRng, candidates, 3, {
+      playerClass: world.playerClass,
+      taken: world.upgradesTaken,
+      allowRankUps: true,
+    })
+    const choice = choices[0]
+    if (choice) applyRelicUpgrade(world, choice.id)
+    resolveRewardChoice(world)
+    return
+  }
+
   const reward = pendingReward(world.progression)
 
   if (reward === 'unlock-choice' || reward === 'unlock-last') {
@@ -253,8 +284,13 @@ function run(cls: PlayerClass, seed: number): Result {
   }
 
   let upgradeRanks = 0
+  let awakenings = 0
+  let fusions = 0
   for (const upgrade of UPGRADES) {
-    upgradeRanks += getUpgradeRank(world.upgradesTaken, upgrade.id)
+    const rank = getUpgradeRank(world.upgradesTaken, upgrade.id)
+    upgradeRanks += rank
+    if (upgrade.fusion && rank > 0) fusions += 1
+    else if (!upgrade.fusion && rank >= 3) awakenings += 1
   }
 
   return {
@@ -274,6 +310,9 @@ function run(cls: PlayerClass, seed: number): Result {
     kills: world.kills,
     level: world.progression.level,
     upgradeRanks,
+    relics: world.relicsClaimed,
+    awakenings,
+    fusions,
   }
 }
 
@@ -298,7 +337,10 @@ function summarize(rows: Result[], cls: PlayerClass): void {
       `보스 ${(median(selected.map((row) => row.bossProgress)) * 100).toFixed(0).padStart(3)}%  ` +
       `킬 ${String(Math.round(median(selected.map((row) => row.kills)))).padStart(4)}  ` +
       `Lv ${String(median(selected.map((row) => row.level))).padStart(2)}  ` +
-      `강화 ${String(median(selected.map((row) => row.upgradeRanks))).padStart(2)}`,
+      `강화 ${String(median(selected.map((row) => row.upgradeRanks))).padStart(2)}  ` +
+      `인장 ${String(median(selected.map((row) => row.relics))).padStart(1)}  ` +
+      `각성 ${String(median(selected.map((row) => row.awakenings))).padStart(1)}  ` +
+      `합성 ${String(median(selected.map((row) => row.fusions))).padStart(1)}`,
   )
 }
 
@@ -329,6 +371,13 @@ for (const cls of ['ranged', 'melee'] as const) {
   if (wins < Math.ceil(selected.length / 3) || wins >= selected.length) {
     throw new Error(
       `${cls}: 승리 ${wins}/${selected.length} — 강하지만 이길 수 있는 33~92% 범위를 벗어났습니다.`,
+    )
+  }
+  const relics = median(selected.map((row) => row.relics))
+  const fusions = median(selected.map((row) => row.fusions))
+  if (relics < 3 || fusions < 1) {
+    throw new Error(
+      `${cls}: 정예 보상 회귀 — 인장 중앙값 ${relics}, 융합 중앙값 ${fusions}`,
     )
   }
   const danger = median(selected.map((row) => row.dangerFrac))

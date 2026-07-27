@@ -72,12 +72,28 @@ export const ENEMY_TYPES: readonly EnemyTypeDef[] = [
     xp: 0,
     knockbackResist: 0.92,
   },
+  {
+    id: 'eclipse-warden',
+    name: '월식의 수호자',
+    // 정예는 한 웨이브의 목표물이다. 브루트보다 확실히 오래 버티되,
+    // 10초 넘게 두들겨야 하는 소형 보스가 되면 전리품 비트가 흐름을 막는다.
+    hp: 620,
+    speed: 6.5,
+    radius: 0.86,
+    contactDamage: 20,
+    xp: 12,
+    knockbackResist: 0.78,
+  },
 ]
 
 export const TYPE_WALKER = 0
 export const TYPE_RUSHER = 1
 export const TYPE_BRUTE = 2
 export const TYPE_BOSS = 3
+export const TYPE_ELITE = 4
+
+/** 5분 런의 중간 파워 스파이크. 보스 직전에는 15초의 정리 시간을 남긴다. */
+export const ELITE_SPAWN_TIMES = [75, 145, 195] as const
 
 /** 보스는 3:30에 한 번만 등장한다. */
 export const BOSS_SPAWN_TIME = 210
@@ -387,6 +403,19 @@ export function spawnBoss(pool: EnemyPool, rng: Rng, px: number, py: number): bo
   return pool.count > before
 }
 
+/** 지정 비트에만 등장하는 전리품 정예. 일반 스폰 추첨에는 섞이지 않는다. */
+export function spawnElite(
+  pool: EnemyPool,
+  rng: Rng,
+  px: number,
+  py: number,
+  time: number,
+): boolean {
+  const before = pool.count
+  spawnEnemy(pool, rng, px, py, TYPE_ELITE, time)
+  return pool.count > before
+}
+
 /**
  * 보스 등장과 동시에 전장을 목표 개체 수까지 비운다.
  *
@@ -401,7 +430,7 @@ export function thinEnemiesForBoss(pool: EnemyPool, targetTotal: number): number
   while (pool.count > target) {
     let removeAt = -1
     for (let i = pool.count - 1; i >= 0; i--) {
-      if (pool.type[i] !== TYPE_BOSS) {
+      if (pool.type[i] !== TYPE_BOSS && pool.type[i] !== TYPE_ELITE) {
         removeAt = i
         break
       }
@@ -475,6 +504,7 @@ export function stepEnemies(
   playerRadius: number,
   now: number,
   bossSpawnedAt = BOSS_SPAWN_TIME,
+  relicThreat = 0,
 ): EnemyStepResult {
   // 격자는 여기서 만들지 않는다. 스킬이 stepEnemies보다 먼저 돌기 때문에
   // 여기서 재구축하면 스킬 질의가 항상 한 틱 낡은(또는 첫 틱엔 빈) 격자를 본다.
@@ -483,6 +513,13 @@ export function stepEnemies(
 
   let contactDamage = 0
   let contactCount = 0
+  // 전리품으로 두 랭크씩 강해지는 만큼 균열도 깨어난다. 보상을 먹을수록
+  // 다음 웨이브가 빨라지고 아파져 파워 스파이크가 난이도를 삭제하지 않는다.
+  const threatStacks = Math.max(0, Math.min(ELITE_SPAWN_TIMES.length, relicThreat))
+  // The relic is a reward beat first. Its counter-pressure should be felt as a
+  // slightly tighter horde, not erase the power spike the player just earned.
+  const threatSpeedMul = 1 + threatStacks * 0.005
+  const threatDamageMul = 1 + threatStacks * 0.015
 
   for (let i = 0; i < n; i++) {
     pool.prevX[i] = pool.x[i]!
@@ -604,8 +641,8 @@ export function stepEnemies(
         }
       } else {
         const mul = speedMultiplier(pool, i, now)
-        targetVx = dx * def.speed * mul + sx * SEPARATION
-        targetVy = dy * def.speed * mul + sy * SEPARATION
+        targetVx = dx * def.speed * mul * threatSpeedMul + sx * SEPARATION
+        targetVy = dy * def.speed * mul * threatSpeedMul + sy * SEPARATION
       }
     }
 
@@ -644,7 +681,8 @@ export function stepEnemies(
     if (bossPhase !== 'arrival' && cdx * cdx + cdy * cdy < touch * touch) {
       const chargeDamageMul =
         isBoss && bossPhase === 'charge' ? BOSS_CHARGE_DAMAGE_MUL : 1
-      contactDamage += def.contactDamage * chargeDamageMul * DT
+      const rewardThreatMul = isBoss ? 1 : threatDamageMul
+      contactDamage += def.contactDamage * chargeDamageMul * rewardThreatMul * DT
       contactCount++
     }
   }
