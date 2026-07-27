@@ -90,11 +90,23 @@ export interface TracerEvent {
   kind: number
 }
 
-/** 스킬이 발동한 순간. 캐릭터 시전 모션이 이걸 보고 재생된다. */
+/**
+ * 스킬이 발동한 순간.
+ *
+ * 시전 모션뿐 아니라 이펙트도 이 이벤트를 직접 소비한다. 순간이동 스킬은
+ * 렌더 시점의 player.pos만 보면 출발점을 복구할 수 없으므로, 선분 양 끝을
+ * 시전 순간에 함께 저장한다. 중심형 스킬은 시작점과 도착점이 같다.
+ */
 export interface CastEvent {
   slot: SkillId
   /** 시전 방향(라디안). 모션이 이 방향을 향한다. */
   angle: number
+  /** 시전이 시작된 월드 좌표. */
+  originX: number
+  originY: number
+  /** 투사체 도착점·돌진 착지점. 중심형 스킬은 origin과 같다. */
+  targetX: number
+  targetY: number
 }
 
 /** 평타와 지속 궁극기 타격이 발생한 순간. 캐릭터 공격 모션이 소비한다. */

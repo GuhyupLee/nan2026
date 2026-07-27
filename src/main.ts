@@ -1,7 +1,11 @@
 import { GameAudio } from './audio.ts'
 import { InputState, applyPointerMove } from './input.ts'
 import { Renderer } from './render/renderer.ts'
-import { ensureVrm, startVrmPreload } from './render/vrm-rig.ts'
+import {
+  ensureVrm,
+  shouldUseVrmModels,
+  startVrmPreload,
+} from './render/vrm-rig.ts'
 import { ARENA_RADIUS, DT, MAX_TICKS_PER_FRAME } from './sim/constants.ts'
 import { createInput } from './sim/types.ts'
 import type { PlayerClass, World } from './sim/types.ts'
@@ -21,6 +25,7 @@ const bootEl = document.getElementById('boot')!
 const hint = document.getElementById('hint')!
 const statsEl = document.getElementById('stats')!
 const coarsePointer = window.matchMedia('(pointer: coarse)').matches
+const useVrmModels = shouldUseVrmModels()
 
 if (coarsePointer) {
   hint.textContent = '전장을 밀어 이동 · 스킬 버튼 터치'
@@ -153,7 +158,11 @@ function frame(now: number): void {
   if (running) {
     // 탭이 백그라운드에 있다 돌아오면 rawDt가 수 초가 된다.
     // 그대로 누적하면 수백 틱을 한 프레임에 밀어넣어 멈춘 것처럼 보인다.
-    accumulator += Math.min(rawDt, DT * MAX_TICKS_PER_FRAME)
+    //
+    // 히트스톱은 시뮬을 멈추지 않고 **누적되는 시간에 배율만 건다**. 큰 타격
+    // 순간 틱이 덜 도는 형태라 고정 DT 결정론이 그대로 유지된다 —
+    // 헤드리스 밸런싱과 sim-check는 stepWorld를 직접 돌리므로 영향이 없다.
+    accumulator += Math.min(rawDt, DT * MAX_TICKS_PER_FRAME) * renderer.simTimeScale
 
     let ticks = 0
     while (accumulator >= DT && ticks < MAX_TICKS_PER_FRAME) {
@@ -342,21 +351,23 @@ function beginRun(playerClass: PlayerClass): void {
 async function start(): Promise<void> {
   activeRun = false
   pauseButton.setVisible(false)
-  // 캐릭터 모델(각 20MB 안팎)을 메뉴가 떠 있는 동안 미리 받는다. 심사자가
-  // 메뉴와 캐릭터 선택을 넘기는 데 보통 몇 초가 걸리므로 대개 그 안에 끝난다.
-  startVrmPreload()
+  // 데스크톱은 캐릭터 모델(각 20MB 안팎)을 메뉴가 떠 있는 동안 미리 받는다.
+  // 모바일은 다운로드와 파싱을 건너뛰고 기존 프로시저럴 경량 모델을 쓴다.
+  if (useVrmModels) startVrmPreload()
   await showMainMenu(document.body, () => showSettings(document.body, audio, input))
-  await audio.unlock()
+  // 일부 WebView는 AudioContext.resume() Promise를 사용자 제스처가 끝난 뒤에도
+  // 오래 보류한다. 사운드는 best-effort 기능이므로 화면 전환을 막지 않는다.
+  void audio.unlock()
   audio.ui('select')
   const playerClass = await showCharacterSelect(document.body, undefined, () =>
     showSettings(document.body, audio, input),
   )
-  await audio.unlock()
+  void audio.unlock()
   audio.ui('select')
 
   // 아직 안 받았으면 여기서 기다린다. 실패해도 false가 올 뿐이고,
   // createCharacterRig가 프로시저럴 모델로 폴백하므로 판은 그대로 시작된다.
-  if (!(await withLoadingScreen(ensureVrm(playerClass)))) {
+  if (useVrmModels && !(await withLoadingScreen(ensureVrm(playerClass)))) {
     console.warn('[vrm] 모델을 못 받아 프로시저럴 캐릭터로 시작합니다')
   }
 

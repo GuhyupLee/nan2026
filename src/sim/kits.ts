@@ -52,8 +52,18 @@ function aimDir(world: World, out: { x: number; y: number }): void {
 
 const dir = { x: 1, y: 0 }
 
-function emitCast(world: World, slot: SkillId, angle: number): void {
-  if (world.casts.length < 8) world.casts.push({ slot, angle })
+function emitCast(
+  world: World,
+  slot: SkillId,
+  angle: number,
+  originX: number,
+  originY: number,
+  targetX: number,
+  targetY: number,
+): void {
+  if (world.casts.length < 8) {
+    world.casts.push({ slot, angle, originX, originY, targetX, targetY })
+  }
 }
 
 function emitBeam(
@@ -155,7 +165,7 @@ function rangedQ(world: World): void {
   }
 
   emitBeam(world, p.pos.x, p.pos.y, x1, y1, 1.2, 1)
-  emitCast(world, 'q', Math.atan2(dir.y, dir.x))
+  emitCast(world, 'q', Math.atan2(dir.y, dir.x), p.pos.x, p.pos.y, x1, y1)
 }
 
 /** W 굴절(屈折) — 커서 반대쪽으로 도약하고 있던 자리에 빛기둥을 남긴다. */
@@ -190,7 +200,7 @@ function rangedW(world: World): void {
 
   emitRing(world, fromX, fromY, 3.6, 0)
   emitRing(world, p.pos.x, p.pos.y, 2, 0)
-  emitCast(world, 'w', Math.atan2(-dir.y, -dir.x))
+  emitCast(world, 'w', Math.atan2(-dir.y, -dir.x), fromX, fromY, p.pos.x, p.pos.y)
 }
 
 /** E 분광(分光) — 던져서 터뜨리고 그 자리를 둔화 장판으로 남긴다. */
@@ -239,7 +249,7 @@ function rangedE(world: World): void {
   })
 
   emitRing(world, tx, ty, 6, 2)
-  emitCast(world, 'e', Math.atan2(ty - p.pos.y, tx - p.pos.x))
+  emitCast(world, 'e', Math.atan2(ty - p.pos.y, tx - p.pos.x), p.pos.x, p.pos.y, tx, ty)
 }
 
 /** R 일현(日弦) — 화면 끝에서 끝까지. 직선 위의 모든 것이 사라진다. */
@@ -270,7 +280,7 @@ function rangedR(world: World): void {
   })
 
   emitBeam(world, x0, y0, x1, y1, 5.5, 2)
-  emitCast(world, 'r', Math.atan2(dir.y, dir.x))
+  emitCast(world, 'r', Math.atan2(dir.y, dir.x), x0, y0, x1, y1)
 }
 
 // ---------------------------------------------------------------------------
@@ -310,7 +320,7 @@ function meleeQ(world: World): void {
   }
 
   emitBeam(world, p.pos.x, p.pos.y, x1, y1, 2.4, 3)
-  emitCast(world, 'q', Math.atan2(dir.y, dir.x))
+  emitCast(world, 'q', Math.atan2(dir.y, dir.x), p.pos.x, p.pos.y, x1, y1)
 }
 
 /** W 이합참(離合斬) — 가려는 쪽으로 꿰뚫고 나간다. 그동안 무적. */
@@ -353,7 +363,7 @@ function meleeW(world: World): void {
 
   emitBeam(world, fromX, fromY, p.pos.x, p.pos.y, 3, 3)
   emitRing(world, p.pos.x, p.pos.y, 3.5, 3)
-  emitCast(world, 'w', Math.atan2(dy, dx))
+  emitCast(world, 'w', Math.atan2(dy, dx), fromX, fromY, p.pos.x, p.pos.y)
 }
 
 /** E 월륜(月輪) — 주변을 한 겹 밀어낸 뒤 끌어모아 통째로 벤다. */
@@ -388,7 +398,7 @@ function meleeE(world: World): void {
   })
 
   emitRing(world, p.pos.x, p.pos.y, 9, 3)
-  emitCast(world, 'e', p.facing)
+  emitCast(world, 'e', p.facing, p.pos.x, p.pos.y, p.pos.x, p.pos.y)
 }
 
 /** R 만월난무(滿月亂舞) — 사라져서 여섯 번 벤다. 마지막에 크게 회복한다. */
@@ -400,7 +410,15 @@ function meleeR(world: World): void {
   world.player.invulnUntil = now + 2.85
 
   emitRing(world, world.player.pos.x, world.player.pos.y, 5, 3)
-  emitCast(world, 'r', world.player.facing)
+  emitCast(
+    world,
+    'r',
+    world.player.facing,
+    world.player.pos.x,
+    world.player.pos.y,
+    world.player.pos.x,
+    world.player.pos.y,
+  )
 }
 
 /**

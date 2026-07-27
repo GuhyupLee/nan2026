@@ -14,6 +14,7 @@ import {
   RUN_TIME_LIMIT,
 } from '../src/sim/constants.ts'
 import { damageEnemy } from '../src/sim/damage.ts'
+import { castSkill } from '../src/sim/kits.ts'
 import {
   BOSS_CHARGE_AT,
   BOSS_INTRO_DURATION,
@@ -34,6 +35,7 @@ import {
 import {
   LEVEL_REWARDS,
   MAX_LEVEL,
+  MELEE_XP_GAIN_MULTIPLIER,
   TARGET_LEVEL_TIMES,
   XP_FOR_NEXT,
   pendingReward,
@@ -57,6 +59,8 @@ import { createInput } from '../src/sim/types.ts'
 import { length } from '../src/sim/vec.ts'
 import { createWorld, grantXp, resolveLevelUp, stepWorld } from '../src/sim/world.ts'
 import { pushBlast } from '../src/sim/zones.ts'
+import { BALANCE_REGRESSION_SAMPLES } from './balance/baseline.ts'
+import { median, runBalanceScenario } from './balance/model.ts'
 
 let failures = 0
 
@@ -170,6 +174,11 @@ console.log('\nsim smoke check\n')
     `${TARGET_LEVEL_TIMES[MAX_LEVEL - 1]}s`,
   )
   check('최대 레벨은 20이다', MAX_LEVEL === 20, `MAX_LEVEL=${MAX_LEVEL}`)
+  check(
+    'Lv20 누적 요구 XP는 3,807이다',
+    XP_FOR_NEXT.reduce((sum, xp) => sum + xp, 0) === 3807,
+  )
+  check('근접 XP 보정 배율은 0.86이다', MELEE_XP_GAIN_MULTIPLIER === 0.86)
 }
 
 // --- 레벨업 ---
@@ -197,29 +206,62 @@ console.log('\nsim smoke check\n')
   })())
 }
 
-// --- 실제 자동 전투 레벨 페이스 ---
+// --- QWER 실제 처치율을 반영한 5분 레벨 페이스 ---
 {
-  const level20Time = (playerClass: 'ranged' | 'melee', seed: number): number => {
-    const w = createWorld(seed, playerClass)
-    const idle = createInput()
-    // 생존 편차가 아니라 처치 XP 페이스만 측정한다.
-    w.player.invulnUntil = Number.POSITIVE_INFINITY
+  const samples = BALANCE_REGRESSION_SAMPLES.map((expected) => {
+    const qwer = runBalanceScenario(expected.playerClass, expected.seed)
+    const auto = runBalanceScenario(expected.playerClass, expected.seed, { useQwer: false })
+    return { expected, qwer, auto }
+  })
+  const details = samples
+    .map(({ expected, qwer }) => {
+      const time = qwer.levelTimes[MAX_LEVEL - 1]
+      return `${expected.playerClass}:${expected.seed}=${time?.toFixed(1) ?? '--'}s/${qwer.kills}킬`
+    })
+    .join(', ')
 
-    while (w.time < RUN_TIME_LIMIT && w.progression.level < MAX_LEVEL) {
-      while (w.awaitingChoice) resolveLevelUp(w)
-      stepWorld(w, idle)
-    }
-    return w.progression.levelTimes[MAX_LEVEL - 1] ?? Number.POSITIVE_INFINITY
-  }
-
-  const samples = [
-    ...[1, 5, 11].map((seed) => ['ranged', seed, level20Time('ranged', seed)] as const),
-    ...[1, 5, 11].map((seed) => ['melee', seed, level20Time('melee', seed)] as const),
-  ]
   check(
-    '원거리·근거리 여러 시드가 Lv20에 4:30~4:55 도달한다',
-    samples.every(([, , time]) => time >= 270 && time <= 295),
-    samples.map(([cls, seed, time]) => `${cls}:${seed}=${time.toFixed(1)}s`).join(', '),
+    'QWER 포함 대표 시드가 Lv20 목표 4:50의 ±25초 안에 든다',
+    samples.every(({ qwer }) => {
+      const time = qwer.levelTimes[MAX_LEVEL - 1]
+      return time !== null && Math.abs(time - TARGET_LEVEL_TIMES[MAX_LEVEL - 1]!) <= 25
+    }),
+    details,
+  )
+  check(
+    'QWER 포함 클래스별 중앙 레벨 곡선은 전 구간 목표 ±18초다',
+    (['ranged', 'melee'] as const).every((playerClass) =>
+      TARGET_LEVEL_TIMES.every((target, levelIndex) => {
+        const times = samples
+          .filter(({ expected }) => expected.playerClass === playerClass)
+          .map(({ qwer }) => qwer.levelTimes[levelIndex] ?? Number.POSITIVE_INFINITY)
+        return Math.abs(median(times) - target) <= 18
+      }),
+    ),
+    details,
+  )
+  check(
+    'QWER 실제 처치율이 자동 공격 기준선보다 시드별 50% 이상 높다',
+    samples.every(({ qwer, auto }) => qwer.kills >= auto.kills * 1.5),
+    samples
+      .map(
+        ({ expected, qwer, auto }) =>
+          `${expected.playerClass}:${expected.seed}=${(qwer.kills / auto.kills).toFixed(2)}x`,
+      )
+      .join(', '),
+  )
+  check(
+    '시드별 QWER 처치 수와 Lv20 시각 스냅샷 허용 오차가 유지된다',
+    samples.every(({ expected, qwer, auto }) => {
+      const time = qwer.levelTimes[MAX_LEVEL - 1]
+      return (
+        Math.abs(qwer.kills - expected.qwerKills) <= expected.qwerKills * 0.05 &&
+        Math.abs(auto.kills - expected.autoKills) <= expected.autoKills * 0.05 &&
+        time !== null &&
+        Math.abs(time - expected.level20Time) <= 5
+      )
+    }),
+    details,
   )
 }
 
@@ -392,6 +434,38 @@ console.log('\nsim smoke check\n')
     w.skills.f.maxCooldown === FLASH_COOLDOWN,
     `${w.skills.f.maxCooldown}`,
   )
+}
+
+// --- 8개 QWER 시전 이벤트는 렌더러가 역추론 없이 그릴 수 있어야 한다 ---
+{
+  const slots = ['q', 'w', 'e', 'r'] as const
+  let emitted = 0
+  let selfContained = true
+
+  for (const playerClass of ['ranged', 'melee'] as const) {
+    for (const slot of slots) {
+      const w = createWorld(70 + emitted, playerClass)
+      w.spawnEnabled = false
+      w.lastAim.x = 8
+      w.lastAim.y = 3
+      unlockSkill(w.skills, slot, 1)
+
+      const cast = castSkill(w, slot) ? w.casts[0] : undefined
+      if (cast) emitted++
+      selfContained =
+        selfContained &&
+        cast !== undefined &&
+        cast.slot === slot &&
+        Number.isFinite(cast.angle) &&
+        Number.isFinite(cast.originX) &&
+        Number.isFinite(cast.originY) &&
+        Number.isFinite(cast.targetX) &&
+        Number.isFinite(cast.targetY)
+    }
+  }
+
+  check('두 클래스 QWER 8개가 모두 world.casts를 발행한다', emitted === 8, `${emitted}/8`)
+  check('시전 이벤트가 시작점·도착점을 완전하게 보존한다', selfContained)
 }
 
 // --- 클래스 ---

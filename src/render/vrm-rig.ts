@@ -1,8 +1,16 @@
 import * as THREE from 'three'
 import { GLTFLoader } from 'three/examples/jsm/loaders/GLTFLoader.js'
 import { VRMLoaderPlugin, VRMUtils, type VRM } from '@pixiv/three-vrm'
+import {
+  VRMAnimationLoaderPlugin,
+  type VRMAnimation,
+} from '@pixiv/three-vrm-animation'
 import type { PlayerClass } from '../sim/types.ts'
 import { CHARACTER_HEIGHT, type CharacterAction, type CharacterRig } from './rig.ts'
+import {
+  VrmAnimationController,
+  canStartVrmAction,
+} from './vrm-animation.ts'
 
 /**
  * VRoid Studio에서 뽑은 VRM 캐릭터.
@@ -43,6 +51,31 @@ type Side = 1 | -1
 const MODEL_URL: Record<PlayerClass, string> = {
   melee: 'models/wola.vrm',
   ranged: 'models/ilhyeon.vrm',
+}
+
+type NavigatorWithMobileHint = Navigator & {
+  userAgentData?: { mobile?: boolean }
+}
+
+/**
+ * 모바일에서는 VRM 파일 다운로드·파싱·스프링본 갱신을 전부 건너뛴다.
+ *
+ * UA Client Hints를 우선하고, iPadOS의 데스크톱 UA와 coarse pointer를 보완한다.
+ * 터치 노트북은 보통 기본 포인터가 fine이라 불필요하게 경량 모드로 내려가지 않는다.
+ */
+function detectMobileDevice(): boolean {
+  const nav = navigator as NavigatorWithMobileHint
+  if (nav.userAgentData?.mobile === true) return true
+  if (/Android|iPhone|iPad|iPod|Mobile|IEMobile|Opera Mini/i.test(nav.userAgent)) return true
+  if (nav.platform === 'MacIntel' && nav.maxTouchPoints > 1) return true
+  return nav.maxTouchPoints > 0 && window.matchMedia('(pointer: coarse)').matches
+}
+
+const vrmModelsEnabled = !detectMobileDevice()
+
+/** 현재 기기에서 VRM 모델을 사용해도 되는지 알려준다. */
+export function shouldUseVrmModels(): boolean {
+  return vrmModelsEnabled
 }
 
 const ACCENT: Record<PlayerClass, number> = {
@@ -389,9 +422,32 @@ function envelope(t: number, k: Timing): number {
 
 const loader = new GLTFLoader()
 loader.register((parser) => new VRMLoaderPlugin(parser))
+const animationLoader = new GLTFLoader()
+animationLoader.register((parser) => new VRMAnimationLoaderPlugin(parser))
 
 const pending = new Map<PlayerClass, Promise<VRM | null>>()
 const ready = new Map<PlayerClass, VRM>()
+let animationPending: Promise<readonly VRMAnimation[] | null> | null = null
+let animationLibrary: readonly VRMAnimation[] | null = null
+
+async function loadAnimationLibrary(): Promise<readonly VRMAnimation[] | null> {
+  const url = `${import.meta.env.BASE_URL}animations/myeongwol-combat.vrma`
+  try {
+    const gltf = await animationLoader.loadAsync(url)
+    const animations = gltf.userData.vrmAnimations as VRMAnimation[] | undefined
+    if (!animations?.length) throw new Error('VRMA 파일에 재생 가능한 클립이 없습니다.')
+    animationLibrary = animations
+    return animations
+  } catch (error) {
+    console.warn('[vrma] 전투 모션 로드 실패, 절차식 모션으로 대체합니다.', error)
+    return null
+  }
+}
+
+function ensureAnimationLibrary(): Promise<readonly VRMAnimation[] | null> {
+  if (!animationPending) animationPending = loadAnimationLibrary()
+  return animationPending
+}
 
 async function load(cls: PlayerClass): Promise<VRM | null> {
   const url = `${import.meta.env.BASE_URL}${MODEL_URL[cls]}`
@@ -430,6 +486,8 @@ async function load(cls: PlayerClass): Promise<VRM | null> {
 
 /** 두 모델을 백그라운드로 받기 시작한다. 메인 메뉴가 뜨는 동안 돌아간다. */
 export function startVrmPreload(): void {
+  if (!vrmModelsEnabled) return
+  void ensureAnimationLibrary()
   for (const cls of ['ranged', 'melee'] as PlayerClass[]) {
     if (!pending.has(cls)) pending.set(cls, load(cls))
   }
@@ -437,13 +495,14 @@ export function startVrmPreload(): void {
 
 /** 해당 클래스의 VRM이 준비될 때까지 기다린다. 실패하면 false. */
 export async function ensureVrm(cls: PlayerClass): Promise<boolean> {
-  if (ready.has(cls)) return true
+  if (!vrmModelsEnabled) return false
   if (!pending.has(cls)) pending.set(cls, load(cls))
-  return (await pending.get(cls)!) !== null
+  const [vrm] = await Promise.all([pending.get(cls)!, ensureAnimationLibrary()])
+  return vrm !== null
 }
 
 export function hasVrm(cls: PlayerClass): boolean {
-  return ready.has(cls)
+  return vrmModelsEnabled && ready.has(cls)
 }
 
 // ---------------------------------------------------------------------------
@@ -497,6 +556,22 @@ interface Weapon {
   rings: THREE.Mesh[]
   /** 무기 로컬 기준 발사점(보주 중심). 렌더러가 빔 시작점을 여기로 옮긴다. */
   muzzle: THREE.Vector3
+  /** 궤적 리본이 따라갈 두 점. 무기 그룹의 자식이라 손을 따라 자동으로 움직인다. */
+  base: THREE.Object3D
+  tip: THREE.Object3D
+}
+
+/** 무기 로컬 y 두 지점에 빈 앵커를 심는다. 메시가 아니라 그리는 비용이 없다. */
+function bladeAnchors(g: THREE.Group, baseY: number, tipY: number): {
+  base: THREE.Object3D
+  tip: THREE.Object3D
+} {
+  const base = new THREE.Object3D()
+  base.position.set(0, baseY, 0)
+  const tip = new THREE.Object3D()
+  tip.position.set(0, tipY, 0)
+  g.add(base, tip)
+  return { base, tip }
 }
 
 function buildWeapon(cls: PlayerClass): Weapon {
@@ -521,7 +596,17 @@ function buildWeapon(cls: PlayerClass): Weapon {
     // 자루
     mesh(g, new THREE.CylinderGeometry(0.021, 0.019, 0.24, 12), wrap, [0, -0.04, 0])
     mesh(g, new THREE.SphereGeometry(0.025, 12, 8), accent, [0, -0.17, 0])
-    return { group: g, orb: null, rings: [], muzzle: new THREE.Vector3(0, 1.06, 0.04) }
+    // 츠바(0.09)에서 칼끝(1.13)까지가 날이다. 리본은 이 구간만 그린다 —
+    // 자루까지 포함하면 손 주위에서 띠가 뭉친다.
+    const katana = bladeAnchors(g, 0.09, 1.13)
+    return {
+      group: g,
+      orb: null,
+      rings: [],
+      muzzle: new THREE.Vector3(0, 1.06, 0.04),
+      base: katana.base,
+      tip: katana.tip,
+    }
   }
 
   // 그립이 원점이고 y+가 지팡이 끝이다. 손 높이(≈0.99)에서 보주가 머리 위로
@@ -535,7 +620,17 @@ function buildWeapon(cls: PlayerClass): Weapon {
     mesh(g, new THREE.TorusGeometry(0.125, 0.01, 8, 24), accent, [0, ORB_Y, 0], [0.5, 0.35, 0]),
     mesh(g, new THREE.TorusGeometry(0.16, 0.008, 8, 28), accent, [0, ORB_Y, 0], [-0.4, -0.2, 0.3]),
   ]
-  return { group: g, orb, rings, muzzle: new THREE.Vector3(0, ORB_Y, 0) }
+  // 지팡이는 보주만 궤적을 남긴다. 봉 전체가 띠를 그리면 마법사가 아니라
+  // 창을 휘두르는 것으로 보인다. 두 앵커를 보주 앞뒤로 짧게 잡았다.
+  const wand = bladeAnchors(g, ORB_Y - 0.1, ORB_Y + 0.1)
+  return {
+    group: g,
+    orb,
+    rings,
+    muzzle: new THREE.Vector3(0, ORB_Y, 0),
+    base: wand.base,
+    tip: wand.tip,
+  }
 }
 
 // ---------------------------------------------------------------------------
@@ -566,10 +661,14 @@ function set(node: THREE.Object3D | null, x: number, y: number, z: number): void
  * 모델을 파괴하지 않고 무기만 정리한다 — 파괴하면 다음 판에서 빈 캐릭터가 뜬다.
  */
 export function createVrmRig(cls: PlayerClass): CharacterRig | null {
+  if (!vrmModelsEnabled) return null
   const vrm = ready.get(cls)
   if (!vrm) return null
 
   const humanoid = vrm.humanoid
+  // 같은 VRM 인스턴스를 다음 판에도 재사용한다. 이전 Mixer/절차식 모션의
+  // 마지막 프레임을 새 클립의 기준 자세로 저장하지 않도록 먼저 T포즈로 되돌린다.
+  humanoid.resetNormalizedPose()
   const group = new THREE.Group()
   const orient = new THREE.Group()
   // VRM은 +Z를 보고 sim의 facing 0은 +X다.
@@ -643,6 +742,7 @@ export function createVrmRig(cls: PlayerClass): CharacterRig | null {
   const groupQuat = new THREE.Quaternion()
 
   const poses = POSES[cls]
+  const animation = VrmAnimationController.create(vrm, cls, animationLibrary)
   let actionKind: CharacterAction | null = null
   let actionStart = -99
   let lastTime = -1
@@ -663,6 +763,14 @@ export function createVrmRig(cls: PlayerClass): CharacterRig | null {
     source: 'vrm',
 
     playAction(kind, time) {
+      if (animation) {
+        if (!animation.playAction(kind, time)) return false
+      } else {
+        const progress = actionKind
+          ? (time - actionStart) / ACTION_DURATION[actionKind]
+          : 1
+        if (!canStartVrmAction(actionKind, progress, kind)) return false
+      }
       actionKind = kind
       actionStart = time
       // 원거리 평타는 몸이 아니라 보주가 쏜다. 발사 이벤트를 여기서 받아
@@ -671,6 +779,7 @@ export function createVrmRig(cls: PlayerClass): CharacterRig | null {
         orbFiredAt = time
         orbPower = kind === 'empowered' ? 1.6 : 1
       }
+      return true
     },
 
     update(time, speed) {
@@ -700,6 +809,7 @@ export function createVrmRig(cls: PlayerClass): CharacterRig | null {
       // --- 선회 뱅킹 ---
       // 방향을 틀 때 오토바이처럼 안쪽으로 기운다. 쿼터뷰에서 이게 없으면
       // 캐릭터가 제자리에서 홱홱 도는 팽이로 보인다.
+      if (!animation) {
       const yaw = group.rotation.y
       let dYaw = yaw - lastYaw
       // −π~π로 감아 한 바퀴 경계에서 튀지 않게 한다
@@ -800,6 +910,12 @@ export function createVrmRig(cls: PlayerClass): CharacterRig | null {
       // --- 지팡이 보주 ---
       // 원거리 평타의 발사감을 여기서만 만든다. 캐릭터가 팔을 휘두르지
       // 않으므로 이 반응이 유일한 "쏘았다" 신호다. 그래서 확실히 보여야 한다.
+      } else {
+        // VRMA 클립을 먼저 합성한 뒤 vrm.update로 스프링본을 갱신한다.
+        // 절차식 걷기 회전은 이 분기에서 실행하지 않아 공격 모션과 경쟁하지 않는다.
+        animation.update(dt, time, speed)
+      }
+
       if (wep.orb && orbMat) {
         // 링은 항상 천천히 돈다. 멈춰 있으면 보주가 죽은 장식으로 보인다.
         for (let i = 0; i < wep.rings.length; i++) {
@@ -841,6 +957,8 @@ export function createVrmRig(cls: PlayerClass): CharacterRig | null {
       }
     },
 
+    blade: { base: wep.base, tip: wep.tip },
+
     muzzleWorld(out) {
       if (!wep.orb) return false
       wep.orb.getWorldPosition(out)
@@ -848,6 +966,7 @@ export function createVrmRig(cls: PlayerClass): CharacterRig | null {
     },
 
     dispose() {
+      animation?.dispose()
       // VRM은 캐시에 남아 다음 판에서 재사용된다. 무기만 정리한다.
       orient.remove(vrm.scene)
       if (rawHand) rawHand.remove(weapon)

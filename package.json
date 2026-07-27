@@ -7,12 +7,16 @@
     "dev": "vite",
     "build": "tsc --noEmit && vite build && node tools/site-build.mjs",
     "preview": "vite preview",
-    "check": "tsx tools/sim-check.ts",
+    "check": "tsx tools/sim-check.ts && tsx tools/animation-check.ts",
+    "check:animation": "tsx tools/animation-check.ts",
+    "animation": "tsx tools/generate-vrma.ts",
     "art": "tsx tools/optimize-art.ts",
-    "balance": "tsx tools/balance/run.ts"
+    "balance": "tsx tools/balance/run.ts",
+    "balance:calibrate": "tsx tools/balance/calibrate.ts"
   },
   "dependencies": {
     "@pixiv/three-vrm": "^3.5.5",
+    "@pixiv/three-vrm-animation": "^3.5.5",
     "three": "^0.185.1"
   },
   "devDependencies": {

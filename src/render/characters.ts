@@ -13,6 +13,7 @@ import {
   solid,
 } from './body.ts'
 import { createVrmRig } from './vrm-rig.ts'
+import { canStartVrmAction } from './vrm-animation.ts'
 
 export type { CharacterAction, CharacterRig } from './rig.ts'
 import type { CharacterAction, CharacterRig } from './rig.ts'
@@ -457,8 +458,13 @@ function makeRig(
     source: 'procedural',
 
     playAction(kind, time) {
+      const progress = action.kind
+        ? (time - action.start) / ACTION_DURATION[action.kind]
+        : 1
+      if (!canStartVrmAction(action.kind, progress, kind)) return false
       action.kind = kind
       action.start = time
+      return true
     },
 
     update(time, speed) {

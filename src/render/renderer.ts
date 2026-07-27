@@ -108,6 +108,8 @@ export class Renderer {
    */
   private lastPlayerHp = -1
   private lastTick = -1
+  /** Renderer는 판 사이에 살아남으므로 새 World를 만나면 잔상 풀을 먼저 비운다. */
+  private renderedWorld: World | null = null
   /** 접촉 피해는 틱마다 소수점으로 들어와 그대로 반올림하면 항상 0이다. 모았다 띄운다. */
   private pendingDamage = 0
   private width = 1
@@ -354,6 +356,11 @@ export class Renderer {
       this.swapCharacter(world.playerClass)
     }
 
+    if (this.renderedWorld !== world) {
+      this.renderedWorld = world
+      this.skillFx.reset()
+    }
+
     this.consumeCharacterActions(world, now)
 
     this.charRig.group.position.set(px, 0, pz)
@@ -565,7 +572,7 @@ export class Renderer {
     }
 
     if (next === null || priority < 0) return
-    this.charRig.playAction(next, now)
+    if (!this.charRig.playAction(next, now)) return
     this.actionFacing = angle
     this.actionFacingUntil = now + facingHold
   }
