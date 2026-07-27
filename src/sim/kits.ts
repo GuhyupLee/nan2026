@@ -398,12 +398,18 @@ function stepMeleeUlt(world: World): void {
   const pool = world.enemies
   const now = world.time
   const last = u.hitsLeft === 1
+  let attackAngle = p.facing
 
   // 매 타격마다 가장 가까운 적으로 순간이동한다 — "사라져서 벤다"가 이렇게 읽힌다.
   const target = nearestEnemy(pool, world.enemyHash, p.pos.x, p.pos.y, 13)
   if (target >= 0) {
+    attackAngle = Math.atan2(pool.y[target]! - p.pos.y, pool.x[target]! - p.pos.x)
     const def = ENEMY_TYPES[pool.type[target]!]!
     teleport(world, pool.x[target]! - def.radius * 1.4, pool.y[target]!)
+  }
+
+  if (world.attacks.length < 16) {
+    world.attacks.push({ angle: attackAngle, kind: 'ult' })
   }
 
   const radius = last ? 7 : 3.4
@@ -501,6 +507,10 @@ export function tryEmpoweredAttack(world: World): boolean {
   const pool = world.enemies
   const now = world.time
   aimDir(world, dir)
+
+  if (world.attacks.length < 16) {
+    world.attacks.push({ angle: Math.atan2(dir.y, dir.x), kind: 'empowered' })
+  }
 
   let heal = 0
   // 100도 부채꼴 = 반각 50도

@@ -97,6 +97,13 @@ export interface CastEvent {
   angle: number
 }
 
+/** 평타와 지속 궁극기 타격이 발생한 순간. 캐릭터 공격 모션이 소비한다. */
+export interface AttackEvent {
+  /** 공격 방향(라디안). XZ 평면에서 +X가 0. */
+  angle: number
+  kind: 'ranged' | 'melee' | 'empowered' | 'ult'
+}
+
 export interface World {
   seed: number
   /** 경과 틱 수. 시간의 유일한 원천. */
@@ -141,6 +148,8 @@ export interface World {
   rings: RingEvent[]
   /** 스킬 시전 이벤트. 렌더러가 모션·이펙트에 쓰고 비운다. */
   casts: CastEvent[]
+  /** 평타·지속 궁극기 타격 이벤트. 렌더러가 공격 모션에 쓰고 비운다. */
+  attacks: AttackEvent[]
 
   /**
    * 레벨업 선택 대기 중인가.

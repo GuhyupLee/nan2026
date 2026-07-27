@@ -634,3 +634,134 @@
     gap: 0.35rem;
   }
 }
+
+/* ---------------------------------------------------------------------------
+   결과 화면 — 판을 확실히 멈추고 같은 조건으로 즉시 재시작
+--------------------------------------------------------------------------- */
+
+.outcome {
+  --accent: #ff5a6e;
+  position: fixed;
+  inset: 0;
+  z-index: 30;
+  display: grid;
+  place-items: center;
+  padding: 1.5rem;
+  background:
+    radial-gradient(circle at 50% 42%, color-mix(in srgb, var(--accent) 16%, transparent), transparent 36%),
+    rgba(4, 7, 13, 0.9);
+  backdrop-filter: blur(5px);
+  animation: outcome-in 0.24s ease-out;
+}
+
+.outcome[data-result='victory'] {
+  --accent: #ffd56a;
+}
+
+.outcome .panel {
+  width: min(28rem, 92vw);
+  padding: clamp(1.8rem, 5vw, 2.8rem);
+  text-align: center;
+  border: 1px solid color-mix(in srgb, var(--accent) 42%, #263449);
+  border-radius: 1rem;
+  background: linear-gradient(165deg, rgba(22, 31, 47, 0.97), rgba(7, 12, 20, 0.98));
+  box-shadow:
+    0 1.5rem 5rem rgba(0, 0, 0, 0.58),
+    0 0 2.4rem color-mix(in srgb, var(--accent) 12%, transparent);
+}
+
+.outcome .eyebrow {
+  color: var(--accent);
+  font-size: 0.72rem;
+  font-weight: 800;
+  letter-spacing: 0.28em;
+}
+
+.outcome h2 {
+  margin-top: 0.55rem;
+  color: #f3f7ff;
+  font-size: clamp(1.8rem, 7vw, 2.7rem);
+  line-height: 1.15;
+  letter-spacing: 0.04em;
+}
+
+.outcome p {
+  margin-top: 0.75rem;
+  color: #91a3ba;
+  font-size: 0.86rem;
+  line-height: 1.7;
+}
+
+.outcome .restart {
+  width: min(18rem, 100%);
+  margin-top: 1.7rem;
+  padding: 0.8rem 1rem 0.7rem;
+  border: 1px solid var(--accent);
+  border-radius: 0.6rem;
+  color: #071019;
+  background: var(--accent);
+  cursor: pointer;
+  font: inherit;
+  transition:
+    transform 0.12s ease,
+    box-shadow 0.15s ease,
+    filter 0.15s ease;
+  -webkit-tap-highlight-color: transparent;
+}
+
+.outcome .restart span,
+.outcome .restart small {
+  display: block;
+}
+
+.outcome .restart span {
+  font-size: 0.95rem;
+  font-weight: 800;
+  letter-spacing: 0.05em;
+}
+
+.outcome .restart small {
+  margin-top: 0.18rem;
+  font-size: 0.58rem;
+  font-weight: 700;
+  letter-spacing: 0.13em;
+  opacity: 0.62;
+}
+
+.outcome .restart:hover,
+.outcome .restart:focus-visible {
+  filter: brightness(1.08);
+  box-shadow: 0 0.7rem 2rem color-mix(in srgb, var(--accent) 28%, transparent);
+  outline: none;
+}
+
+.outcome .restart:active {
+  transform: translateY(2px);
+}
+
+.outcome .note {
+  margin-top: 0.72rem;
+  color: #617189;
+  font-size: 0.66rem;
+  letter-spacing: 0.09em;
+}
+
+@keyframes outcome-in {
+  from {
+    opacity: 0;
+    transform: scale(1.015);
+  }
+  to {
+    opacity: 1;
+    transform: scale(1);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .outcome {
+    animation: none;
+  }
+  .outcome .restart {
+    transition: none;
+  }
+}

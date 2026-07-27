@@ -1,7 +1,7 @@
 import * as THREE from 'three'
 
 import { ENEMY_TYPES, MAX_ENEMIES, type EnemyPool } from '../sim/enemies.ts'
-import type { World } from '../sim/types.ts'
+import type { TracerEvent, World } from '../sim/types.ts'
 import { lerp } from '../sim/vec.ts'
 
 /**
@@ -63,8 +63,14 @@ interface Pop {
 const POP_DURATION = 0.16
 const MAX_POPS = 64
 const MAX_TRACERS = 48
+const MAX_PROJECTILES = 32
+const MAX_SLASHES = 24
 const MAX_RINGS = 24
 const RING_DURATION = 0.42
+const MAX_FIELD_DISCS = 24
+const MAX_FIELD_EDGES = 24
+const MAX_PILLARS = 12
+const BLAST_WARNING_DURATION = 0.3
 
 /** 지면 원형 연출 하나. 점멸·회복이 쓰고, 앞으로 스킬들이 공유한다. */
 interface Ring {
@@ -75,15 +81,37 @@ interface Ring {
   t: number
 }
 
-const RING_COLORS = [0x8fe6ff, 0x7df0a0]
+type TracerStyle = 'projectile' | 'slash' | 'beam'
+
+/** 시뮬의 한 틱 이벤트를 짧게 유지하는 렌더 전용 궤적. */
+interface TracerFx extends TracerEvent {
+  style: TracerStyle
+  /** 진행도 0..1 */
+  t: number
+  duration: number
+}
+
+/** 0=점멸/시안, 1=회복/초록, 2=폭발·궁극/금백, 3=참격/크림슨. */
+const RING_COLORS = [0x8fe6ff, 0x7df0a0, 0xffe6a3, 0xff4164]
+/** TracerEvent.kind와 같은 순서. */
+const TRACER_COLORS = [0x69d9ff, 0x4dd0ff, 0xffd978, 0xff3158]
+const TRACER_CORE_COLORS = [0xf4fdff, 0xdcf9ff, 0xffffff, 0xffc0cc]
+const ZONE_COLORS = [0x4dd0ff, 0x865cff]
 
 export class EnemyRenderer {
   private readonly batches: TypeBatch[] = []
   private readonly pops: Pop[] = []
   private readonly rings: Ring[] = []
+  private readonly tracers: TracerFx[] = []
   private readonly popMesh: THREE.InstancedMesh
   private readonly tracerMesh: THREE.InstancedMesh
+  private readonly tracerCoreMesh: THREE.InstancedMesh
+  private readonly projectileMesh: THREE.InstancedMesh
+  private readonly slashMesh: THREE.InstancedMesh
   private readonly ringMesh: THREE.InstancedMesh
+  private readonly fieldDiscMesh: THREE.InstancedMesh
+  private readonly fieldEdgeMesh: THREE.InstancedMesh
+  private readonly pillarMesh: THREE.InstancedMesh
 
   private readonly m = new THREE.Matrix4()
   private readonly q = new THREE.Quaternion()
@@ -123,14 +151,15 @@ export class EnemyRenderer {
     this.popMesh.frustumCulled = false
     scene.add(this.popMesh)
 
-    // 자동 공격 예광선 — 얇은 박스. WebGL의 선 굵기는 1px에 묶여 있어
-    // 라인으로 그리면 이 카메라 거리에서 거의 안 보인다.
+    // 광선·광탄 꼬리 — WebGL 선은 굵기가 사실상 1px이라 얇은 박스를 쓴다.
+    // 바깥 광과 흰 코어를 따로 인스턴싱하면 종류별 색을 유지하면서도
+    // 드로우콜은 마릿수와 무관하게 두 번으로 고정된다.
     this.tracerMesh = new THREE.InstancedMesh(
-      new THREE.BoxGeometry(1, 0.05, 0.14),
+      new THREE.BoxGeometry(1, 0.06, 0.18),
       new THREE.MeshBasicMaterial({
-        color: 0xbfe9ff,
+        color: 0xffffff,
         transparent: true,
-        opacity: 0.9,
+        opacity: 0.58,
         depthWrite: false,
         blending: THREE.AdditiveBlending,
       }),
@@ -140,6 +169,60 @@ export class EnemyRenderer {
     this.tracerMesh.count = 0
     this.tracerMesh.frustumCulled = false
     scene.add(this.tracerMesh)
+
+    this.tracerCoreMesh = new THREE.InstancedMesh(
+      new THREE.BoxGeometry(1, 0.035, 0.065),
+      new THREE.MeshBasicMaterial({
+        color: 0xffffff,
+        transparent: true,
+        opacity: 0.95,
+        depthWrite: false,
+        blending: THREE.AdditiveBlending,
+      }),
+      MAX_TRACERS,
+    )
+    this.tracerCoreMesh.instanceMatrix.setUsage(THREE.DynamicDrawUsage)
+    this.tracerCoreMesh.count = 0
+    this.tracerCoreMesh.frustumCulled = false
+    scene.add(this.tracerCoreMesh)
+
+    // 원거리 평타의 머리. 꼬리와 분리해야 선 전체가 동시에 켜지지 않고
+    // 실제로 날아가는 광탄처럼 읽힌다.
+    this.projectileMesh = new THREE.InstancedMesh(
+      new THREE.OctahedronGeometry(0.18, 0),
+      new THREE.MeshBasicMaterial({
+        color: 0xffffff,
+        transparent: true,
+        opacity: 0.96,
+        depthWrite: false,
+        blending: THREE.AdditiveBlending,
+      }),
+      MAX_PROJECTILES,
+    )
+    this.projectileMesh.instanceMatrix.setUsage(THREE.DynamicDrawUsage)
+    this.projectileMesh.count = 0
+    this.projectileMesh.frustumCulled = false
+    scene.add(this.projectileMesh)
+
+    // 근거리 평타의 초승달 검호. +X를 정면으로 만든 뒤 Y축 회전으로 방향을 맞춘다.
+    const slashGeo = new THREE.RingGeometry(0.58, 1, 24, 1, -0.92, 1.84)
+    slashGeo.rotateX(-Math.PI / 2)
+    this.slashMesh = new THREE.InstancedMesh(
+      slashGeo,
+      new THREE.MeshBasicMaterial({
+        color: 0xffffff,
+        transparent: true,
+        opacity: 0.9,
+        depthWrite: false,
+        blending: THREE.AdditiveBlending,
+        side: THREE.DoubleSide,
+      }),
+      MAX_SLASHES,
+    )
+    this.slashMesh.instanceMatrix.setUsage(THREE.DynamicDrawUsage)
+    this.slashMesh.count = 0
+    this.slashMesh.frustumCulled = false
+    scene.add(this.slashMesh)
 
     // 지면 링 — 바닥 평면의 변화가 쿼터뷰에서 가장 잘 읽힌다.
     // 반지름 1의 얇은 링을 스케일해 재사용한다.
@@ -159,6 +242,64 @@ export class EnemyRenderer {
     this.ringMesh.count = 0
     this.ringMesh.frustumCulled = false
     scene.add(this.ringMesh)
+
+    // 지속 장판과 지연 폭발 예고. 면/테두리를 나누면 희미한 영역을
+    // 유지하면서 위험 반경은 또렷하게 읽힌다.
+    const fieldDiscGeo = new THREE.CircleGeometry(1, 32)
+    fieldDiscGeo.rotateX(-Math.PI / 2)
+    this.fieldDiscMesh = new THREE.InstancedMesh(
+      fieldDiscGeo,
+      new THREE.MeshBasicMaterial({
+        color: 0xffffff,
+        transparent: true,
+        opacity: 0.14,
+        depthWrite: false,
+        blending: THREE.AdditiveBlending,
+        side: THREE.DoubleSide,
+      }),
+      MAX_FIELD_DISCS,
+    )
+    this.fieldDiscMesh.instanceMatrix.setUsage(THREE.DynamicDrawUsage)
+    this.fieldDiscMesh.count = 0
+    this.fieldDiscMesh.frustumCulled = false
+    scene.add(this.fieldDiscMesh)
+
+    const fieldEdgeGeo = new THREE.RingGeometry(0.91, 1, 32)
+    fieldEdgeGeo.rotateX(-Math.PI / 2)
+    this.fieldEdgeMesh = new THREE.InstancedMesh(
+      fieldEdgeGeo,
+      new THREE.MeshBasicMaterial({
+        color: 0xffffff,
+        transparent: true,
+        opacity: 0.72,
+        depthWrite: false,
+        blending: THREE.AdditiveBlending,
+        side: THREE.DoubleSide,
+      }),
+      MAX_FIELD_EDGES,
+    )
+    this.fieldEdgeMesh.instanceMatrix.setUsage(THREE.DynamicDrawUsage)
+    this.fieldEdgeMesh.count = 0
+    this.fieldEdgeMesh.frustumCulled = false
+    scene.add(this.fieldEdgeMesh)
+
+    // 원거리 W의 빛기둥. 열린 원통이라 내부 캐릭터와 적을 가리지 않는다.
+    this.pillarMesh = new THREE.InstancedMesh(
+      new THREE.CylinderGeometry(1, 1, 1, 24, 1, true),
+      new THREE.MeshBasicMaterial({
+        color: 0xffffff,
+        transparent: true,
+        opacity: 0.08,
+        depthWrite: false,
+        blending: THREE.AdditiveBlending,
+        side: THREE.DoubleSide,
+      }),
+      MAX_PILLARS,
+    )
+    this.pillarMesh.instanceMatrix.setUsage(THREE.DynamicDrawUsage)
+    this.pillarMesh.count = 0
+    this.pillarMesh.frustumCulled = false
+    scene.add(this.pillarMesh)
   }
 
   /**
@@ -168,8 +309,93 @@ export class EnemyRenderer {
   update(world: World, alpha: number, dt: number): void {
     this.drawEnemies(world.enemies, alpha)
     this.drawPops(world, dt)
-    this.drawTracers(world)
+    this.drawFields(world)
+    this.drawTracers(world, dt)
     this.drawRings(world, dt)
+  }
+
+  /** 지속 장판과 아직 터지지 않은 폭발의 위험 반경. */
+  private drawFields(world: World): void {
+    let discN = 0
+    let edgeN = 0
+    let pillarN = 0
+
+    for (const z of world.zones) {
+      const remain = Math.max(0, z.expireAt - world.time)
+      const fade = Math.min(1, remain / 0.35)
+      const pulse = 0.82 + Math.sin(world.time * 5.5 + z.x * 0.17 + z.y * 0.11) * 0.18
+      const color = ZONE_COLORS[z.kind] ?? ZONE_COLORS[0]!
+
+      if (discN < MAX_FIELD_DISCS) {
+        this.pos.set(z.x, 0.035, z.y)
+        this.q.identity()
+        this.scl.set(z.radius, 1, z.radius)
+        this.m.compose(this.pos, this.q, this.scl)
+        this.fieldDiscMesh.setMatrixAt(discN, this.m)
+        this.color.set(color).multiplyScalar(fade * pulse)
+        this.fieldDiscMesh.setColorAt(discN, this.color)
+        discN++
+      }
+
+      if (edgeN < MAX_FIELD_EDGES) {
+        const edgePulse = 0.985 + Math.sin(world.time * 4.2 + z.y) * 0.015
+        this.pos.set(z.x, 0.055, z.y)
+        this.q.identity()
+        this.scl.set(z.radius * edgePulse, 1, z.radius * edgePulse)
+        this.m.compose(this.pos, this.q, this.scl)
+        this.fieldEdgeMesh.setMatrixAt(edgeN, this.m)
+        this.color.set(color).multiplyScalar(fade)
+        this.fieldEdgeMesh.setColorAt(edgeN, this.color)
+        edgeN++
+      }
+
+      // kind 0은 빛기둥. 낮은 불투명도의 열린 원통이라 영역만 강조한다.
+      if (z.kind === 0 && pillarN < MAX_PILLARS) {
+        const breathe = 0.96 + Math.sin(world.time * 3.8 + z.x) * 0.04
+        this.pos.set(z.x, 1.8, z.y)
+        this.q.identity()
+        this.scl.set(z.radius * breathe, 3.6, z.radius * breathe)
+        this.m.compose(this.pos, this.q, this.scl)
+        this.pillarMesh.setMatrixAt(pillarN, this.m)
+        this.color.set(color).multiplyScalar(fade * 0.72)
+        this.pillarMesh.setColorAt(pillarN, this.color)
+        pillarN++
+      }
+    }
+
+    // 폭발 시점으로 수렴하는 링. 정확한 피격 반경은 희미한 원판으로 남긴다.
+    for (const b of world.blasts) {
+      const remain = Math.max(0, b.fireAt - world.time)
+      const progress = 1 - THREE.MathUtils.clamp(remain / BLAST_WARNING_DURATION, 0, 1)
+      const color = b.kind === 1 ? RING_COLORS[3]! : RING_COLORS[0]!
+
+      if (discN < MAX_FIELD_DISCS) {
+        this.pos.set(b.x, 0.04, b.y)
+        this.q.identity()
+        this.scl.set(b.radius, 1, b.radius)
+        this.m.compose(this.pos, this.q, this.scl)
+        this.fieldDiscMesh.setMatrixAt(discN, this.m)
+        this.color.set(color).multiplyScalar(0.5 + progress * 0.5)
+        this.fieldDiscMesh.setColorAt(discN, this.color)
+        discN++
+      }
+
+      if (edgeN < MAX_FIELD_EDGES) {
+        const converge = b.radius * (1 - progress * 0.72)
+        this.pos.set(b.x, 0.065, b.y)
+        this.q.identity()
+        this.scl.set(converge, 1, converge)
+        this.m.compose(this.pos, this.q, this.scl)
+        this.fieldEdgeMesh.setMatrixAt(edgeN, this.m)
+        this.color.set(color).lerp(this.white, progress * 0.55)
+        this.fieldEdgeMesh.setColorAt(edgeN, this.color)
+        edgeN++
+      }
+    }
+
+    this.commitInstances(this.fieldDiscMesh, discN)
+    this.commitInstances(this.fieldEdgeMesh, edgeN)
+    this.commitInstances(this.pillarMesh, pillarN)
   }
 
   private drawRings(world: World, dt: number): void {
@@ -285,34 +511,200 @@ export class EnemyRenderer {
     if (this.popMesh.instanceColor) this.popMesh.instanceColor.needsUpdate = true
   }
 
-  private drawTracers(world: World): void {
-    let n = 0
-    for (const tr of world.tracers) {
-      if (n >= MAX_TRACERS) break
+  private drawTracers(world: World, dt: number): void {
+    this.captureTracers(world)
+
+    let outerN = 0
+    let coreN = 0
+    let projectileN = 0
+    let slashN = 0
+
+    // 최신 이펙트를 먼저 채운다. 상한에 닿아도 방금 쓴 스킬이 빠지지 않는다.
+    for (let i = this.tracers.length - 1; i >= 0; i--) {
+      const tr = this.tracers[i]!
+      const t = THREE.MathUtils.clamp(tr.t, 0, 1)
       const dx = tr.x1 - tr.x0
       const dz = tr.y1 - tr.y0
       const len = Math.hypot(dx, dz)
+      if (len < 1e-4) {
+        this.tracers.splice(i, 1)
+        continue
+      }
+
+      if (tr.style === 'projectile') {
+        const headT = Math.min(1, t * 1.12)
+        const hx = tr.x0 + dx * headT
+        const hz = tr.y0 + dz * headT
+        const travelled = len * headT
+        const tailLength = Math.min(2.2 + tr.width * 0.28, travelled)
+        const tailT = tailLength / len
+        const tx = tr.x0 + dx * Math.max(0, headT - tailT)
+        const tz = tr.y0 + dz * Math.max(0, headT - tailT)
+        const fade = 1 - THREE.MathUtils.smoothstep(t, 0.72, 1)
+
+        if (tailLength > 0.03 && outerN < MAX_TRACERS) {
+          this.setLineAt(this.tracerMesh, outerN, tx, tz, hx, hz, 0.88, 1.05)
+          this.color.set(TRACER_COLORS[0]!).multiplyScalar(fade * 0.9)
+          this.tracerMesh.setColorAt(outerN, this.color)
+          outerN++
+        }
+        if (tailLength > 0.03 && coreN < MAX_TRACERS) {
+          this.setLineAt(this.tracerCoreMesh, coreN, tx, tz, hx, hz, 0.88, 0.72)
+          this.color.set(TRACER_CORE_COLORS[0]!).multiplyScalar(fade)
+          this.tracerCoreMesh.setColorAt(coreN, this.color)
+          coreN++
+        }
+        if (projectileN < MAX_PROJECTILES) {
+          const pulse = (0.92 + Math.sin(t * Math.PI * 8) * 0.12) * (0.9 + tr.width * 0.08)
+          this.pos.set(hx, 0.88, hz)
+          this.q.setFromAxisAngle(this.axisY, t * Math.PI * 10)
+          this.scl.set(pulse * 1.25, pulse, pulse)
+          this.m.compose(this.pos, this.q, this.scl)
+          this.projectileMesh.setMatrixAt(projectileN, this.m)
+          this.color
+            .set(TRACER_COLORS[0]!)
+            .lerp(this.white, 0.62)
+            .multiplyScalar(fade)
+          this.projectileMesh.setColorAt(projectileN, this.color)
+          projectileN++
+        }
+      } else if (tr.style === 'slash') {
+        if (slashN < MAX_SLASHES) {
+          const nx = dx / len
+          const nz = dz / len
+          const angle = Math.atan2(dz, dx)
+          const sweep = 0.45 - t * 0.9
+          const reach = 1.35 + Math.min(tr.width, 2) * 0.12
+          const scale = 1.2 + Math.min(tr.width, 2) * 0.22 + Math.sin(t * Math.PI) * 0.32
+          const fade = (1 - t) * (0.72 + Math.sin(t * Math.PI) * 0.28)
+
+          this.pos.set(tr.x0 + nx * reach, 0.16, tr.y0 + nz * reach)
+          this.q.setFromAxisAngle(this.axisY, -angle + sweep)
+          this.scl.set(scale, 1, scale)
+          this.m.compose(this.pos, this.q, this.scl)
+          this.slashMesh.setMatrixAt(slashN, this.m)
+          this.color
+            .set(TRACER_COLORS[3]!)
+            .lerp(this.white, (1 - t) * 0.28)
+            .multiplyScalar(fade)
+          this.slashMesh.setColorAt(slashN, this.color)
+          slashN++
+        }
+      } else {
+        const kind = THREE.MathUtils.clamp(Math.trunc(tr.kind), 1, 3)
+        const fade = (1 - t) * (1 - t)
+        const pulse = 1 + Math.sin(t * Math.PI) * (kind === 2 ? 0.28 : 0.12)
+        const outerWidth = Math.max(0.8, tr.width) * pulse
+        const coreWidth = Math.max(0.62, tr.width * 0.58) * pulse
+
+        if (outerN < MAX_TRACERS) {
+          this.setLineAt(
+            this.tracerMesh,
+            outerN,
+            tr.x0,
+            tr.y0,
+            tr.x1,
+            tr.y1,
+            kind === 2 ? 1.02 : 0.86,
+            outerWidth,
+          )
+          this.color.set(TRACER_COLORS[kind]!).multiplyScalar(fade)
+          this.tracerMesh.setColorAt(outerN, this.color)
+          outerN++
+        }
+        if (coreN < MAX_TRACERS) {
+          this.setLineAt(
+            this.tracerCoreMesh,
+            coreN,
+            tr.x0,
+            tr.y0,
+            tr.x1,
+            tr.y1,
+            kind === 2 ? 1.02 : 0.86,
+            coreWidth,
+          )
+          this.color.set(TRACER_CORE_COLORS[kind]!).multiplyScalar(fade)
+          this.tracerCoreMesh.setColorAt(coreN, this.color)
+          coreN++
+        }
+      }
+
+      // 최소 한 프레임은 그린 뒤 수명을 진행한다.
+      tr.t += dt / tr.duration
+      if (tr.t >= 1) this.tracers.splice(i, 1)
+    }
+
+    this.commitInstances(this.tracerMesh, outerN)
+    this.commitInstances(this.tracerCoreMesh, coreN)
+    this.commitInstances(this.projectileMesh, projectileN)
+    this.commitInstances(this.slashMesh, slashN)
+  }
+
+  private captureTracers(world: World): void {
+    for (const tr of world.tracers) {
+      const len = Math.hypot(tr.x1 - tr.x0, tr.y1 - tr.y0)
       if (len < 1e-4) continue
 
-      this.pos.set(tr.x0 + dx * 0.5, 0.85, tr.y0 + dz * 0.5)
-      this.q.setFromAxisAngle(this.axisY, -Math.atan2(dz, dx))
-      this.scl.set(len, 1, 1)
-      this.m.compose(this.pos, this.q, this.scl)
-      this.tracerMesh.setMatrixAt(n, this.m)
-      n++
+      let style: TracerStyle = 'beam'
+      let duration = tr.kind === 2 ? 0.24 : tr.kind === 3 ? 0.17 : 0.15
+      if (tr.kind === 0) {
+        if (world.playerClass === 'melee') {
+          style = 'slash'
+          duration = 0.2
+        } else {
+          style = 'projectile'
+          duration = THREE.MathUtils.clamp(len / 85, 0.1, 0.22)
+        }
+      }
+
+      if (this.tracers.length >= MAX_TRACERS) this.tracers.shift()
+      this.tracers.push({ ...tr, style, duration, t: 0 })
     }
-    this.tracerMesh.count = n
-    this.tracerMesh.instanceMatrix.needsUpdate = true
+  }
+
+  /** +X 길이 1인 박스를 XZ 선분에 맞춰 배치한다. */
+  private setLineAt(
+    mesh: THREE.InstancedMesh,
+    index: number,
+    x0: number,
+    z0: number,
+    x1: number,
+    z1: number,
+    height: number,
+    thickness: number,
+  ): void {
+    const dx = x1 - x0
+    const dz = z1 - z0
+    const len = Math.hypot(dx, dz)
+    this.pos.set(x0 + dx * 0.5, height, z0 + dz * 0.5)
+    this.q.setFromAxisAngle(this.axisY, -Math.atan2(dz, dx))
+    this.scl.set(len, thickness, thickness)
+    this.m.compose(this.pos, this.q, this.scl)
+    mesh.setMatrixAt(index, this.m)
+  }
+
+  private commitInstances(mesh: THREE.InstancedMesh, count: number): void {
+    mesh.count = count
+    mesh.instanceMatrix.needsUpdate = true
+    if (mesh.instanceColor) mesh.instanceColor.needsUpdate = true
+  }
+
+  private disposeMesh(mesh: THREE.InstancedMesh): void {
+    mesh.geometry.dispose()
+    const materials = Array.isArray(mesh.material) ? mesh.material : [mesh.material]
+    for (const material of materials) material.dispose()
   }
 
   dispose(): void {
-    for (const b of this.batches) {
-      b.mesh.geometry.dispose()
-      ;(b.mesh.material as THREE.Material).dispose()
-    }
-    this.popMesh.geometry.dispose()
-    ;(this.popMesh.material as THREE.Material).dispose()
-    this.tracerMesh.geometry.dispose()
-    ;(this.tracerMesh.material as THREE.Material).dispose()
+    for (const b of this.batches) this.disposeMesh(b.mesh)
+    this.disposeMesh(this.popMesh)
+    this.disposeMesh(this.tracerMesh)
+    this.disposeMesh(this.tracerCoreMesh)
+    this.disposeMesh(this.projectileMesh)
+    this.disposeMesh(this.slashMesh)
+    this.disposeMesh(this.ringMesh)
+    this.disposeMesh(this.fieldDiscMesh)
+    this.disposeMesh(this.fieldEdgeMesh)
+    this.disposeMesh(this.pillarMesh)
   }
 }

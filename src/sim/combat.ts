@@ -150,6 +150,13 @@ export function stepAutoAttack(
   dx /= dl
   dy /= dl
 
+  if (world.attacks.length < 16) {
+    world.attacks.push({
+      angle: Math.atan2(dy, dx),
+      kind: world.playerClass === 'melee' ? 'melee' : 'ranged',
+    })
+  }
+
   const ex = p.pos.x + dx * s.atkRange
   const ey = p.pos.y + dy * s.atkRange
 

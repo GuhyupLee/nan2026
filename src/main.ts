@@ -2,11 +2,12 @@ import { InputState, applyPointerMove } from './input.ts'
 import { Renderer } from './render/renderer.ts'
 import { ARENA_RADIUS, DT, MAX_TICKS_PER_FRAME } from './sim/constants.ts'
 import { createInput } from './sim/types.ts'
-import type { World } from './sim/types.ts'
+import type { PlayerClass, World } from './sim/types.ts'
 import { createWorld, drainEvents, resolveLevelUp, stepWorld } from './sim/world.ts'
 import { showCharacterSelect } from './ui/charselect.ts'
 import { Hud } from './ui/hud.ts'
 import { showLevelUp } from './ui/levelup.ts'
+import { showOutcome } from './ui/outcome.ts'
 import { DEFAULT_SLOTS, SkillBar, assertSlotsCoverAllSkills } from './ui/skillbar.ts'
 import './ui/ui.css'
 
@@ -67,6 +68,9 @@ const project = renderer.worldToScreen.bind(renderer)
  * 이 플래그가 없으면 매 프레임 새 카드 화면이 쌓인다.
  */
 let choiceOpen = false
+
+/** 결과 화면이 매 프레임 중복으로 쌓이지 않게 막는다. */
+let outcomeOpen = false
 
 /**
  * 캐릭터 선택 중에도 렌더 루프는 돈다 — 셰이더 컴파일과 첫 프레임 비용을
@@ -142,9 +146,28 @@ function frame(now: number): void {
   // 렌더러가 사망·예광선 이벤트를 소비했으므로 비운다.
   drainEvents(world)
 
+  // 결과는 레벨업보다 먼저 처리한다. 같은 틱에 사망과 XP 획득이 겹쳐도
+  // 레벨업 카드가 결과 화면 위에 뜨면 안 된다.
+  if (running && world.outcome !== 'alive' && !outcomeOpen) {
+    running = false
+    outcomeOpen = true
+    choiceOpen = false
+    accumulator = 0
+    input.pointerHeld = false
+    hint.classList.add('hidden')
+    skillBar.setVisible(false)
+    hud.setVisible(false)
+
+    const result = world.outcome
+    const restartClass = world.playerClass
+    void showOutcome(document.body, result).then(() => {
+      beginRun(restartClass)
+    })
+  }
+
   // 레벨업 카드. 시뮬은 awaitingChoice 동안 한 틱도 진행하지 않으므로
   // 여기서 화면을 띄우지 않으면 게임이 영영 멈춘다.
-  if (running && world.awaitingChoice && !choiceOpen) {
+  if (running && world.outcome === 'alive' && world.awaitingChoice && !choiceOpen) {
     choiceOpen = true
     const target = world
     void showLevelUp(document.body, target).then(() => {
@@ -178,18 +201,43 @@ function frame(now: number): void {
   if (input.hasActed) hint.classList.add('hidden')
 }
 
-/** 첫 프레임이 나온 뒤 캐릭터 선택을 띄우고, 고르면 판을 시작한다. */
-async function start(): Promise<void> {
-  const playerClass = await showCharacterSelect(document.body)
-
+/** 선택된 캐릭터와 고정 시드로 새 판을 즉시 시작한다. */
+function beginRun(playerClass: PlayerClass): void {
+  running = false
   world = createWorld(seed, playerClass)
+  choiceOpen = false
+  outcomeOpen = false
+
+  // 직전 판의 포인터·1틱 입력·안내 상태가 새 판으로 넘어가지 않게 한다.
+  input.pointerHeld = false
+  input.hasActed = false
+  simInput.move.x = 0
+  simInput.move.y = 0
+  simInput.aim.x = 1
+  simInput.aim.y = 0
+  simInput.skillsPressed = 0
+
+  // 숨겨진 동안 새 월드 상태를 먼저 반영해 낡은 쿨다운·체력바가 비치지 않게 한다.
+  skillBar.update(world.skills)
+  hud.update(world, project, 0)
   skillBar.setVisible(true)
   hud.setVisible(true)
   hint.classList.remove('hidden')
-  // 선택 화면에 머문 시간이 첫 프레임 델타로 밀려들지 않게 시계를 다시 맞춘다.
+
+  // 결과 화면에 머문 시간이 새 판의 첫 프레임과 FPS 통계에 섞이지 않게 한다.
   lastTime = performance.now()
   accumulator = 0
+  fpsAccum = 0
+  fpsFrames = 0
+  statsTimer = 0.25
+  fps = 0
   running = true
+}
+
+/** 첫 프레임이 나온 뒤 캐릭터 선택을 띄우고, 고르면 판을 시작한다. */
+async function start(): Promise<void> {
+  const playerClass = await showCharacterSelect(document.body)
+  beginRun(playerClass)
 }
 
 // 선택 화면은 첫 프레임을 기다리지 않는다. 렌더러는 이미 생성되어 있고,

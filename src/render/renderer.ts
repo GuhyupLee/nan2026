@@ -4,7 +4,11 @@ import type { PlayerClass, World } from '../sim/types.ts'
 import type { Vec2 } from '../sim/vec.ts'
 import { length, lerp, lerpAngle } from '../sim/vec.ts'
 import { createArena } from './arena.ts'
-import { type CharacterRig, createCharacterRig } from './characters.ts'
+import {
+  type CharacterAction,
+  type CharacterRig,
+  createCharacterRig,
+} from './characters.ts'
 import { EnemyRenderer } from './enemies.ts'
 
 /**
@@ -42,6 +46,9 @@ export class Renderer {
   private readonly enemyRenderer: EnemyRenderer
   private charRig: CharacterRig
   private charClass: PlayerClass = 'ranged'
+  /** 공격·시전 중 이동 보간이 모션 방향을 덮지 않게 잠깐 고정하는 방향. */
+  private actionFacing = 0
+  private actionFacingUntil = -Infinity
   /** 렌더 프레임 간격(초). 이벤트 수명 애니메이션에 쓴다. */
   private lastFrameTime = 0
 
@@ -148,9 +155,12 @@ export class Renderer {
     // 클래스가 바뀌면 리그를 갈아끼운다. 캐릭터 선택 직후 한 번 일어난다.
     if (world.playerClass !== this.charClass) this.swapCharacter(world.playerClass)
 
+    this.consumeCharacterActions(world, now)
+
     this.charRig.group.position.set(px, 0, pz)
     // sim의 facing(+X 기준, XZ 평면)을 three의 Y축 회전으로 옮기면 부호가 뒤집힌다.
-    this.charRig.group.rotation.y = -facing
+    const displayFacing = now < this.actionFacingUntil ? this.actionFacing : facing
+    this.charRig.group.rotation.y = -displayFacing
     // 절차적 애니메이션은 시뮬 시간이 아니라 벽시계로 돈다 —
     // 레벨업으로 시뮬이 멈춘 동안에도 캐릭터는 숨을 쉬어야 한다.
     this.charRig.update(now, length(p.vel))
@@ -206,7 +216,53 @@ export class Renderer {
     this.charRig.dispose()
     this.charClass = cls
     this.charRig = createCharacterRig(cls)
+    this.actionFacingUntil = -Infinity
     this.scene.add(this.charRig.group)
+  }
+
+  /**
+   * 한 렌더 프레임에 여러 시뮬 틱이 들어와도 가장 중요한 모션 하나만 고른다.
+   * 우선순위는 스킬 > 궁극 후속타 > 강화 평타 > 평타다.
+   */
+  private consumeCharacterActions(world: World, now: number): void {
+    let next: CharacterAction | null = null
+    let angle = world.player.facing
+    let priority = -1
+    let facingHold = 0
+
+    for (const attack of world.attacks) {
+      const p =
+        attack.kind === 'ult'
+          ? 3
+          : attack.kind === 'empowered'
+            ? 2
+            : 1
+      if (p < priority) continue
+      priority = p
+      next =
+        attack.kind === 'empowered'
+          ? 'empowered'
+          : attack.kind === 'ult'
+            ? 'ult'
+            : 'attack'
+      angle = attack.angle
+      facingHold = attack.kind === 'empowered' ? 0.36 : attack.kind === 'ult' ? 0.26 : 0.2
+    }
+
+    for (const cast of world.casts) {
+      // CastEvent는 소환사 주문까지 확장될 수 있으므로 캐릭터 QWER만 리그에 전달한다.
+      if (cast.slot !== 'q' && cast.slot !== 'w' && cast.slot !== 'e' && cast.slot !== 'r') continue
+      priority = 4
+      next = cast.slot
+      angle = cast.angle
+      facingHold =
+        cast.slot === 'r' ? 0.72 : cast.slot === 'e' ? 0.48 : cast.slot === 'w' ? 0.34 : 0.3
+    }
+
+    if (next === null || priority < 0) return
+    this.charRig.playAction(next, now)
+    this.actionFacing = angle
+    this.actionFacingUntil = now + facingHold
   }
 
   get drawCalls(): number {
