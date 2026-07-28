@@ -8,6 +8,13 @@ import {
 } from './render/vrm-rig.ts'
 import { ARENA_RADIUS, DT, MAX_TICKS_PER_FRAME } from './sim/constants.ts'
 import { BOSS_SPAWN_TIME, spawnBoss } from './sim/enemies.ts'
+import {
+  BATTLEFIELD_MAGNET_DURATION,
+  dropBattlefieldPickup,
+  PICKUP_BOMB,
+  PICKUP_HEAL,
+  PICKUP_MAGNET,
+} from './sim/battlefield-pickups.ts'
 import { createInput } from './sim/types.ts'
 import type { PlayerClass, World } from './sim/types.ts'
 import {
@@ -486,6 +493,35 @@ function beginRun(playerClass: PlayerClass): void {
         world.boss.active = true
         world.boss.hp = world.boss.maxHp
       }
+    } else if (qa === 'pickups') {
+      // 세 픽업의 월드 실루엣과 자석 지속 HUD를 한 화면에서 검수한다.
+      // 프로덕션 빌드에서는 이 분기 전체가 제거된다.
+      world.spawnEnabled = false
+      const { x, y } = world.player.pos
+      dropBattlefieldPickup(
+        world.battlefieldPickups,
+        x - 3,
+        y - 1.2,
+        PICKUP_HEAL,
+        world.time,
+      )
+      dropBattlefieldPickup(
+        world.battlefieldPickups,
+        x,
+        y - 3.4,
+        PICKUP_MAGNET,
+        world.time,
+      )
+      dropBattlefieldPickup(
+        world.battlefieldPickups,
+        x + 3,
+        y - 1.2,
+        PICKUP_BOMB,
+        world.time,
+      )
+      world.battlefieldPickups.magnetUntil =
+        world.time + BATTLEFIELD_MAGNET_DURATION
+      world.battlefieldPickups.magnetActivations = 1
     }
   }
   running = true

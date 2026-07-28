@@ -2,6 +2,10 @@ import { xpToNext } from '../sim/progression.ts'
 import type { World } from '../sim/types.ts'
 import { RUN_TIME_LIMIT } from '../sim/constants.ts'
 import { ELITE_SPAWN_TIMES } from '../sim/enemies.ts'
+import {
+  BATTLEFIELD_MAGNET_DURATION,
+  BATTLEFIELD_MAGNET_MAX_REMAINING,
+} from '../sim/battlefield-pickups.ts'
 
 /**
  * HUD — 캐릭터 위 체력바 + 하단 경험치 바 + 타이머.
@@ -26,6 +30,9 @@ export class Hud {
   private readonly lv: HTMLDivElement
   private readonly xpFill: HTMLDivElement
   private readonly xpBar: HTMLDivElement
+  private readonly magnetBuff: HTMLDivElement
+  private readonly magnetTime: HTMLElement
+  private readonly magnetProgress: HTMLElement
   private readonly clock: HTMLDivElement
   private readonly runInfo: HTMLDivElement
   private readonly runKills: HTMLElement
@@ -43,6 +50,10 @@ export class Hud {
   private lastHp = 0
   private pendingDamage = 0
   private damagePulse = 0
+  private lastMagnetActivations = 0
+  private magnetDisplayTenths = -1
+  private magnetProgressCeiling = BATTLEFIELD_MAGNET_DURATION
+  private magnetWasActive = false
   private readonly reducedMotion = window.matchMedia('(prefers-reduced-motion: reduce)')
 
   constructor(parent: HTMLElement) {
@@ -61,6 +72,21 @@ export class Hud {
     this.xpBar.innerHTML = `<div class="fill"></div>`
     this.xpFill = this.xpBar.querySelector('.fill')!
     parent.appendChild(this.xpBar)
+
+    this.magnetBuff = document.createElement('div')
+    this.magnetBuff.className = 'pickup-buff'
+    this.magnetBuff.dataset.active = 'false'
+    this.magnetBuff.dataset.pulse = '0'
+    this.magnetBuff.setAttribute('role', 'timer')
+    this.magnetBuff.setAttribute('aria-live', 'off')
+    this.magnetBuff.setAttribute('aria-hidden', 'true')
+    this.magnetBuff.innerHTML =
+      `<span class="pickup-buff-mark" aria-hidden="true"></span>` +
+      `<span class="pickup-buff-copy"><small>자력장</small><b data-magnet-time>0.0초</b></span>` +
+      `<span class="pickup-buff-track" aria-hidden="true"><i></i></span>`
+    this.magnetTime = this.magnetBuff.querySelector('[data-magnet-time]')!
+    this.magnetProgress = this.magnetBuff.querySelector('.pickup-buff-track i')!
+    parent.appendChild(this.magnetBuff)
 
     this.clock = document.createElement('div')
     this.clock.className = 'clock'
@@ -99,6 +125,11 @@ export class Hud {
       this.lastKills = -1
       this.lastRelics = -1
       this.lastLevel = 0
+      this.lastMagnetActivations = world.battlefieldPickups.magnetActivations
+      this.magnetDisplayTenths = -1
+      this.magnetProgressCeiling = BATTLEFIELD_MAGNET_DURATION
+      this.magnetWasActive = false
+      document.body.classList.remove('pickup-buff-active')
     }
 
     // 지속 접촉 피해는 작은 값이 매 틱 들어온다. 그대로 번쩍이면 붉은 화면이
@@ -177,6 +208,45 @@ export class Hud {
       ? `${Math.min(100, (prog.xp / need) * 100).toFixed(1)}%`
       : '100%'
 
+    // --- 전장 자석 ---
+    // 획득 순간만 번쩍이고 사라지면 효과가 언제 끝나는지 알 수 없다.
+    // 남은 시간과 소진 바를 스킬바 바로 위에 고정해 이동 경로를 결정할 근거를 준다.
+    const pickups = world.battlefieldPickups
+    const magnetRemaining = Math.max(0, pickups.magnetUntil - world.time)
+    const magnetActive = magnetRemaining > 0
+    if (pickups.magnetActivations !== this.lastMagnetActivations) {
+      this.lastMagnetActivations = pickups.magnetActivations
+      this.magnetProgressCeiling = Math.min(
+        BATTLEFIELD_MAGNET_MAX_REMAINING,
+        Math.max(BATTLEFIELD_MAGNET_DURATION, magnetRemaining),
+      )
+      this.magnetBuff.dataset.pulse = String(pickups.magnetActivations & 1)
+    }
+    this.magnetBuff.dataset.active = String(magnetActive)
+    this.magnetBuff.setAttribute('aria-hidden', String(!magnetActive))
+    if (magnetActive !== this.magnetWasActive) {
+      this.magnetWasActive = magnetActive
+      document.body.classList.toggle('pickup-buff-active', magnetActive)
+    }
+    if (magnetActive) {
+      const tenths = Math.ceil(magnetRemaining * 10)
+      if (tenths !== this.magnetDisplayTenths) {
+        this.magnetDisplayTenths = tenths
+        const displaySeconds = (tenths / 10).toFixed(1)
+        this.magnetTime.textContent = `${displaySeconds}초`
+        this.magnetBuff.setAttribute(
+          'aria-label',
+          `자력장 남은 시간 ${displaySeconds}초`,
+        )
+      }
+      const progress = Math.min(1, magnetRemaining / this.magnetProgressCeiling)
+      this.magnetProgress.style.transform = `scaleX(${progress.toFixed(3)})`
+    } else if (this.magnetDisplayTenths !== -1) {
+      this.magnetDisplayTenths = -1
+      this.magnetProgress.style.transform = 'scaleX(0)'
+      this.magnetBuff.removeAttribute('aria-label')
+    }
+
     // --- 제한 시간 ---
     // 경과 시간보다 "얼마나 남았는가"가 보스전의 의사결정에 직접 필요하다.
     // 마지막 30초에는 색과 점멸로 시선을 끌되, 보스 등장 전에는 조용히 둔다.
@@ -195,6 +265,7 @@ export class Hud {
     const d = visible ? '' : 'none'
     this.floatBar.style.display = d
     this.xpBar.style.display = d
+    this.magnetBuff.style.display = d
     this.clock.style.display = d
     this.runInfo.style.display = d
     this.damageVignette.style.display = d

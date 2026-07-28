@@ -1,6 +1,11 @@
 import * as THREE from 'three'
 
 import { playerActionDuration, playerActionTiming } from '../sim/action-timing.ts'
+import {
+  PICKUP_BOMB,
+  PICKUP_HEAL,
+  PICKUP_MAGNET,
+} from '../sim/battlefield-pickups.ts'
 import { DT } from '../sim/constants.ts'
 import { TYPE_BOSS, TYPE_ELITE } from '../sim/enemies.ts'
 import type { SkillId } from '../sim/skills.ts'
@@ -8,6 +13,7 @@ import type { PlayerClass, World } from '../sim/types.ts'
 import type { Vec2 } from '../sim/vec.ts'
 import { length, lerp, lerpAngle } from '../sim/vec.ts'
 import { createArena } from './arena.ts'
+import { BattlefieldPickupRenderer } from './battlefield-pickups.ts'
 import { CombatReadabilityFx } from './combat-readability.ts'
 import {
   type CharacterRig,
@@ -104,6 +110,7 @@ export class Renderer {
   private readonly post: PostFx
   private readonly impact: ImpactFx
   private readonly impactParticles: ImpactParticles
+  private readonly battlefieldPickupRenderer: BattlefieldPickupRenderer
   private readonly xpGemRenderer: XpGemRenderer
   private readonly skillFx: SkillFx
   private weaponTrail: WeaponTrail
@@ -133,6 +140,10 @@ export class Renderer {
   private feedbackBloom = 1
   /** 새 월드 첫 프레임을 정예 등장으로 오인하지 않기 위한 직전 비트 인덱스. */
   private lastEliteBeatIndex = -1
+  /** Persistent simulation counters need renderer-side baselines for one-shot feedback. */
+  private lastHealPickupActivations = -1
+  private lastMagnetPickupActivations = -1
+  private lastBombPickupActivations = -1
 
   constructor(container: HTMLElement, arenaRadius: number) {
     this.container = container
@@ -167,6 +178,7 @@ export class Renderer {
     this.combatReadability = new CombatReadabilityFx(this.scene)
     this.impact = new ImpactFx(this.scene)
     this.impactParticles = new ImpactParticles(this.scene)
+    this.battlefieldPickupRenderer = new BattlefieldPickupRenderer(this.scene)
     this.xpGemRenderer = new XpGemRenderer(this.scene)
     // 스킬 이펙트가 타격 연출을 직접 만들지 않고 훅으로 위임한다.
     // 두 모듈이 서로를 몰라야 각각 따로 갈아끼울 수 있다.
@@ -408,10 +420,17 @@ export class Renderer {
       this.renderedWorld = world
       this.skillFx.reset()
       this.impactParticles.reset()
+      this.battlefieldPickupRenderer.reset()
       this.xpGemRenderer.reset()
       this.feedbackBloom = 1
       this.post.setBloomBoost(1)
       this.lastEliteBeatIndex = world.eliteBeatIndex
+      this.lastHealPickupActivations =
+        world.battlefieldPickups.healActivations
+      this.lastMagnetPickupActivations =
+        world.battlefieldPickups.magnetActivations
+      this.lastBombPickupActivations =
+        world.battlefieldPickups.bombActivations
       this.actionFacingUntil = -Infinity
     }
 
@@ -444,6 +463,11 @@ export class Renderer {
     this.weaponTrail.update(now, dt)
 
     this.xpGemRenderer.update(world.xpGems, visualAlpha, now)
+    this.battlefieldPickupRenderer.update(
+      world.battlefieldPickups,
+      visualTime,
+      now,
+    )
     this.enemyRenderer.update(world, visualAlpha, dt)
     this.combatReadability.update(world, visualAlpha)
     // 훅이 같은 프레임의 벽시계를 birth time으로 쓰도록 SkillFx보다 먼저 갱신한다.
@@ -484,8 +508,17 @@ export class Renderer {
     if (world.tick < this.lastTick || this.lastTick < 0) {
       this.lastPlayerHp = world.player.hp
       this.pendingDamage = 0
+      this.lastHealPickupActivations =
+        world.battlefieldPickups.healActivations
+      this.lastMagnetPickupActivations =
+        world.battlefieldPickups.magnetActivations
+      this.lastBombPickupActivations =
+        world.battlefieldPickups.bombActivations
     }
     this.lastTick = world.tick
+
+    const bombPickupTriggered =
+      this.consumeBattlefieldPickupFeedback(world, px, pz)
 
     for (let i = 0; i < world.deaths.length; i++) {
       const d = world.deaths[i]!
@@ -499,7 +532,7 @@ export class Renderer {
         this.impact.requestHitstop(0.5, 0.055)
         this.post.flash(0xe4bd70, 0.17, 0.3)
         this.pulseBloom(1.78)
-      } else if (d.type === 2) {
+      } else if (d.type === 2 && !bombPickupTriggered) {
         this.impact.shake(0.2, 0.24)
       }
     }
@@ -546,6 +579,64 @@ export class Renderer {
     // 데미지 숫자만 남겨야 그게 신호로 읽힌다.
   }
 
+  /**
+   * Converts monotonic simulation counters into exactly one audiovisual beat
+   * per rendered activation. Collections skipped between render frames are
+   * intentionally aggregated, so a bomb's mass kills cannot create an effect
+   * storm.
+   */
+  private consumeBattlefieldPickupFeedback(
+    world: World,
+    px: number,
+    pz: number,
+  ): boolean {
+    const pickups = world.battlefieldPickups
+    const healTriggered =
+      pickups.healActivations > this.lastHealPickupActivations
+    const magnetTriggered =
+      pickups.magnetActivations > this.lastMagnetPickupActivations
+    const bombTriggered =
+      pickups.bombActivations > this.lastBombPickupActivations
+
+    if (pickups.healActivations < this.lastHealPickupActivations) {
+      this.lastHealPickupActivations = pickups.healActivations
+    } else if (healTriggered) {
+      this.lastHealPickupActivations = pickups.healActivations
+      this.battlefieldPickupRenderer.triggerActivation(PICKUP_HEAL, px, pz)
+      if (!magnetTriggered && !bombTriggered) {
+        this.impactParticles.burst(px, pz, -Math.PI * 0.5, 0x42f584)
+      }
+      this.post.flash(0x42f584, 0.1, 0.2)
+      this.pulseBloom(1.3)
+    }
+
+    if (pickups.magnetActivations < this.lastMagnetPickupActivations) {
+      this.lastMagnetPickupActivations = pickups.magnetActivations
+    } else if (magnetTriggered) {
+      this.lastMagnetPickupActivations = pickups.magnetActivations
+      this.battlefieldPickupRenderer.triggerActivation(PICKUP_MAGNET, px, pz)
+      if (!bombTriggered) {
+        this.impactParticles.burst(px, pz, 0, 0x26d9ff)
+      }
+      this.post.flash(0x26d9ff, 0.14, 0.3)
+      this.pulseBloom(1.5)
+    }
+
+    if (pickups.bombActivations < this.lastBombPickupActivations) {
+      this.lastBombPickupActivations = pickups.bombActivations
+    } else if (bombTriggered) {
+      this.lastBombPickupActivations = pickups.bombActivations
+      this.battlefieldPickupRenderer.triggerActivation(PICKUP_BOMB, px, pz)
+      this.impactParticles.burst(px, pz, world.player.facing, 0xff7a18)
+      this.impact.shake(0.82, 0.62, 13)
+      this.impact.requestHitstop(0.78, 0.09)
+      this.post.flash(0xff8a1f, 0.43, 0.48)
+      this.pulseBloom(2.3)
+    }
+
+    return bombTriggered
+  }
+
   /** 접근성 설정을 지키면서 더 강한 동시 피크만 보존한다. */
   private pulseBloom(boost: number): void {
     const motionScale = this.reducedMotion.matches ? 0.35 : this.constrained ? 0.78 : 1
@@ -564,6 +655,7 @@ export class Renderer {
     const nextShadowMapSize = nextConstrained ? 1024 : 2048
     this.impact.setShakeScale(nextConstrained ? 0.6 : 1)
     this.impactParticles.setQuality(nextConstrained ? 0.45 : 1)
+    this.battlefieldPickupRenderer.setQuality(nextConstrained ? 0.45 : 1)
     this.xpGemRenderer.setQuality(nextConstrained ? 0.45 : 1)
     this.skillFx.setQuality(nextConstrained ? 0.45 : 1)
     let changed = nextConstrained !== this.constrained
@@ -705,6 +797,7 @@ export class Renderer {
     this.enemyRenderer.dispose()
     this.combatReadability.dispose()
     this.skillFx.dispose()
+    this.battlefieldPickupRenderer.dispose()
     this.xpGemRenderer.dispose()
     this.impactParticles.dispose()
     this.impact.dispose()
