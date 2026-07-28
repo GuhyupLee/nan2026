@@ -10,9 +10,17 @@
   --ui-faint: #626b78;
   --ui-cyan: #56c7e8;
   --ui-crimson: #e25063;
+  --ui-crimson-bright: #ff8188;
   --ui-warning: #d8ac55;
   --ui-positive: #67bd78;
+  /* 월광(메타 재화)·하드 모드가 공유하는 금색 램프. 개별 hex 재도입 금지. */
+  --ui-gold-bright: #f0d99e;
+  --ui-gold: #d7af62;
+  --ui-gold-dim: #aa956e;
+  --ui-gold-deep: #9b7342;
   --ui-hairline: clamp(1px, 0.0625rem, 2px);
+  /* fonts.generated.css가 로드하는 명조 스택. var() 사용처 6곳의 무효 폴백 방지. */
+  --font-serif: 'Noto Serif KR Variable', 'Noto Serif KR', 'Nanum Myeongjo', 'Batang', serif;
 }
 
 button {
@@ -351,12 +359,12 @@ body.pickup-buff-active #hint:not(.hidden) {
 }
 
 .clock[data-mode='hard'] {
-  color: #ff8188;
+  color: var(--ui-crimson-bright);
   border-color: rgba(255, 92, 104, 0.42);
 }
 
 .clock[data-mode='endless'] {
-  color: #f0cb7c;
+  color: var(--ui-gold-bright);
   border-color: rgba(224, 178, 92, 0.48);
   text-shadow: 0 0 1rem rgba(224, 178, 92, 0.24);
 }
@@ -1225,10 +1233,27 @@ body.pickup-buff-active #hint:not(.hidden) {
 }
 
 .mainmenu-difficulty i {
-  color: #67def4;
-  font-size: 0.68rem;
+  color: var(--ui-cyan);
+  font-size: max(11px, 0.68rem);
   font-style: normal;
   letter-spacing: 0.08em;
+}
+
+.mainmenu-difficulty:hover:not(:disabled),
+.mainmenu-difficulty:focus-visible {
+  border-color: rgba(192, 207, 209, 0.45);
+  background:
+    linear-gradient(90deg, rgba(116, 188, 205, 0.16), transparent 72%),
+    rgba(10, 16, 21, 0.82);
+}
+
+.mainmenu-difficulty:focus-visible {
+  outline: 2px solid var(--ui-cyan);
+  outline-offset: 2px;
+}
+
+.mainmenu-difficulty:active:not(:disabled) {
+  transform: translateY(1px);
 }
 
 .mainmenu-difficulty[data-mode='hard'] {
@@ -1240,20 +1265,44 @@ body.pickup-buff-active #hint:not(.hidden) {
 
 .mainmenu-difficulty[data-mode='hard'] i,
 .mainmenu-difficulty[data-mode='hard'] b {
-  color: #ff7680;
+  color: var(--ui-crimson-bright);
+}
+
+/* 하드 모드에서는 호버도 적색 문법을 유지한다. 특이성(0-4-0)이 공용
+   호버(0-3-0)보다 높아 청록 배경으로 뒤집히지 않는다. */
+.mainmenu-difficulty[data-mode='hard']:hover:not(:disabled),
+.mainmenu-difficulty[data-mode='hard']:focus-visible {
+  border-color: rgba(238, 94, 104, 0.75);
+  background:
+    linear-gradient(90deg, rgba(182, 47, 57, 0.3), transparent 76%),
+    rgba(20, 10, 13, 0.88);
 }
 
 .mainmenu-difficulty:disabled {
   cursor: not-allowed;
-  opacity: 0.48;
+  /* 전체 opacity를 낮추면 해금 조건 문구가 2.5:1까지 떨어져 읽히지 않는다.
+     배경·테두리만 가라앉히고 텍스트 대비는 유지한다. 배경 alpha는 기본(0.72)
+     이상을 유지해 키아트 밝은 영역 위에서도 대비 계산이 성립하게 한다. */
+  border-color: rgba(192, 207, 209, 0.12);
+  background: rgba(8, 13, 17, 0.78);
+}
+
+.mainmenu-difficulty:disabled b {
+  color: #9aa5ad;
+}
+
+.mainmenu-difficulty:disabled em,
+.mainmenu-difficulty:disabled small,
+.mainmenu-difficulty:disabled i {
+  color: #8a94a2;
 }
 
 .mainmenu-action.legacy::before {
-  background: #d7af62;
+  background: var(--ui-gold);
 }
 
 .mainmenu-action.legacy .action-copy small {
-  color: #c6a96e;
+  color: var(--ui-gold-dim);
 }
 
 .mainmenu-action span,
@@ -1993,7 +2042,7 @@ body.pickup-buff-active #hint:not(.hidden) {
 
 .meta-heading > div:first-child > span,
 .meta-section > header span {
-  color: #d7af62;
+  color: var(--ui-gold);
   font-size: 0.58rem;
   font-weight: 780;
   letter-spacing: 0.2em;
@@ -2015,14 +2064,14 @@ body.pickup-buff-active #hint:not(.hidden) {
 .meta-currency {
   min-width: 9rem;
   padding: 0.72rem 0.85rem;
-  border-left: 2px solid #d7af62;
+  border-left: 2px solid var(--ui-gold);
   background: linear-gradient(90deg, rgba(215, 175, 98, 0.12), transparent);
   text-align: right;
 }
 
 .meta-currency small {
   display: block;
-  color: #aa956e;
+  color: var(--ui-gold-dim);
   font-size: 0.56rem;
   letter-spacing: 0.12em;
 }
@@ -2030,7 +2079,7 @@ body.pickup-buff-active #hint:not(.hidden) {
 .meta-currency strong {
   display: block;
   margin-top: 0.18rem;
-  color: #f0d99e;
+  color: var(--ui-gold-bright);
   font-family: var(--font-serif);
   font-size: 1.5rem;
 }
@@ -2140,7 +2189,7 @@ body.pickup-buff-active #hint:not(.hidden) {
 .meta-unlock-card small {
   display: block;
   min-height: 1.2em;
-  color: #c6a96e;
+  color: var(--ui-gold-dim);
   font-size: 0.56rem;
 }
 
@@ -2162,7 +2211,7 @@ body.pickup-buff-active #hint:not(.hidden) {
 }
 
 .meta-rank i[data-filled='true'] {
-  background: #d7af62;
+  background: var(--ui-gold);
   box-shadow: 0 0 8px rgba(215, 175, 98, 0.35);
 }
 
@@ -2175,15 +2224,22 @@ body.pickup-buff-active #hint:not(.hidden) {
   color: #b9c2cb;
   background: rgba(10, 16, 23, 0.86);
   font: inherit;
-  font-size: 0.58rem;
+  font-size: max(11px, 0.58rem);
   font-weight: 720;
   letter-spacing: 0.04em;
+}
+
+/* 월광이 모자란 활성 버튼도 키보드 포커스는 보여야 한다. */
+.meta-stat-card button:focus-visible,
+.meta-unlock-card button:focus-visible {
+  outline: 2px solid var(--ui-line-strong);
+  outline-offset: 2px;
 }
 
 .meta-stat-card button[data-affordable='true'],
 .meta-unlock-card button[data-affordable='true'] {
   border-color: rgba(215, 175, 98, 0.7);
-  color: #f0d99e;
+  color: var(--ui-gold-bright);
   cursor: pointer;
 }
 
@@ -2191,15 +2247,16 @@ body.pickup-buff-active #hint:not(.hidden) {
 .meta-stat-card button[data-affordable='true']:focus-visible,
 .meta-unlock-card button[data-affordable='true']:hover,
 .meta-unlock-card button[data-affordable='true']:focus-visible {
-  outline: 2px solid #d7af62;
+  outline: 2px solid var(--ui-gold);
   outline-offset: 2px;
   background: rgba(58, 44, 22, 0.68);
 }
 
 .meta-stat-card button:disabled,
 .meta-unlock-card button:disabled {
-  color: #6f7881;
-  opacity: 0.72;
+  /* '완료/해금 완료'는 진행 상태 정보다. opacity 중첩 없이 4.5:1 이상을 유지한다. */
+  color: #8a94a2;
+  border-color: rgba(177, 194, 211, 0.12);
 }
 
 .meta-back {
@@ -2225,14 +2282,14 @@ body.pickup-buff-active #hint:not(.hidden) {
 }
 
 .meta-run-reward span {
-  color: #c6a96e;
+  color: var(--ui-gold-dim);
   font-size: 0.54rem;
   font-weight: 780;
   letter-spacing: 0.14em;
 }
 
 .meta-run-reward strong {
-  color: #f0d99e;
+  color: var(--ui-gold-bright);
   font-family: var(--font-serif);
   font-size: 1.2rem;
 }
@@ -2801,7 +2858,7 @@ body.pickup-buff-active #hint:not(.hidden) {
   background:
     linear-gradient(90deg, rgba(86, 199, 232, 0.08), transparent 72%),
     rgba(8, 13, 20, 0.84);
-  border: 1px solid #3a4654;
+  border: 1px solid var(--ui-line);
   border-left: 3px solid var(--ui-cyan);
   box-shadow: 4px 4px 0 rgba(0, 0, 0, 0.32);
 }
@@ -3202,6 +3259,15 @@ body.pickup-buff-active #hint:not(.hidden) {
   flex: 1.45;
   border: var(--ui-hairline) solid color-mix(in srgb, var(--accent) 72%, #58616d);
   background: #1d232c;
+}
+
+.outcome .endless {
+  flex: 1.25;
+  border: var(--ui-hairline) solid var(--ui-gold-deep);
+  color: var(--ui-gold-bright);
+  background:
+    linear-gradient(135deg, rgba(200, 151, 73, 0.18), transparent 70%),
+    #1b1711;
 }
 
 .outcome .menu {
@@ -3774,7 +3840,10 @@ body.pickup-buff-active #hint:not(.hidden) {
   .charselect-settings,
   .outcome,
   .outcome .restart,
-  .outcome .menu {
+  .outcome .endless,
+  .outcome .menu,
+  .meta-overlay,
+  .mainmenu-difficulty {
     animation: none;
     transition: none;
   }
@@ -5169,15 +5238,6 @@ body.pickup-buff-active #hint:not(.hidden) {
   --family-secondary: #b7f5ff;
 }
 
-.outcome .endless {
-  flex: 1.25;
-  border: var(--ui-hairline) solid #9b7342;
-  color: #f2d9a5;
-  background:
-    linear-gradient(135deg, rgba(200, 151, 73, 0.18), transparent 70%),
-    #1b1711;
-}
-
 .lvcard[data-family='sword-art'] {
   --family-accent: #f37889;
   --family-secondary: #ffc0c8;
@@ -5625,7 +5685,8 @@ body.pickup-buff-active #hint:not(.hidden) {
 .run-info small,
 .skillbar .slot .key,
 .bossbar .boss-phase {
-  font-size: max(9px, 0.55rem);
+  /* 375px 모바일 클램프(1rem≈11.5px)에서도 10px 밑으로 내려가지 않게 한다. */
+  font-size: max(10px, 0.55rem);
 }
 
 .run-info b,
@@ -5672,6 +5733,178 @@ body.pickup-buff-active #hint:not(.hidden) {
 .mainmenu-action .action-copy small,
 .record-empty {
   font-size: max(10px, 0.66rem);
+}
+
+/* --- 전투 필수: 보스 배너·레벨업 카드·스킬 툴팁 -------------------------
+
+   규칙: max()의 rem은 반드시 원본 선언과 같은 값을 쓴다. 값을 바꾸면
+   "하한"이 아니라 대화면 리사이징이 되어 1080p 이상에서 원본 크기가 틀어진다. */
+
+.boss-arrival small {
+  font-size: max(12px, 0.68rem);
+}
+
+.boss-arrival span {
+  font-size: max(10px, 0.66rem);
+}
+
+.skill-tooltip-key {
+  font-size: max(11px, 0.72rem);
+}
+
+.lvcard .hotkey,
+.lvcard .tag {
+  font-size: max(10px, 0.61rem);
+}
+
+.lvcard .slot-label {
+  font-size: max(10px, 0.59rem);
+}
+
+.levelup .banner .lv {
+  font-size: max(10px, 0.65rem);
+}
+
+.lvcard h3,
+.outcome h2 {
+  word-break: keep-all;
+}
+
+/* --- 달의 유산(메타)·난이도·결과 화면 ----------------------------------- */
+
+.meta-heading > div:first-child > span,
+.meta-section > header span,
+.mainmenu-difficulty small,
+.settings-toggle .toggle-state {
+  font-size: max(10px, 0.58rem);
+}
+
+.meta-summary small,
+.meta-stat-card header span,
+.meta-unlock-card header span {
+  font-size: max(10px, 0.52rem);
+}
+
+.meta-run-reward span,
+.outcome .restart small,
+.outcome .endless small,
+.outcome .menu small,
+.record-class > header span {
+  font-size: max(10px, 0.54rem);
+}
+
+.meta-currency small,
+.meta-unlock-card small {
+  font-size: max(10px, 0.56rem);
+}
+
+.meta-run-reward p,
+.menu-eyebrow {
+  font-size: max(10px, 0.62rem);
+}
+
+.meta-heading p {
+  font-size: max(11px, 0.78rem);
+}
+
+.meta-stat-card p,
+.meta-unlock-card p {
+  font-size: max(11px, 0.65rem);
+}
+
+.meta-summary b {
+  font-size: max(11px, 0.82rem);
+}
+
+.mainmenu-difficulty em {
+  font-size: max(11px, 0.72rem);
+}
+
+.outcome .eyebrow {
+  font-size: max(10px, 0.65rem);
+}
+
+.scoreboard .total .label {
+  font-size: max(11px, 0.72rem);
+}
+
+.scoreboard .records h3 {
+  font-size: max(11px, 0.7rem);
+}
+
+.record-class table {
+  font-size: max(11px, 0.64rem);
+}
+
+.build-manifest > header span,
+.build-skill small {
+  font-size: max(9px, 0.52rem);
+}
+
+.build-counters span {
+  font-size: max(9px, 0.5rem);
+}
+
+.build-evolution span {
+  font-size: max(9px, 0.46rem);
+}
+
+.build-skill-heading span {
+  font-size: max(9px, 0.42rem);
+}
+
+.build-manifest > header code {
+  font-size: max(10px, 0.58rem);
+}
+
+.build-evolution strong {
+  font-size: max(10px, 0.56rem);
+}
+
+/* --- 설정·오버레이 메뉴 -------------------------------------------------- */
+
+.menu-button small {
+  font-size: max(10px, 0.53rem);
+}
+
+.cast-mode-settings legend {
+  font-size: max(10px, 0.64rem);
+}
+
+.settings-value {
+  font-size: max(11px, 0.68rem);
+}
+
+.cast-mode-copy strong {
+  font-size: max(11px, 0.7rem);
+}
+
+.mainmenu-vertical {
+  font-size: max(9px, 0.55rem);
+}
+
+.charcard .select-label span {
+  font-size: max(10px, 0.72rem);
+}
+
+/* 하드 모드 배수 행 — outcome.ts가 부여하는 class="row hard"의 시각 대응. */
+.scoreboard .row.hard span:first-child {
+  color: var(--ui-crimson-bright);
+}
+
+/* 아이콘 로드 후 폴백 글리프를 실제로 숨긴다. 저자 display:grid가
+   UA의 [hidden] 규칙을 이겨 레이아웃에 계속 참여하던 문제의 종결. */
+.skillbar .slot .glyph-fallback[hidden] {
+  display: none;
+}
+
+/* 메타 화면 구매 버튼도 코어스 포인터에서 44px 터치 타깃을 지킨다. */
+@media (pointer: coarse) {
+  .meta-stat-card button,
+  .meta-unlock-card button,
+  .mainmenu-difficulty {
+    min-height: 44px;
+  }
 }
 
 .settings-volume input[type='range'] {

@@ -44,7 +44,6 @@ export class Hud {
   private readonly surgeInstruction: HTMLElement
   private readonly runInfo: HTMLDivElement
   private readonly runKills: HTMLElement
-  private readonly runLevel: HTMLElement
   private readonly runRelics: HTMLElement
   private readonly damageVignette: HTMLDivElement
 
@@ -120,13 +119,13 @@ export class Hud {
 
     this.runInfo = document.createElement('div')
     this.runInfo.className = 'run-info'
+    // 레벨은 플레이어 머리 위 플로팅 배지가 이미 보여준다. 여기서 중복 표기하지
+    // 않고, 라벨은 인게임 표기 원칙대로 국문으로 통일한다.
     this.runInfo.innerHTML =
-      `<span><small>KOs</small><b data-run-kills>000</b></span>` +
-      `<span><small>LV</small><b data-run-level>01</b></span>` +
+      `<span><small>처치</small><b data-run-kills>000</b></span>` +
       `<span><small>인장</small><b data-run-relics>0/${ELITE_SPAWN_TIMES.length}</b></span>`
     this.runInfo.setAttribute('aria-label', '런 전황')
     this.runKills = this.runInfo.querySelector('[data-run-kills]')!
-    this.runLevel = this.runInfo.querySelector('[data-run-level]')!
     this.runRelics = this.runInfo.querySelector('[data-run-relics]')!
     parent.appendChild(this.runInfo)
 
@@ -207,7 +206,6 @@ export class Hud {
     if (level !== this.lastLevel) {
       this.lastLevel = level
       this.lv.textContent = String(level)
-      this.runLevel.textContent = String(level).padStart(2, '0')
       runInfoChanged = true
     }
     if (world.kills !== this.lastKills) {
@@ -290,7 +288,7 @@ export class Hud {
     const ss = wholeSeconds % 60
     this.clock.textContent =
       `${world.endless ? '∞ ' : ''}${mm}:${String(ss).padStart(2, '0')}` +
-      `${world.runConfig.difficulty === 'hard' ? ' · HARD' : ''}`
+      `${world.runConfig.difficulty === 'hard' ? ' · 하드' : ''}`
     this.clock.dataset.mode = world.endless
       ? 'endless'
       : world.runConfig.difficulty

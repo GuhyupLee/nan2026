@@ -245,9 +245,14 @@ export function showCharacterSelect(
       done = true
       cancelPreview()
       window.removeEventListener('keydown', onKey)
-      root.classList.add('closing')
-      // 페이드가 끝난 뒤 제거한다. 바로 지우면 전환이 툭 끊긴다.
-      window.setTimeout(() => root.remove(), 420)
+      // 모션 감소 설정에서는 페이드가 없으므로 즉시 지운다. 그 외에는
+      // 페이드가 끝난 뒤 제거한다 — 바로 지우면 전환이 툭 끊긴다.
+      if (window.matchMedia('(prefers-reduced-motion: reduce)').matches) {
+        root.remove()
+      } else {
+        root.classList.add('closing')
+        window.setTimeout(() => root.remove(), 420)
+      }
       resolve(id)
     }
 

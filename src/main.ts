@@ -5,6 +5,7 @@ import { InputState, applyPointerMove } from './input.ts'
 import { Renderer } from './render/renderer.ts'
 import {
   ensureVrm,
+  getVrmLoadProgress,
   preloadVrm,
   shouldUseVrmModels,
 } from './render/vrm-rig.ts'
@@ -661,7 +662,12 @@ async function start(): Promise<void> {
 
   // 아직 안 받았으면 여기서 기다린다. 실패해도 false가 올 뿐이고,
   // createCharacterRig가 프로시저럴 모델로 폴백하므로 판은 그대로 시작된다.
-  if (useVrmModels && !(await withLoadingScreen(ensureVrm(playerClass)))) {
+  if (
+    useVrmModels &&
+    !(await withLoadingScreen(ensureVrm(playerClass), () =>
+      getVrmLoadProgress(playerClass),
+    ))
+  ) {
     console.warn('[vrm] 모델을 못 받아 프로시저럴 캐릭터로 시작합니다')
   }
 
@@ -676,19 +682,45 @@ async function start(): Promise<void> {
 /**
  * 약속이 200ms 안에 끝나면 아무것도 띄우지 않는다.
  * 캐시가 살아 있는 두 번째 실행에서 로딩 화면이 깜빡이는 것이 더 나쁘다.
+ *
+ * @param progress 0..1 진행률 게터. 있으면 부정형 슬라이드 대신 실제 바를 채운다 —
+ *                 20MB급 모델을 기다리는 화면에서 "멈췄나?"라는 의심을 없앤다.
  */
-async function withLoadingScreen<T>(promise: Promise<T>): Promise<T> {
+async function withLoadingScreen<T>(
+  promise: Promise<T>,
+  progress?: () => number,
+): Promise<T> {
   let shown = false
+  let progressTimer = 0
   const timer = window.setTimeout(() => {
     shown = true
-    bootEl.innerHTML = '<h1>캐릭터를 불러오는 중…</h1>'
+    bootEl.innerHTML =
+      '<h1>캐릭터를 불러오는 중…</h1>' +
+      '<div class="bar"></div>' +
+      (progress ? '<p data-loading-pct hidden></p>' : '')
     bootEl.classList.remove('hidden')
     bootEl.removeAttribute('aria-hidden')
+
+    if (progress) {
+      const bar = bootEl.querySelector<HTMLElement>('.bar')!
+      const pct = bootEl.querySelector<HTMLElement>('[data-loading-pct]')!
+      progressTimer = window.setInterval(() => {
+        const value = Math.round(Math.max(0, Math.min(1, progress())) * 100)
+        // Content-Length가 없는 서버에서는 진행률이 영영 0이다. 그때는
+        // 부정형 슬라이드를 유지하는 편이 "0%에 얼어붙은 바"보다 낫다.
+        if (value <= 0) return
+        bar.dataset.progress = ''
+        pct.hidden = false
+        bar.style.setProperty('--progress', `${value}%`)
+        pct.textContent = `${value}%`
+      }, 120)
+    }
   }, 200)
   try {
     return await promise
   } finally {
     window.clearTimeout(timer)
+    if (progressTimer) window.clearInterval(progressTimer)
     if (shown) {
       bootEl.classList.add('hidden')
       bootEl.setAttribute('aria-hidden', 'true')

@@ -1,3 +1,5 @@
+import type { RunDifficulty } from '../sim/types.ts'
+
 /**
  * 키아트를 전면에 둔 메인 메뉴.
  *
@@ -84,7 +86,7 @@ export function showMainMenu(
               ? '적 속도 +10% · 접촉 피해 +25% · 점수 ×1.5'
               : '안정적인 5분 보스전'
             : '보스 최초 격파 후 해금'
-        }</em><i aria-hidden="true">${hardModeUnlocked ? '↔' : 'LOCKED'}</i>`
+        }</em><i aria-hidden="true">${hardModeUnlocked ? '↔' : '잠김'}</i>`
     }
     renderDifficulty()
     content.appendChild(difficulty)
@@ -142,6 +144,12 @@ export function showMainMenu(
       if (done || subviewOpen) return
       done = true
       window.removeEventListener('keydown', onNumberShortcut)
+      // 모션 감소 설정에서는 퇴장 애니메이션이 없으므로 220ms를 기다리지 않는다.
+      if (window.matchMedia('(prefers-reduced-motion: reduce)').matches) {
+        root.remove()
+        resolve(selectedDifficulty)
+        return
+      }
       root.classList.add('closing')
       window.setTimeout(() => {
         root.remove()
@@ -200,6 +208,15 @@ export function showMainMenu(
       if (event.code === 'Digit1' || event.code === 'Numpad1') {
         event.preventDefault()
         finish()
+      } else if (
+        (event.code === 'Enter' || event.code === 'NumpadEnter') &&
+        !(document.activeElement instanceof HTMLButtonElement)
+      ) {
+        // "게임 시작 · ENTER" 안내의 약속. 배경 클릭으로 버튼 포커스를 잃어도
+        // Enter는 항상 시작으로 이어져야 한다. 버튼에 포커스가 있으면 기본
+        // 동작(해당 버튼 활성화)에 맡긴다.
+        event.preventDefault()
+        finish()
       } else if (event.code === 'Digit2' || event.code === 'Numpad2') {
         event.preventDefault()
         void openRecords()
@@ -230,4 +247,3 @@ export function showMainMenu(
     start.focus()
   })
 }
-import type { RunDifficulty } from '../sim/types.ts'

@@ -471,10 +471,25 @@ function disposeAllUnusedVrms(): void {
   for (const cls of ready.keys()) disposeUnusedVrm(cls)
 }
 
+/** 클래스별 다운로드 진행률 0..1. 로딩 화면이 폴링해 바를 채운다. */
+const loadProgress = new Map<PlayerClass, number>()
+
+export function getVrmLoadProgress(cls: PlayerClass): number {
+  if (ready.has(cls)) return 1
+  return loadProgress.get(cls) ?? 0
+}
+
 async function load(cls: PlayerClass): Promise<VRM | null> {
   const url = `${import.meta.env.BASE_URL}${MODEL_URL[cls]}`
+  // 이전 성공/실패가 남긴 값에서 시작하면 바가 100%에서 뒤로 점프한다.
+  loadProgress.set(cls, 0)
   try {
-    const gltf = await loader.loadAsync(url)
+    const gltf = await loader.loadAsync(url, (event) => {
+      // 파싱 시간이 남아 있으므로 다운로드만으로 100%를 선언하지 않는다.
+      if (event.lengthComputable && event.total > 0) {
+        loadProgress.set(cls, Math.min(0.96, event.loaded / event.total))
+      }
+    })
     const vrm = gltf.userData.vrm as VRM | undefined
     if (!vrm) return null
 
@@ -505,6 +520,7 @@ async function load(cls: PlayerClass): Promise<VRM | null> {
     }
 
     ready.set(cls, vrm)
+    loadProgress.set(cls, 1)
     return vrm
   } catch (err) {
     // 파일이 없는 건 정상 경로다 — 프로시저럴 모델로 조용히 폴백한다.
