@@ -35,6 +35,43 @@ export interface SkillDef {
   cooldown: number
 }
 
+/** 전투 브리핑과 패시브 HUD가 함께 쓰는 클래스 고유 자동 효과. */
+export interface PassiveDef {
+  id: 'p'
+  key: 'P'
+  name: string
+  tag: '자동'
+  oneLiner: string
+  detail: string
+  icon: string
+  glyph: string
+}
+
+const PASSIVES: Readonly<Record<PlayerClass, PassiveDef>> = {
+  ranged: {
+    id: 'p',
+    key: 'P',
+    name: '점등',
+    tag: '자동',
+    oneLiner:
+      '스킬로 적을 점등하고, 점등된 적을 평타로 공격하면 추가 피해를 주며 처치하면 회복한다',
+    detail: '스킬 적중으로 표식 · 표식 대상 평타 강화 · 처치 시 회복',
+    icon: 'art/myeongwol-mark.webp',
+    glyph: '✦',
+  },
+  melee: {
+    id: 'p',
+    key: 'P',
+    name: '참흔 · 월참',
+    tag: '자동',
+    oneLiner:
+      '적 가까이에 머무르면 참흔이 차오르고, 가득 차면 다음 평타가 광역 월참이 된다',
+    detail: '적 가까이에서 자동 충전 · 100%에서 다음 평타 광역 강화',
+    icon: 'art/myeongwol-mark.webp',
+    glyph: '☾',
+  },
+}
+
 /** 일현(日弦) — 먼 지점을 낙점하고 마지막에 전장을 가르는 클래스다. */
 const RANGED: Record<string, SkillDef> = {
   q: {
@@ -184,6 +221,10 @@ export function getSkillDef(cls: PlayerClass, id: SkillId): SkillDef | undefined
 export function getClassSkills(cls: PlayerClass): SkillDef[] {
   const t = cls === 'melee' ? MELEE : RANGED
   return ['q', 'w', 'e', 'r'].map((k) => t[k]!)
+}
+
+export function getPassiveDef(cls: PlayerClass): PassiveDef {
+  return PASSIVES[cls]
 }
 
 function formatDamage(value: number): string {

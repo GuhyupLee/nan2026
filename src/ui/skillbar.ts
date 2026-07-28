@@ -1,4 +1,8 @@
-import { getSkillDamageBreakdown, getSkillDef } from '../content/skills.ts'
+import {
+  getPassiveDef,
+  getSkillDamageBreakdown,
+  getSkillDef,
+} from '../content/skills.ts'
 import { getUpgradeBranchPresentation, hasUpgradeTrait } from '../content/upgrades.ts'
 import {
   MAX_SKILL_RANK,
@@ -163,7 +167,7 @@ export class SkillBar {
     passiveMode.className = 'passive-mode-badge'
     passiveMode.textContent = '자동'
     passiveFace.key.append(passiveKey, passiveMode)
-    passiveFace.icon.src = `${import.meta.env.BASE_URL}art/myeongwol-mark.webp`
+    passiveFace.icon.src = `${import.meta.env.BASE_URL}${getPassiveDef('ranged').icon}`
     passiveFace.icon.hidden = false
     passiveFace.fallback.hidden = true
     passiveFace.icon.onerror = () => {
@@ -625,6 +629,16 @@ export class SkillBar {
     this.currentClass = playerClass
     this.root.dataset.class = playerClass
 
+    const passiveDef = getPassiveDef(playerClass)
+    this.passive.icon.src = `${import.meta.env.BASE_URL}${passiveDef.icon}`
+    this.passive.icon.hidden = false
+    this.passive.fallback.textContent = passiveDef.glyph
+    this.passive.fallback.hidden = true
+    this.passive.root.setAttribute(
+      'aria-label',
+      `P 패시브 ${passiveDef.name}. ${passiveDef.oneLiner}`,
+    )
+
     for (const view of this.slots) {
       const def = getSkillDef(playerClass, view.meta.id)
       if (!def) continue
@@ -862,14 +876,15 @@ function appendSlotFace(
 
 function passivePresentation(world: World, markedEnemies: number): PassivePresentation {
   const stats = world.stats
+  const passiveDef = getPassiveDef(world.playerClass)
   if (world.playerClass === 'ranged') {
     const marked = Math.max(0, markedEnemies)
     const litDamage = effectiveAtkDamage(stats) + stats.markBonus
     return {
       metric: 'count',
-      name: '점등',
+      name: passiveDef.name,
       tag: '원거리 패시브',
-      description: '스킬 적중으로 적을 표식하고, 표식 대상을 향한 평타를 점등합니다.',
+      description: passiveDef.oneLiner,
       detail:
         marked > 0
           ? `점등 평타 ${formatValue(litDamage)} · 처치 회복 ${formatValue(stats.markKillHeal)}`
@@ -893,17 +908,17 @@ function passivePresentation(world: World, markedEnemies: number): PassivePresen
   const swipeDamage = effectiveAtkDamage(stats) * 1.45
   return {
     metric: 'gauge',
-    name: empowered ? '월참' : '참흔',
+    name: empowered ? '월참' : passiveDef.name,
     tag: '근거리 패시브',
-    description: '근처 적을 베어 참흔을 축적하고, 가득 차면 다음 평타를 월참으로 강화합니다.',
+    description: passiveDef.oneLiner,
     detail: empowered
       ? `다음 평타 광역 ${formatValue(swipeDamage)} · QWE 재사용 단축`
-      : `근처 적을 베어 축적 · 월참 ${formatValue(swipeDamage)}`,
+      : `적 가까이에서 자동 충전 · 월참 ${formatValue(swipeDamage)}`,
     actual: `월참 피해 ${formatValue(swipeDamage)}`,
     status: empowered ? '월참 준비 완료' : `참흔 ${Math.round(gauge)}%`,
     enhancement: empowered
       ? '다음 평타 광역 · QWE 재사용 단축'
-      : '근접 공격으로 참흔 축적',
+      : '적 가까이에서 참흔 자동 충전',
     displayValue: empowered ? '준비' : String(Math.round(gauge)),
     ready: empowered,
     progress: empowered ? 1 : gauge / 100,

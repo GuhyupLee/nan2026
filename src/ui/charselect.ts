@@ -1,3 +1,4 @@
+import { getPassiveDef } from '../content/skills.ts'
 import type { PlayerClass } from '../sim/types.ts'
 
 /**
@@ -61,19 +62,6 @@ export const CLASS_OPTIONS: ClassOption[] = [
   },
 ]
 
-const PASSIVE_PREVIEW: Readonly<
-  Record<PlayerClass, { name: string; description: string }>
-> = {
-  ranged: {
-    name: '점등',
-    description: '스킬로 새긴 점등을 평타로 터뜨리고, 처치하면 회복합니다.',
-  },
-  melee: {
-    name: '참흔 · 월참',
-    description: '베어서 참흔을 채우면 다음 평타가 광역 월참이 됩니다.',
-  },
-}
-
 function createDecisionSummary(option: ClassOption): HTMLElement {
   const summary = document.createElement('div')
   summary.className = 'character-summary'
@@ -105,7 +93,7 @@ function createDecisionSummary(option: ClassOption): HTMLElement {
   strengths.append(strengthsLabel, strengthsList)
   summary.appendChild(strengths)
 
-  const passiveDef = PASSIVE_PREVIEW[option.id]
+  const passiveDef = getPassiveDef(option.id)
   const passive = document.createElement('div')
   passive.className = 'passive-preview passive-summary'
   const passiveLabel = document.createElement('span')
@@ -114,7 +102,7 @@ function createDecisionSummary(option: ClassOption): HTMLElement {
   const passiveName = document.createElement('strong')
   passiveName.textContent = passiveDef.name
   const passiveCopy = document.createElement('p')
-  passiveCopy.textContent = passiveDef.description
+  passiveCopy.textContent = passiveDef.oneLiner
   passive.append(passiveLabel, passiveName, passiveCopy)
   summary.appendChild(passive)
 
@@ -209,8 +197,8 @@ export function showCharacterSelect(
     const foot = document.createElement('div')
     foot.className = 'footnote'
     foot.textContent = window.matchMedia('(pointer: coarse)').matches
-      ? '카드를 눌러 고른 뒤 시작 버튼으로 확정'
-      : '카드를 선택한 뒤 시작 버튼으로 확정 · 숫자 1 / 2 빠른 선택'
+      ? '카드를 고른 뒤 스킬을 확인하고 전투 시작'
+      : '카드 선택 → 스킬 확인 → 전투 시작 · 숫자 1 / 2 빠른 선택'
     root.appendChild(foot)
 
     const choose = (id: PlayerClass): void => {
@@ -218,15 +206,23 @@ export function showCharacterSelect(
       done = true
       cancelPreview()
       window.removeEventListener('keydown', onKey)
-      // 모션 감소 설정에서는 페이드가 없으므로 즉시 지운다. 그 외에는
-      // 페이드가 끝난 뒤 제거한다 — 바로 지우면 전환이 툭 끊긴다.
-      if (window.matchMedia('(prefers-reduced-motion: reduce)').matches) {
+      const finish = (): void => {
         root.remove()
-      } else {
-        root.classList.add('closing')
-        window.setTimeout(() => root.remove(), 420)
+        resolve(id)
       }
-      resolve(id)
+      // 다음 모달은 이 선택창이 완전히 사라진 뒤 연다. 두 aria-modal과 같은
+      // 제목 ID가 잠시라도 겹치면 빠른 Escape에서 포커스가 이전 창으로 샌다.
+      if (window.matchMedia('(prefers-reduced-motion: reduce)').matches) {
+        finish()
+      } else {
+        const active = document.activeElement
+        if (active instanceof HTMLElement && root.contains(active)) active.blur()
+        root.inert = true
+        root.setAttribute('aria-hidden', 'true')
+        root.removeAttribute('aria-modal')
+        root.classList.add('closing')
+        window.setTimeout(finish, 280)
+      }
     }
 
     const cardControls = new Map<
@@ -269,14 +265,14 @@ export function showCharacterSelect(
       card.setAttribute('role', 'listitem')
       card.style.setProperty('--accent', opt.accent)
       card.dataset.class = opt.id
-      const passive = PASSIVE_PREVIEW[opt.id]
+      const passive = getPassiveDef(opt.id)
       const strengths = opt.traits.slice(0, 2)
       card.setAttribute(
         'aria-label',
         `${opt.name}, ${opt.epithet}. 플레이 스타일: ${opt.tagline}. ` +
           `강점: ${strengths.join(', ')}. ` +
-          `패시브 ${passive.name}: ${passive.description}. ` +
-          `선택한 뒤 시작 버튼으로 확정합니다.`,
+          `패시브 ${passive.name}: ${passive.oneLiner}. ` +
+          `선택한 뒤 스킬을 확인하고 전투를 시작합니다.`,
       )
 
       const img = document.createElement('img')
@@ -318,8 +314,8 @@ export function showCharacterSelect(
       confirm.className = 'character-confirm'
       confirm.type = 'button'
       confirm.disabled = true
-      confirm.textContent = `${opt.name} 선택 · 시작`
-      confirm.setAttribute('aria-label', `${opt.name} 선택 후 게임 시작`)
+      confirm.textContent = `${opt.name} 선택 · 스킬 확인`
+      confirm.setAttribute('aria-label', `${opt.name} 선택 후 스킬 확인`)
       confirm.addEventListener('click', (event) => {
         event.stopPropagation()
         choose(opt.id)

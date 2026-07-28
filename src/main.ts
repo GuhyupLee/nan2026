@@ -36,6 +36,7 @@ import { BossBar } from './ui/bossbar.ts'
 import { showCharacterSelect } from './ui/charselect.ts'
 import { Hud } from './ui/hud.ts'
 import { showLevelUp } from './ui/levelup.ts'
+import { showLoadoutBriefing } from './ui/loadout-briefing.ts'
 import { showMainMenu } from './ui/mainmenu.ts'
 import {
   createRunMetaSnapshot,
@@ -710,20 +711,38 @@ async function start(): Promise<void> {
   void audio.unlock()
   audio.ui('select')
   requestMenuWarmup()
-  const playerClass = await showCharacterSelect(
-    document.body,
-    undefined,
-    () => showSettings(document.body, audio, input),
-    useVrmModels ? preloadVrm : undefined,
-  )
-  void audio.unlock()
-  audio.ui('select')
+  const selection = await (async (): Promise<{
+    playerClass: PlayerClass
+    modelReady: Promise<boolean> | null
+  }> => {
+    while (true) {
+      const playerClass = await showCharacterSelect(
+        document.body,
+        undefined,
+        () => showSettings(document.body, audio, input),
+        useVrmModels ? preloadVrm : undefined,
+      )
+      void audio.unlock()
+      audio.ui('select')
+
+      // 사용자가 일곱 슬롯을 읽는 동안 선택한 모델도 함께 준비한다. 브리핑을
+      // 닫은 뒤 로딩 화면이 다시 끼어드는 시간을 대부분 없앤다.
+      const modelReady = useVrmModels ? ensureVrm(playerClass) : null
+      const decision = await showLoadoutBriefing(document.body, playerClass)
+      void audio.unlock()
+      audio.ui(decision === 'start' ? 'select' : 'back')
+      if (decision === 'back') continue
+      return { playerClass, modelReady }
+    }
+  })()
+  const { playerClass, modelReady } = selection
 
   // 아직 안 받았으면 여기서 기다린다. 실패해도 false가 올 뿐이고,
   // createCharacterRig가 프로시저럴 모델로 폴백하므로 판은 그대로 시작된다.
   if (
     useVrmModels &&
-    !(await withLoadingScreen(ensureVrm(playerClass), () =>
+    modelReady &&
+    !(await withLoadingScreen(modelReady, () =>
       getVrmLoadProgress(playerClass),
     ))
   ) {
