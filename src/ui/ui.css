@@ -4254,11 +4254,11 @@ body.pickup-buff-active #hint:not(.hidden) {
 }
 
 .charcard[data-class='ranged'] .portrait {
-  object-position: 50% 11%;
+  object-position: 50% 0%;
 }
 
 .charcard[data-class='melee'] .portrait {
-  object-position: 50% 12%;
+  object-position: 50% 18%;
 }
 
 .charcard:hover .portrait,
@@ -4918,18 +4918,6 @@ body.pickup-buff-active #hint:not(.hidden) {
   font-weight: 600;
 }
 
-.kit-utility-copy {
-  margin-top: 0.32rem;
-  display: -webkit-box;
-  overflow: hidden;
-  color: rgba(228, 222, 210, 0.56);
-  font-size: max(9px, 0.49rem);
-  line-height: 1.45;
-  word-break: keep-all;
-  -webkit-box-orient: vertical;
-  -webkit-line-clamp: 2;
-}
-
 .passive-preview {
   position: relative;
   margin-top: 0.42rem;
@@ -5561,7 +5549,6 @@ body.pickup-buff-active #hint:not(.hidden) {
     font-size: 9px;
   }
 
-  .kit-utility-copy,
   .passive-preview p {
     -webkit-line-clamp: 1;
   }
@@ -5605,7 +5592,6 @@ body.pickup-buff-active #hint:not(.hidden) {
     height: 1.05rem;
   }
 
-  .kit-utility-copy,
   .passive-preview p {
     -webkit-line-clamp: 1;
   }

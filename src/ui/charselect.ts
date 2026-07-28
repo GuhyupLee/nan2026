@@ -135,15 +135,6 @@ function createKitPreview(playerClass: PlayerClass): HTMLElement {
   }
   preview.appendChild(utility)
 
-  const d = getSkillDef(playerClass, 'd')
-  const f = getSkillDef(playerClass, 'f')
-  const utilityCopy = document.createElement('p')
-  utilityCopy.className = 'kit-utility-copy'
-  utilityCopy.textContent =
-    `D ${d?.name ?? '회복'} — ${d?.oneLiner ?? '체력을 회복합니다'} · ` +
-    `F ${f?.name ?? '점멸'} — ${f?.oneLiner ?? '순간이동합니다'}`
-  preview.appendChild(utilityCopy)
-
   const passiveDef = PASSIVE_PREVIEW[playerClass]
   const passive = document.createElement('div')
   passive.className = 'passive-preview'
