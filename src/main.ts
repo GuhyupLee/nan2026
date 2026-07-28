@@ -126,6 +126,14 @@ let running = false
 let accumulator = 0
 let lastTime = performance.now()
 
+/** 불투명 메뉴 뒤에서만 두 프레임을 그려 scene/post 셰이더와 렌더 타겟을 예열한다. */
+const MENU_WARMUP_FRAMES = 2
+let menuWarmupFramesLeft = 0
+
+function requestMenuWarmup(): void {
+  menuWarmupFramesLeft = Math.max(menuWarmupFramesLeft, MENU_WARMUP_FRAMES)
+}
+
 // 스탯 표시용
 let fpsAccum = 0
 let fpsFrames = 0
@@ -196,11 +204,15 @@ function frame(now: number): void {
     accumulator / DT,
   )
 
-  // 전면 불투명 오버레이가 떠 있으면 3D를 그릴 이유가 없다 —
-  // 그린 픽셀이 100% 가려져 버려진다. 메인 메뉴·캐릭터 선택·결과 화면이
-  // 그렇고, 특히 저사양 기기에서 이 낭비가 그대로 발열과 프레임으로 온다.
-  // 일시정지·레벨업은 반투명이라 계속 그린다.
-  if (activeRun) renderer.render(world, accumulator / DT)
+  // 전면 불투명 오버레이 뒤에서는 평상시 3D를 쉬되, 메뉴·캐릭터 선택에 들어간
+  // 직후 두 프레임만 실제 렌더한다. 첫 전투 프레임에서 scene/post 셰이더 컴파일과
+  // 렌더 타겟 할당이 한꺼번에 튀는 일을 막고, 이후에는 다시 0 draw로 돌아간다.
+  // 일시정지·레벨업은 activeRun=true인 반투명 오버레이라 계속 그린다.
+  const warmingMenu = !activeRun && menuWarmupFramesLeft > 0
+  if (activeRun || warmingMenu) {
+    renderer.render(world, accumulator / DT)
+    if (warmingMenu) menuWarmupFramesLeft -= 1
+  }
   skillBar.update(world.skills, world.playerClass, world)
   hud.update(world, project, Math.min(rawDt, 0.1))
   bossBar.update(world)
@@ -323,6 +335,7 @@ async function pauseRun(): Promise<void> {
 function beginRun(playerClass: PlayerClass): void {
   running = false
   activeRun = true
+  menuWarmupFramesLeft = 0
   world = createWorld(seed, playerClass)
   choiceOpen = false
   outcomeOpen = false
@@ -388,6 +401,7 @@ function beginRun(playerClass: PlayerClass): void {
 async function start(): Promise<void> {
   activeRun = false
   pauseButton.setVisible(false)
+  requestMenuWarmup()
   // 데스크톱은 캐릭터 모델(각 20MB 안팎)을 메뉴가 떠 있는 동안 미리 받는다.
   // 모바일은 다운로드와 파싱을 건너뛰고 기존 프로시저럴 경량 모델을 쓴다.
   if (useVrmModels) startVrmPreload()
@@ -400,6 +414,7 @@ async function start(): Promise<void> {
   // 오래 보류한다. 사운드는 best-effort 기능이므로 화면 전환을 막지 않는다.
   void audio.unlock()
   audio.ui('select')
+  requestMenuWarmup()
   const playerClass = await showCharacterSelect(document.body, undefined, () =>
     showSettings(document.body, audio, input),
   )

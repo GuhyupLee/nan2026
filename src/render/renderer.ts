@@ -1,6 +1,6 @@
 import * as THREE from 'three'
 
-import { playerActionDuration } from '../sim/action-timing.ts'
+import { playerActionDuration, playerActionTiming } from '../sim/action-timing.ts'
 import { DT } from '../sim/constants.ts'
 import { TYPE_BOSS, TYPE_ELITE } from '../sim/enemies.ts'
 import type { SkillId } from '../sim/skills.ts'
@@ -97,6 +97,7 @@ export class Renderer {
 
   private readonly container: HTMLElement
   private readonly coarsePointer = window.matchMedia('(pointer: coarse)')
+  private readonly reducedMotion = window.matchMedia('(prefers-reduced-motion: reduce)')
   private readonly resizeObserver: ResizeObserver
   private readonly post: PostFx
   private readonly impact: ImpactFx
@@ -418,6 +419,7 @@ export class Renderer {
     // VRMA와 판정은 같은 시뮬레이션 시계를 쓴다. 히트스톱·저프레임에서도
     // 타격 자세와 실제 impactAt이 서로 앞서거나 뒤처지지 않는다.
     this.charRig.update(visualTime, length(p.vel))
+    this.consumeWeaponTrailBursts(world)
     // 리그가 본을 갱신한 **뒤**에 샘플해야 한 프레임 늦지 않는다.
     this.weaponTrail.update(now, dt)
 
@@ -612,6 +614,27 @@ export class Renderer {
       if (hit.enemyType === TYPE_ELITE || hit.enemyType === TYPE_BOSS) continue
       this.impact.popNumber(hit.x, hit.y, hit.amount, 'normal')
       damageNumbers += 1
+    }
+  }
+
+  /**
+   * QWER의 실제 판정 이벤트마다 무기 리본을 정확히 한 번 켠다.
+   *
+   * actionStarts는 입력 시점이라 근접 W의 착지보다 0.32초 빠르다. 반면 CastEvent는
+   * 각 스킬의 impactAt에서 한 번만 발행되므로, 베기·착탄과 리본 시작이 맞는다.
+   * 이 함수는 charRig.update 뒤, trail.update 앞에서 호출해야 직전 포즈부터 현재
+   * 타격 포즈까지의 첫 사각형도 놓치지 않는다.
+   */
+  private consumeWeaponTrailBursts(world: World): void {
+    if (world.casts.length === 0) return
+
+    const motionScale = this.reducedMotion.matches ? 0.42 : this.constrained ? 0.72 : 1
+    for (let i = 0; i < world.casts.length; i++) {
+      const slot = world.casts[i]!.slot
+      if (slot !== 'q' && slot !== 'w' && slot !== 'e' && slot !== 'r') continue
+      const timing = playerActionTiming(world.playerClass, slot)
+      const recovery = Math.max(0.1, timing.duration - timing.impact + 0.06)
+      this.weaponTrail.burst(recovery * motionScale)
     }
   }
 

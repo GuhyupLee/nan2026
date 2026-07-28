@@ -308,6 +308,8 @@ export class WeaponTrail {
 
   /** 리본과 직전 포즈를 통째로 버린다. 리그 교체·판 시작에 쓴다. */
   reset(): void {
+    this.running = false
+    this.burstLeft = 0
     this.clearRibbon()
     this.hasPrev = false
     this.hasPending = false
