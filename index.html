@@ -167,6 +167,11 @@
         line-height: 1.35;
       }
 
+      /* hidden은 작성자 display 규칙에 덮일 수 있으므로 프로덕션 디버그 HUD를 확실히 숨긴다. */
+      #stats[hidden] {
+        display: none !important;
+      }
+
       @media (max-width: 560px) {
         :root {
           --ui-scale: clamp(11px, 3.076923vw, 13px);
