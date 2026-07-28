@@ -1,6 +1,7 @@
 import * as THREE from 'three'
 import {
   createVRMAnimationClip,
+  VRMLookAtQuaternionProxy,
   type VRMAnimation,
 } from '@pixiv/three-vrm-animation'
 import type { VRM } from '@pixiv/three-vrm'
@@ -124,6 +125,17 @@ export class VrmAnimationController {
     private readonly cls: PlayerClass,
     animations: readonly VRMAnimation[],
   ) {
+    if (
+      vrm.lookAt &&
+      !vrm.scene.children.some(
+        (child) => child instanceof VRMLookAtQuaternionProxy,
+      )
+    ) {
+      const lookAtProxy = new VRMLookAtQuaternionProxy(vrm.lookAt)
+      lookAtProxy.name = 'VRMLookAtQuaternionProxy'
+      vrm.scene.add(lookAtProxy)
+    }
+
     this.mixer = new THREE.AnimationMixer(vrm.scene)
 
     for (let index = 0; index < VRMA_CLIP_ORDER.length; index += 1) {
