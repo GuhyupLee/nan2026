@@ -13,7 +13,7 @@ import {
   PLAYER_RADIUS,
   PLAYER_SPEED,
 } from './constants.ts'
-import type { PlayerClass } from './types.ts'
+import type { PlayerClass, RunMetaSnapshot } from './types.ts'
 
 /**
  * 런타임 튜닝 상태 — 강화 카드가 건드리는 단일 진실 원천.
@@ -82,8 +82,16 @@ export interface Stats {
  * 근딜 실효 체력 = 130 / 0.80 ≈ 163, 원딜은 125 / 0.82 ≈ 152이다.
  * 근딜 단일 대상 DPS = 22 / 0.42 ≈ 52. 원딜 46보다 높지만 붙어야만 나온다.
  */
-export function createStats(cls: PlayerClass): Stats {
+export function createStats(
+  cls: PlayerClass,
+  meta?: Pick<RunMetaSnapshot, 'maxHpBonus' | 'speedMultiplier'>,
+): Stats {
   const melee = cls === 'melee'
+  const maxHpBonus = Math.max(0, Math.min(30, meta?.maxHpBonus ?? 0))
+  const speedMultiplier = Math.max(
+    1,
+    Math.min(1.12, meta?.speedMultiplier ?? 1),
+  )
   return {
     // 체력·피해 감소와 요구 포지션을 묶어 클래스 정체성을 만든다.
     //
@@ -91,8 +99,8 @@ export function createStats(cls: PlayerClass): Stats {
     // 원거리도 군중을 상대할 생존 여유가 필요해 기본 체력 격차는 작게 둔다.
     // 근접은 더 높은 피해 감소와 회복으로 붙어서 버티고, 원거리는 거리와
     // 점등 처치 회복으로 위험을 관리한다.
-    maxHp: melee ? 130 : PLAYER_MAX_HP,
-    speed: melee ? 10.5 : PLAYER_SPEED,
+    maxHp: (melee ? 130 : PLAYER_MAX_HP) + maxHpBonus,
+    speed: (melee ? 10.5 : PLAYER_SPEED) * speedMultiplier,
     radius: melee ? 0.62 : PLAYER_RADIUS,
     // 근접은 붙어 있는 것이 일이라 실제로 맞는 시간이 원거리보다 길다
     // (계측: 접촉 약 18%). 실효 체력 차이는 남기되 근접도 보스 패턴을

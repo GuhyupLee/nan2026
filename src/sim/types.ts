@@ -43,6 +43,23 @@ export function createInput(): Input {
  */
 export type PlayerClass = 'ranged' | 'melee'
 
+/**
+ * 한 판이 시작할 때 고정되는 런 간 성장 스냅샷.
+ *
+ * UI 저장소는 이 작은 값으로 변환한 뒤 createWorld에 주입한다. 시뮬레이션은
+ * localStorage를 읽지 않으며, 같은 스냅샷·시드·입력이면 같은 결과를 낸다.
+ */
+export interface RunMetaSnapshot {
+  version: 1
+  maxHpBonus: number
+  speedMultiplier: number
+  unlockedUpgradeIds: readonly string[]
+}
+
+export interface RunConfig {
+  meta: RunMetaSnapshot
+}
+
 export type PlayerActionKind =
   | 'attack'
   | 'empowered'
@@ -270,6 +287,12 @@ export interface World {
   pickupRng: Rng
   arenaRadius: number
   playerClass: PlayerClass
+  /** 시작 시 고정된 메타 보정. 같은 전장 재도전과 기록 재현에 함께 보존한다. */
+  runConfig: RunConfig
+  /** 결과 UI가 같은 런의 보상을 두 번 지급하지 않게 하는 외부 저장 체크포인트. */
+  metaAwardedKills: number
+  metaAwardedMoonlight: number
+  metaVictoryAwarded: boolean
   /** 강화 카드가 건드리는 런타임 스탯. 게임 코드는 상수가 아니라 이걸 읽는다. */
   stats: Stats
   player: Player

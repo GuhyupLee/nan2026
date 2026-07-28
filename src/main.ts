@@ -22,7 +22,7 @@ import { SURGE_BEATS, SURGE_WARNING_DURATION } from './sim/surges.ts'
 import { MAX_LEVEL } from './sim/progression.ts'
 import { rankUpSkill, unlockSkill } from './sim/skills.ts'
 import { createInput } from './sim/types.ts'
-import type { PlayerClass, World } from './sim/types.ts'
+import type { PlayerClass, RunConfig, World } from './sim/types.ts'
 import {
   createWorld,
   drainEvents,
@@ -35,6 +35,11 @@ import { showCharacterSelect } from './ui/charselect.ts'
 import { Hud } from './ui/hud.ts'
 import { showLevelUp } from './ui/levelup.ts'
 import { showMainMenu } from './ui/mainmenu.ts'
+import {
+  createRunMetaSnapshot,
+  loadMetaProgress,
+} from './ui/meta-progression.ts'
+import { showMetaProgress } from './ui/meta.ts'
 import { showOutcome } from './ui/outcome.ts'
 import { PauseButton, showPause, showSettings } from './ui/pause.ts'
 import { showRecords } from './ui/record-viewer.ts'
@@ -249,7 +254,11 @@ function revealOutcome(now: number): void {
     if (action === 'restart') {
       // 결과를 만든 정확한 시드와 클래스를 다시 넘긴다. 메뉴의 새 판 정책이
       // 달라져도 SAME SEED 재도전 계약은 이 경로에서 유지된다.
-      beginRun(transition.restartClass, transition.world.seed)
+      beginRun(
+        transition.restartClass,
+        transition.world.seed,
+        transition.world.runConfig,
+      )
     } else {
       void start()
     }
@@ -443,13 +452,17 @@ async function pauseRun(): Promise<void> {
 }
 
 /** 선택된 캐릭터와 명시한 시드로 새 판을 즉시 시작한다. */
-function beginRun(playerClass: PlayerClass, runSeed = initialSeed): void {
+function beginRun(
+  playerClass: PlayerClass,
+  runSeed = initialSeed,
+  runConfig?: Partial<RunConfig>,
+): void {
   runId += 1
   running = false
   activeRun = true
   menuWarmupFramesLeft = 0
   outcomeTransition = null
-  world = createWorld(runSeed, playerClass)
+  world = createWorld(runSeed, playerClass, runConfig)
   choiceOpen = false
   outcomeOpen = false
   pauseOpen = false
@@ -608,10 +621,16 @@ async function start(): Promise<void> {
   activeRun = false
   pauseButton.setVisible(false)
   requestMenuWarmup()
+  let metaProgress = loadMetaProgress()
   await showMainMenu(
     document.body,
     () => showSettings(document.body, audio, input),
     () => showRecords(document.body),
+    async () => {
+      metaProgress = await showMetaProgress(document.body)
+      return { moonlight: metaProgress.moonlight }
+    },
+    metaProgress.moonlight,
   )
   // 일부 WebView는 AudioContext.resume() Promise를 사용자 제스처가 끝난 뒤에도
   // 오래 보류한다. 사운드는 best-effort 기능이므로 화면 전환을 막지 않는다.
@@ -633,7 +652,11 @@ async function start(): Promise<void> {
     console.warn('[vrm] 모델을 못 받아 프로시저럴 캐릭터로 시작합니다')
   }
 
-  beginRun(playerClass)
+  // 메뉴에서 구매한 내용까지 다시 읽고 작은 불변 스냅샷으로 런에 고정한다.
+  metaProgress = loadMetaProgress()
+  beginRun(playerClass, initialSeed, {
+    meta: createRunMetaSnapshot(metaProgress),
+  })
 }
 
 /**

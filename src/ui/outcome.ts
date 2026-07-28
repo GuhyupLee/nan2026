@@ -7,6 +7,10 @@ import {
   getRunBuildPresentation,
   type RunBuildPresentation,
 } from './run-build.ts'
+import {
+  META_UNLOCKS,
+  awardMetaRun,
+} from './meta-progression.ts'
 
 export type GameOutcome = Exclude<World['outcome'], 'alive'>
 export type OutcomeAction = 'restart' | 'menu'
@@ -162,6 +166,22 @@ export function showOutcome(
     let retryBattlefieldCode: string | null = null
     if (world) {
       const s = computeScore(world)
+      const targetMoonlight = Math.floor(s.total / 100)
+      const moonlightEarned = Math.max(
+        0,
+        targetMoonlight - world.metaAwardedMoonlight,
+      )
+      const killsEarned = Math.max(0, world.kills - world.metaAwardedKills)
+      const bossWinEarned =
+        outcome === 'victory' && !world.metaVictoryAwarded ? 1 : 0
+      const metaAward = awardMetaRun({
+        moonlight: moonlightEarned,
+        kills: killsEarned,
+        bossWins: bossWinEarned,
+      })
+      world.metaAwardedMoonlight += moonlightEarned
+      world.metaAwardedKills += killsEarned
+      world.metaVictoryAwarded ||= bossWinEarned > 0
       const at = Date.now()
       const build = createRunBuildSummary(world)
       const buildView = getRunBuildPresentation(build)
@@ -178,6 +198,10 @@ export function showOutcome(
 
       const score = document.createElement('div')
       score.className = 'scoreboard'
+      const unlockedNames = metaAward.newlyUnlocked.flatMap((id) => {
+        const unlock = META_UNLOCKS.find((candidate) => candidate.id === id)
+        return unlock ? [unlock.name] : []
+      })
       score.innerHTML =
         `<div class="run-report">` +
         `<section class="score-summary" aria-label="전투 성과">` +
@@ -195,7 +219,18 @@ export function showOutcome(
         `</section>` +
         buildManifest(build, buildView) +
         `</div>`
+      const legacy = document.createElement('section')
+      legacy.className = 'meta-run-reward'
+      legacy.setAttribute('aria-label', '월광 전승 보상')
+      legacy.innerHTML =
+        `<div><span>MOONLIGHT</span><strong>+${moonlightEarned.toLocaleString('ko-KR')}</strong></div>` +
+        `<p>보유 월광 ${metaAward.progress.moonlight.toLocaleString('ko-KR')}` +
+        (unlockedNames.length > 0
+          ? ` · 신규 해금 ${unlockedNames.join(' · ')}`
+          : '') +
+        `</p>`
       panel.appendChild(score)
+      panel.appendChild(legacy)
     } else {
       // world 없이 부르는 경로가 남아 있어도 결과 화면 자체는 떠야 한다.
       const records = loadRecords('ranged')

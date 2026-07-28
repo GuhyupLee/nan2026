@@ -65,6 +65,12 @@ export function createRunBuildSummary(world: World): RunBuildSummaryV1 {
     awakeningIds,
     fusionIds,
     seals: Math.max(0, Math.floor(world.relicsClaimed)),
+    meta: {
+      version: 1,
+      maxHpBonus: world.runConfig.meta.maxHpBonus,
+      speedMultiplier: world.runConfig.meta.speedMultiplier,
+      unlockedUpgradeIds: [...world.runConfig.meta.unlockedUpgradeIds],
+    },
   }
 }
 

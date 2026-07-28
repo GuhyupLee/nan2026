@@ -8,6 +8,8 @@ export function showMainMenu(
   parent: HTMLElement,
   onSettings: () => Promise<void> | void,
   onRecords: () => Promise<void> | void,
+  onMeta?: () => Promise<{ moonlight: number }> | { moonlight: number },
+  initialMoonlight = 0,
 ): Promise<void> {
   return new Promise((resolve) => {
     const root = document.createElement('div')
@@ -95,6 +97,21 @@ export function showMainMenu(
       '<span class="action-arrow" aria-hidden="true">＋</span>'
     actions.appendChild(settings)
 
+    let meta: HTMLButtonElement | null = null
+    let metaBalance: HTMLElement | null = null
+    if (onMeta) {
+      meta = document.createElement('button')
+      meta.className = 'mainmenu-action legacy'
+      meta.type = 'button'
+      meta.innerHTML =
+        '<span class="action-index">04</span>' +
+        '<span class="action-copy"><b>월광 전승</b>' +
+        `<small data-meta-balance>월광 ${initialMoonlight.toLocaleString('ko-KR')}</small></span>` +
+        '<span class="action-arrow" aria-hidden="true">＋</span>'
+      metaBalance = meta.querySelector('[data-meta-balance]')
+      actions.appendChild(meta)
+    }
+
     let done = false
     let subviewOpen = false
 
@@ -131,6 +148,20 @@ export function showMainMenu(
       }
     }
 
+    const openMeta = async (): Promise<void> => {
+      if (!onMeta || !meta || done || subviewOpen) return
+      subviewOpen = true
+      try {
+        const next = await onMeta()
+        if (metaBalance) {
+          metaBalance.textContent = `월광 ${next.moonlight.toLocaleString('ko-KR')}`
+        }
+      } finally {
+        subviewOpen = false
+        if (!done) meta.focus()
+      }
+    }
+
     const onNumberShortcut = (event: KeyboardEvent): void => {
       if (
         done ||
@@ -152,12 +183,19 @@ export function showMainMenu(
       } else if (event.code === 'Digit3' || event.code === 'Numpad3') {
         event.preventDefault()
         void openSettings()
+      } else if (
+        onMeta &&
+        (event.code === 'Digit4' || event.code === 'Numpad4')
+      ) {
+        event.preventDefault()
+        void openMeta()
       }
     }
 
     start.addEventListener('click', finish)
     records.addEventListener('click', () => void openRecords())
     settings.addEventListener('click', () => void openSettings())
+    meta?.addEventListener('click', () => void openMeta())
     window.addEventListener('keydown', onNumberShortcut)
     parent.appendChild(root)
     start.focus()

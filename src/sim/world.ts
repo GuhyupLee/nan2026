@@ -54,12 +54,57 @@ import { stepEliteRewardBeats, stepRelicDrops } from './rewards.ts'
 import { createSkillBook, tickSkills, unlockSkill } from './skills.ts'
 import { createStats } from './stats.ts'
 import { stepSurgeBeats } from './surges.ts'
-import type { Input, Player, PlayerClass, World } from './types.ts'
+import type {
+  Input,
+  Player,
+  PlayerClass,
+  RunConfig,
+  RunMetaSnapshot,
+  World,
+} from './types.ts'
 import { length, lerpAngle, normalize, vec2 } from './vec.ts'
 import { createXpGemPool, stepXpGems } from './xp-gems.ts'
 
-export function createWorld(seed: number, playerClass: PlayerClass = 'ranged'): World {
-  const stats = createStats(playerClass)
+const EMPTY_RUN_META: RunMetaSnapshot = {
+  version: 1,
+  maxHpBonus: 0,
+  speedMultiplier: 1,
+  unlockedUpgradeIds: [],
+}
+
+function normalizeRunConfig(config?: Partial<RunConfig>): RunConfig {
+  const source = config?.meta ?? EMPTY_RUN_META
+  const maxHpBonus = Number.isFinite(source.maxHpBonus)
+    ? source.maxHpBonus
+    : 0
+  const speedMultiplier = Number.isFinite(source.speedMultiplier)
+    ? source.speedMultiplier
+    : 1
+  const unlockedUpgradeIds = Array.from(
+    new Set(
+      source.unlockedUpgradeIds.filter(
+        (id): id is string =>
+          typeof id === 'string' && id.length > 0 && id.length <= 80,
+      ),
+    ),
+  ).slice(0, 32)
+  return {
+    meta: {
+      version: 1,
+      maxHpBonus: Math.max(0, Math.min(30, maxHpBonus)),
+      speedMultiplier: Math.max(1, Math.min(1.12, speedMultiplier)),
+      unlockedUpgradeIds,
+    },
+  }
+}
+
+export function createWorld(
+  seed: number,
+  playerClass: PlayerClass = 'ranged',
+  config?: Partial<RunConfig>,
+): World {
+  const runConfig = normalizeRunConfig(config)
+  const stats = createStats(playerClass, runConfig.meta)
 
   const player: Player = {
     pos: vec2(0, 0),
@@ -94,6 +139,10 @@ export function createWorld(seed: number, playerClass: PlayerClass = 'ranged'): 
     pickupRng: createRng((seed ^ 0x51ed270b) >>> 0),
     arenaRadius: ARENA_RADIUS,
     playerClass,
+    runConfig,
+    metaAwardedKills: 0,
+    metaAwardedMoonlight: 0,
+    metaVictoryAwarded: false,
     stats,
     player,
     playerAction: null,

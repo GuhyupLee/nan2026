@@ -1,4 +1,4 @@
-import type { PlayerClass } from '../sim/types.ts'
+import type { PlayerClass, RunMetaSnapshot } from '../sim/types.ts'
 
 /**
  * 최고 기록 저장.
@@ -42,6 +42,8 @@ export interface RunBuildSummaryV1 {
   fusionIds: string[]
   /** 이번 판에 회수한 월식 인장 수. */
   seals: number
+  /** 같은 시드 재도전이 시작 능력치·카드 언락까지 재현하도록 함께 보존한다. */
+  meta?: RunMetaSnapshot
 }
 
 export interface RunRecord {
@@ -151,6 +153,27 @@ function sanitizeBuild(value: unknown): RunBuildSummaryV1 | null {
   const r = sanitizeBuildSkill(skills.r)
   if (!q || !w || !e || !r) return null
 
+  let meta: RunMetaSnapshot | undefined
+  if (typeof build.meta === 'object' && build.meta !== null) {
+    const rawMeta = build.meta as Partial<RunMetaSnapshot>
+    if (
+      rawMeta.version === 1 &&
+      finiteNumber(rawMeta.maxHpBonus) &&
+      rawMeta.maxHpBonus >= 0 &&
+      rawMeta.maxHpBonus <= 30 &&
+      finiteNumber(rawMeta.speedMultiplier) &&
+      rawMeta.speedMultiplier >= 1 &&
+      rawMeta.speedMultiplier <= 1.12
+    ) {
+      meta = {
+        version: 1,
+        maxHpBonus: rawMeta.maxHpBonus,
+        speedMultiplier: rawMeta.speedMultiplier,
+        unlockedUpgradeIds: sanitizeIdList(rawMeta.unlockedUpgradeIds),
+      }
+    }
+  }
+
   return {
     version: RUN_BUILD_VERSION,
     seed: build.seed,
@@ -158,6 +181,7 @@ function sanitizeBuild(value: unknown): RunBuildSummaryV1 | null {
     awakeningIds: sanitizeIdList(build.awakeningIds),
     fusionIds: sanitizeIdList(build.fusionIds),
     seals: build.seals,
+    ...(meta ? { meta } : {}),
   }
 }
 
