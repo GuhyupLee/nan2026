@@ -72,7 +72,15 @@ function detectMobileDevice(): boolean {
   return nav.maxTouchPoints > 0 && window.matchMedia('(pointer: coarse)').matches
 }
 
-const vrmModelsEnabled = !detectMobileDevice()
+function devForcesProceduralModel(): boolean {
+  return (
+    import.meta.env.DEV &&
+    new URLSearchParams(window.location.search).get('model') === 'procedural'
+  )
+}
+
+const vrmModelsEnabled =
+  !devForcesProceduralModel() && !detectMobileDevice()
 
 /** 현재 기기에서 VRM 모델을 사용해도 되는지 알려준다. */
 export function shouldUseVrmModels(): boolean {
@@ -418,6 +426,9 @@ animationLoader.register((parser) => new VRMAnimationLoaderPlugin(parser))
 
 const pending = new Map<PlayerClass, Promise<VRM | null>>()
 const ready = new Map<PlayerClass, VRM>()
+const activeRigCount = new Map<PlayerClass, number>()
+let previewClass: PlayerClass | null = null
+let selectedClass: PlayerClass | null = null
 let animationPending: Promise<readonly VRMAnimation[] | null> | null = null
 let animationLibrary: readonly VRMAnimation[] | null = null
 
@@ -438,6 +449,26 @@ async function loadAnimationLibrary(): Promise<readonly VRMAnimation[] | null> {
 function ensureAnimationLibrary(): Promise<readonly VRMAnimation[] | null> {
   if (!animationPending) animationPending = loadAnimationLibrary()
   return animationPending
+}
+
+function shouldRetainVrm(cls: PlayerClass): boolean {
+  return (
+    cls === previewClass ||
+    cls === selectedClass ||
+    (activeRigCount.get(cls) ?? 0) > 0
+  )
+}
+
+function disposeUnusedVrm(cls: PlayerClass): void {
+  if (shouldRetainVrm(cls)) return
+  const vrm = ready.get(cls)
+  if (!vrm) return
+  ready.delete(cls)
+  VRMUtils.deepDispose(vrm.scene)
+}
+
+function disposeAllUnusedVrms(): void {
+  for (const cls of ready.keys()) disposeUnusedVrm(cls)
 }
 
 async function load(cls: PlayerClass): Promise<VRM | null> {
@@ -466,6 +497,13 @@ async function load(cls: PlayerClass): Promise<VRM | null> {
     // VRM 0.x는 -Z를 본다. 1.0 규약(+Z)으로 맞춰 아래 회전 계산을 하나로 둔다.
     VRMUtils.rotateVRM0(vrm)
 
+    // 큰 모델을 파싱하는 동안 포인터가 다른 카드로 옮겨갈 수 있다.
+    // 현재 리그가 쓰지도 않는 낡은 결과라면 캐시에 남기지 않는다.
+    if (!shouldRetainVrm(cls)) {
+      VRMUtils.deepDispose(vrm.scene)
+      return null
+    }
+
     ready.set(cls, vrm)
     return vrm
   } catch (err) {
@@ -475,21 +513,38 @@ async function load(cls: PlayerClass): Promise<VRM | null> {
   }
 }
 
-/** 두 모델을 백그라운드로 받기 시작한다. 메인 메뉴가 뜨는 동안 돌아간다. */
-export function startVrmPreload(): void {
+function requestVrm(cls: PlayerClass): Promise<VRM | null> {
+  const cached = ready.get(cls)
+  if (cached) return Promise.resolve(cached)
+
+  const activeRequest = pending.get(cls)
+  if (activeRequest) return activeRequest
+
+  let request: Promise<VRM | null>
+  request = load(cls).finally(() => {
+    if (pending.get(cls) === request) pending.delete(cls)
+  })
+  pending.set(cls, request)
+  return request
+}
+
+/** 현재 미리 보고 있는 카드의 모델 하나만 백그라운드에서 준비한다. */
+export function preloadVrm(cls: PlayerClass): void {
   if (!vrmModelsEnabled) return
+  previewClass = cls
+  disposeAllUnusedVrms()
   void ensureAnimationLibrary()
-  for (const cls of ['ranged', 'melee'] as PlayerClass[]) {
-    if (!pending.has(cls)) pending.set(cls, load(cls))
-  }
+  void requestVrm(cls)
 }
 
 /** 해당 클래스의 VRM이 준비될 때까지 기다린다. 실패하면 false. */
 export async function ensureVrm(cls: PlayerClass): Promise<boolean> {
   if (!vrmModelsEnabled) return false
-  if (!pending.has(cls)) pending.set(cls, load(cls))
-  const [vrm] = await Promise.all([pending.get(cls)!, ensureAnimationLibrary()])
-  return vrm !== null
+  selectedClass = cls
+  previewClass = cls
+  disposeAllUnusedVrms()
+  const [vrm] = await Promise.all([requestVrm(cls), ensureAnimationLibrary()])
+  return vrm !== null && ready.get(cls) === vrm
 }
 
 export function hasVrm(cls: PlayerClass): boolean {
@@ -648,8 +703,10 @@ function set(node: THREE.Object3D | null, x: number, y: number, z: number): void
 /**
  * VRM 하나로 리그를 만든다.
  *
- * VRM 인스턴스는 캐시에 남아 판을 넘어 재사용된다. 그래서 `dispose`는
- * 모델을 파괴하지 않고 무기만 정리한다 — 파괴하면 다음 판에서 빈 캐릭터가 뜬다.
+ * 선택 중이거나 같은 클래스의 리그가 사용 중인 VRM은 판을 넘어 재사용한다.
+ * 다른 클래스로 교체하면 리그를 먼저 분리한 뒤 참조 수가 0인 모델만 폐기한다.
+ * `dispose`가 무기와 참조 수를 함께 정리해야 다음 판 재사용과 메모리 회수가
+ * 둘 다 안전하게 성립한다.
  */
 export function createVrmRig(cls: PlayerClass): CharacterRig | null {
   if (!vrmModelsEnabled) return null
@@ -757,6 +814,7 @@ export function createVrmRig(cls: PlayerClass): CharacterRig | null {
   /** 보주가 마지막으로 발사한 시각과 그 세기. 원거리 평타 연출의 전부다. */
   let orbFiredAt = -99
   let orbPower = 1
+  let disposed = false
   const hips0 = j.hips.position.y
   const orbMat = wep.orb ? (wep.orb.material as THREE.MeshStandardMaterial) : null
   const orbEmissive0 = orbMat ? orbMat.emissiveIntensity : 0
@@ -961,8 +1019,11 @@ export function createVrmRig(cls: PlayerClass): CharacterRig | null {
     },
 
     dispose() {
+      if (disposed) return
+      disposed = true
       animation?.dispose()
-      // VRM은 캐시에 남아 다음 판에서 재사용된다. 무기만 정리한다.
+      // 같은 클래스를 이어서 쓰면 VRM은 캐시에 남는다. 클래스가 바뀌었다면
+      // 리그에서 분리한 뒤 아래 disposeUnusedVrm에서 안전하게 폐기한다.
       orient.remove(vrm.scene)
       if (rawHand) rawHand.remove(weapon)
       weapon.traverse((o) => {
@@ -972,9 +1033,14 @@ export function createVrmRig(cls: PlayerClass): CharacterRig | null {
         if (Array.isArray(mat)) mat.forEach((x) => x.dispose())
         else if (mat) (mat as THREE.Material).dispose()
       })
+      const nextCount = Math.max(0, (activeRigCount.get(cls) ?? 1) - 1)
+      if (nextCount === 0) activeRigCount.delete(cls)
+      else activeRigCount.set(cls, nextCount)
+      disposeUnusedVrm(cls)
     },
   }
 
   rig.update(0, 0)
+  activeRigCount.set(cls, (activeRigCount.get(cls) ?? 0) + 1)
   return rig
 }

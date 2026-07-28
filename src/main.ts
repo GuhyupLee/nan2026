@@ -5,8 +5,8 @@ import { InputState, applyPointerMove } from './input.ts'
 import { Renderer } from './render/renderer.ts'
 import {
   ensureVrm,
+  preloadVrm,
   shouldUseVrmModels,
-  startVrmPreload,
 } from './render/vrm-rig.ts'
 import { ARENA_RADIUS, DT, MAX_TICKS_PER_FRAME } from './sim/constants.ts'
 import { BOSS_PHASE_TWO_THRESHOLD } from './sim/boss.ts'
@@ -606,9 +606,6 @@ async function start(): Promise<void> {
   activeRun = false
   pauseButton.setVisible(false)
   requestMenuWarmup()
-  // 데스크톱은 캐릭터 모델(각 20MB 안팎)을 메뉴가 떠 있는 동안 미리 받는다.
-  // 모바일은 다운로드와 파싱을 건너뛰고 기존 프로시저럴 경량 모델을 쓴다.
-  if (useVrmModels) startVrmPreload()
   await showMainMenu(
     document.body,
     () => showSettings(document.body, audio, input),
@@ -619,8 +616,11 @@ async function start(): Promise<void> {
   void audio.unlock()
   audio.ui('select')
   requestMenuWarmup()
-  const playerClass = await showCharacterSelect(document.body, undefined, () =>
-    showSettings(document.body, audio, input),
+  const playerClass = await showCharacterSelect(
+    document.body,
+    undefined,
+    () => showSettings(document.body, audio, input),
+    useVrmModels ? preloadVrm : undefined,
   )
   void audio.unlock()
   audio.ui('select')

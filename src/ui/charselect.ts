@@ -167,6 +167,7 @@ export function showCharacterSelect(
   parent: HTMLElement,
   options: readonly ClassOption[] = CLASS_OPTIONS,
   onSettings?: () => Promise<void> | void,
+  onPreview?: (id: PlayerClass) => void,
 ): Promise<PlayerClass> {
   return new Promise((resolve) => {
     const root = document.createElement('div')
@@ -290,6 +291,9 @@ export function showCharacterSelect(
       selectLabel.innerHTML = '선택 <span aria-hidden="true">↗</span>'
       card.appendChild(selectLabel)
 
+      const preview = (): void => onPreview?.(opt.id)
+      card.addEventListener('pointerenter', preview)
+      card.addEventListener('focus', preview)
       card.addEventListener('click', () => choose(opt.id))
       cards.appendChild(card)
     }
