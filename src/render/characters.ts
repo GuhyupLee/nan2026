@@ -10,7 +10,9 @@ import {
   buildBody,
   glow,
   group,
+  mergeStaticSiblings,
   metalMat,
+  preserveProceduralMesh,
   solid,
 } from './body.ts'
 import { createVrmRig } from './vrm-rig.ts'
@@ -211,10 +213,13 @@ function buildLumen(): { body: BodyRig; extras: { prisms: THREE.Mesh[]; staff: T
   // ---- 궤도 프리즘: 멀리서도 이 캐릭터를 식별하는 신호 ----
   const prisms: THREE.Mesh[] = []
   const prismGeo = new THREE.OctahedronGeometry(0.07, 1)
-  for (let i = 0; i < 3; i++) prisms.push(add(body.root, prismGeo, accent))
+  for (let i = 0; i < 3; i++) {
+    prisms.push(preserveProceduralMesh(add(body.root, prismGeo, accent)))
+  }
 
   body.hairChain = [...backHair, ...sideLocks[0]!, ...sideLocks[1]!, ahoge]
   body.skirt = skirt
+  mergeStaticSiblings(body.root)
   return { body, extras: { prisms, staff } }
 }
 
@@ -319,6 +324,7 @@ function buildWola(): { body: BodyRig; extras: { katana: THREE.Group; saya: THRE
 
   body.hairChain = [...tail, ...sideLocks[0]!, ...sideLocks[1]!]
   body.skirt = skirt
+  mergeStaticSiblings(body.root)
   return { body, extras: { katana, saya } }
 }
 
@@ -574,13 +580,17 @@ function makeRig(
 }
 
 function disposeTree(root: THREE.Object3D): void {
+  const geometries = new Set<THREE.BufferGeometry>()
+  const materials = new Set<THREE.Material>()
   root.traverse((o) => {
     const m = o as THREE.Mesh
-    if (m.geometry) m.geometry.dispose()
+    if (m.geometry) geometries.add(m.geometry)
     const mat = m.material
-    if (Array.isArray(mat)) mat.forEach((x) => x.dispose())
-    else if (mat) (mat as THREE.Material).dispose()
+    if (Array.isArray(mat)) mat.forEach((x) => materials.add(x))
+    else if (mat) materials.add(mat as THREE.Material)
   })
+  for (const geometry of geometries) geometry.dispose()
+  for (const material of materials) material.dispose()
 }
 
 export function createCharacterRig(cls: PlayerClass): CharacterRig {

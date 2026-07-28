@@ -1,4 +1,5 @@
 import * as THREE from 'three'
+import { mergeGeometries } from 'three/addons/utils/BufferGeometryUtils.js'
 
 /**
  * 애니메풍 여성 캐릭터 공용 골격.
@@ -102,6 +103,102 @@ export function group(parent: THREE.Object3D, pos: [number, number, number]): TH
   return g
 }
 
+const KEEP_PROCEDURAL_MESH = 'keepProceduralMesh'
+
+function geometrySignature(geometry: THREE.BufferGeometry): string {
+  return Object.keys(geometry.attributes)
+    .sort()
+    .map((name) => {
+      const attribute = geometry.getAttribute(name)
+      return `${name}:${attribute.itemSize}:${attribute.normalized}:${attribute.array.constructor.name}`
+    })
+    .join('|')
+}
+
+function canMergeStaticMesh(
+  object: THREE.Object3D,
+): object is THREE.Mesh<THREE.BufferGeometry, THREE.Material> {
+  if (!(object instanceof THREE.Mesh) || object instanceof THREE.SkinnedMesh) return false
+  if (object.userData[KEEP_PROCEDURAL_MESH] === true) return false
+  if (Array.isArray(object.material)) return false
+  if (Object.keys(object.geometry.morphAttributes).length > 0) return false
+  return object.visible && object.geometry.drawRange.count === Infinity
+}
+
+/**
+ * Bakes direct sibling meshes that already share an animated transform and material.
+ *
+ * Every Group remains intact, so limbs, hair joints, weapons and other animation
+ * anchors keep the same hierarchy. Callers can retain a live Mesh reference by
+ * marking it with {@link preserveProceduralMesh}.
+ */
+export function mergeStaticSiblings(root: THREE.Object3D): void {
+  const originalGeometries = new Set<THREE.BufferGeometry>()
+  const parents: THREE.Object3D[] = []
+  root.traverse((object) => {
+    parents.push(object)
+    if (object instanceof THREE.Mesh) originalGeometries.add(object.geometry)
+  })
+
+  for (const parent of parents) {
+    const buckets = new Map<THREE.Material, Map<string, THREE.Mesh[]>>()
+    for (const child of parent.children) {
+      if (!canMergeStaticMesh(child)) continue
+      let byGeometry = buckets.get(child.material)
+      if (!byGeometry) {
+        byGeometry = new Map()
+        buckets.set(child.material, byGeometry)
+      }
+      const signature = geometrySignature(child.geometry)
+      const siblings = byGeometry.get(signature)
+      if (siblings) siblings.push(child)
+      else byGeometry.set(signature, [child])
+    }
+
+    for (const byGeometry of buckets.values()) {
+      for (const siblings of byGeometry.values()) {
+        if (siblings.length < 2) continue
+
+        const baked = siblings.map((mesh) => {
+          mesh.updateMatrix()
+          const geometry = mesh.geometry.index
+            ? mesh.geometry.toNonIndexed()
+            : mesh.geometry.clone()
+          geometry.applyMatrix4(mesh.matrix)
+          return geometry
+        })
+        const mergedGeometry = mergeGeometries(baked, false)
+        for (const geometry of baked) geometry.dispose()
+        if (!mergedGeometry) continue
+
+        const first = siblings[0]!
+        const merged = new THREE.Mesh(mergedGeometry, first.material)
+        merged.castShadow = first.castShadow
+        merged.receiveShadow = first.receiveShadow
+        merged.frustumCulled = first.frustumCulled
+        merged.renderOrder = first.renderOrder
+        merged.layers.mask = first.layers.mask
+        parent.remove(...siblings)
+        parent.add(merged)
+      }
+    }
+  }
+
+  const retainedGeometries = new Set<THREE.BufferGeometry>()
+  root.traverse((object) => {
+    if (object instanceof THREE.Mesh) retainedGeometries.add(object.geometry)
+  })
+  for (const geometry of originalGeometries) {
+    if (!retainedGeometries.has(geometry)) geometry.dispose()
+  }
+}
+
+/** Prevents a live procedural Mesh reference from being folded into a sibling. */
+export function preserveProceduralMesh(mesh: THREE.Mesh): THREE.Mesh {
+  mesh.userData[KEEP_PROCEDURAL_MESH] = true
+  return mesh
+}
+
 /**
  * 단면 곡선을 회전시켜 이음매 없는 몸통을 만든다.
  *
@@ -160,7 +257,6 @@ function addAnimeFace(head: THREE.Object3D, p: BodyPalette, lashTilt: number): v
   const irisMat = glow(p.accent, 0.85)
   const pupilMat = solid(0x1a1620, 0.3)
   const lashMat = solid(0x241f2a, 0.35)
-  const hlMat = new THREE.MeshBasicMaterial({ color: 0xffffff })
 
   // 눈은 얼굴 "표면에 붙어" 있어야 한다. 구를 그대로 얹으면 튀어나와
   // 곤충 눈이 된다 — X를 강하게 눌러 납작하게 만들고 머리에 파묻는다.
@@ -187,8 +283,8 @@ function addAnimeFace(head: THREE.Object3D, p: BodyPalette, lashTilt: number): v
     add(head, whiteGeo, whiteMat, { pos: [surfaceX - 0.008, 0.005, z], scale: [FLAT, 1.05, 0.82] })
     add(head, irisGeo, irisMat, { pos: [surfaceX - 0.001, -0.004, z], scale: [FLAT, 1.15, 0.95] })
     add(head, pupilGeo, pupilMat, { pos: [surfaceX + 0.003, -0.006, z], scale: [FLAT, 1.2, 1] })
-    add(head, hlGeo, hlMat, { pos: [surfaceX + 0.007, 0.022, z + side * 0.012], scale: [FLAT, 1, 1] })
-    add(head, hl2Geo, hlMat, {
+    add(head, hlGeo, whiteMat, { pos: [surfaceX + 0.007, 0.022, z + side * 0.012], scale: [FLAT, 1, 1] })
+    add(head, hl2Geo, whiteMat, {
       pos: [surfaceX + 0.007, -0.026, z - side * 0.013],
       scale: [FLAT, 1, 1],
     })
