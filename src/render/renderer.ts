@@ -343,7 +343,10 @@ export class Renderer {
   render(world: World, alpha: number): void {
     const now = performance.now() / 1000
     // 첫 프레임과 탭 복귀 시 dt가 튀지 않게 막는다.
-    const dt = this.lastFrameTime === 0 ? 1 / 60 : Math.min(now - this.lastFrameTime, 0.1)
+    const dt =
+      this.lastFrameTime === 0
+        ? 1 / 60
+        : THREE.MathUtils.clamp(now - this.lastFrameTime, 0, 0.1)
     this.lastFrameTime = now
     // prevPos → pos는 [world.time - DT, world.time] 구간을 나타낸다.
     // 애니메이션도 같은 구간을 샘플링해야 타격 자세와 월드 착지가 한 틱
@@ -434,7 +437,7 @@ export class Renderer {
     this.lightRig.position.set(px, 0, pz)
 
     // 카메라는 살짝 지연시켜 따라간다. 완전 고정은 뻣뻣하고, 너무 느리면 조준이 흔들린다.
-    const k = 1 - Math.exp(-CAM_FOLLOW * (1 / 60))
+    const k = 1 - Math.exp(-CAM_FOLLOW * dt)
     this.camTarget.x += (px - this.camTarget.x) * k
     this.camTarget.z += (pz - this.camTarget.z) * k
 
