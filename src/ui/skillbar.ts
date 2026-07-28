@@ -1,6 +1,14 @@
-import { getSkillDef } from '../content/skills.ts'
-import { SKILL_IDS, type SkillBook, type SkillId, cooldownProgress } from '../sim/skills.ts'
-import type { PlayerClass } from '../sim/types.ts'
+import { getSkillDamageBreakdown, getSkillDef } from '../content/skills.ts'
+import { UPGRADES, hasUpgradeTrait } from '../content/upgrades.ts'
+import {
+  MAX_SKILL_RANK,
+  SKILL_IDS,
+  type SkillBook,
+  type SkillId,
+  cooldownProgress,
+  skillDamageMul,
+} from '../sim/skills.ts'
+import type { PlayerClass, World } from '../sim/types.ts'
 
 /**
  * 화면 하단 스킬바.
@@ -62,7 +70,24 @@ export class SkillBar {
   private readonly root: HTMLDivElement
   private readonly slots: SlotView[] = []
   private readonly cancelPointers: Array<() => void> = []
+  private readonly tooltip: HTMLDivElement
+  private readonly tooltipKey: HTMLElement
+  private readonly tooltipTag: HTMLElement
+  private readonly tooltipName: HTMLElement
+  private readonly tooltipDescription: HTMLElement
+  private readonly tooltipDetail: HTMLElement
+  private readonly tooltipDamage: HTMLElement
+  private readonly tooltipEnhancement: HTMLElement
+  private readonly tooltipStatus: HTMLElement
+  private activeTooltip: SlotView | null = null
+  private tooltipBook: SkillBook | null = null
+  private tooltipWorld: World | null = null
+  private tooltipSignature = ''
+  private tooltipHideTimer = 0
   private currentClass: PlayerClass | null = null
+  private readonly onEscape = (event: KeyboardEvent): void => {
+    if (event.key === 'Escape') this.hideTooltip()
+  }
 
   constructor(
     parent: HTMLElement,
@@ -78,8 +103,7 @@ export class SkillBar {
       slot.type = 'button'
       slot.dataset.kind = m.kind
       slot.dataset.state = 'locked'
-      slot.disabled = true
-      slot.title = `${m.name} (${m.key})`
+      slot.setAttribute('aria-disabled', 'true')
 
       const glyph = document.createElement('div')
       glyph.className = 'glyph'
@@ -109,6 +133,15 @@ export class SkillBar {
       cdText.className = 'cdtext'
       slot.appendChild(cdText)
 
+      const view: SlotView = {
+        meta: m,
+        root: slot,
+        icon,
+        fallback,
+        cd,
+        cdText,
+        wasReady: false,
+      }
       let activePointerId: number | null = null
 
       const clearPointer = (cancel: boolean): void => {
@@ -126,7 +159,11 @@ export class SkillBar {
       slot.addEventListener('pointerdown', (e) => {
         e.preventDefault()
         e.stopPropagation()
-        if (slot.dataset.state === 'locked' || activePointerId !== null) return
+        if (e.pointerType === 'touch') this.showTooltip(view)
+        if (slot.dataset.state !== 'ready' || activePointerId !== null) {
+          if (e.pointerType === 'touch') this.scheduleTooltipHide()
+          return
+        }
         activePointerId = e.pointerId
         slot.setPointerCapture(e.pointerId)
         slot.dataset.targeting = 'true'
@@ -139,6 +176,7 @@ export class SkillBar {
         e.stopPropagation()
         clearPointer(false)
         handlers.release(m.id)
+        if (e.pointerType === 'touch') this.scheduleTooltipHide()
       })
 
       const cancelPointer = (e: PointerEvent): void => {
@@ -175,16 +213,59 @@ export class SkillBar {
       slot.addEventListener('click', (e) => {
         e.preventDefault()
         e.stopPropagation()
-        if (e.detail !== 0 || slot.dataset.state === 'locked') return
+        if (e.detail !== 0 || slot.dataset.state !== 'ready') return
         handlers.start(m.id)
         handlers.release(m.id)
       })
 
+      slot.addEventListener('pointerenter', (event) => {
+        if (event.pointerType !== 'touch') this.showTooltip(view)
+      })
+      slot.addEventListener('pointerleave', (event) => {
+        if (event.pointerType !== 'touch' && document.activeElement !== slot) {
+          this.hideTooltip(view)
+        }
+      })
+      slot.addEventListener('focus', () => this.showTooltip(view))
+      slot.addEventListener('blur', () => this.hideTooltip(view))
+
       this.root.appendChild(slot)
-      this.slots.push({ meta: m, root: slot, icon, fallback, cd, cdText, wasReady: false })
+      this.slots.push(view)
     }
 
+    this.tooltip = document.createElement('div')
+    this.tooltip.id = 'skillbar-tooltip'
+    this.tooltip.className = 'skill-tooltip'
+    this.tooltip.role = 'tooltip'
+    this.tooltip.hidden = true
+    this.tooltip.innerHTML =
+      `<div class="skill-tooltip-head">` +
+      `<span class="skill-tooltip-key"></span>` +
+      `<div><strong class="skill-tooltip-name"></strong><small class="skill-tooltip-tag"></small></div>` +
+      `</div>` +
+      `<p class="skill-tooltip-description"></p>` +
+      `<p class="skill-tooltip-detail"></p>` +
+      `<div class="skill-tooltip-stats">` +
+      `<span class="skill-tooltip-damage"></span>` +
+      `<span class="skill-tooltip-status"></span>` +
+      `</div>` +
+      `<div class="skill-tooltip-enhancement"></div>`
+    this.tooltipKey = this.tooltip.querySelector('.skill-tooltip-key')!
+    this.tooltipTag = this.tooltip.querySelector('.skill-tooltip-tag')!
+    this.tooltipName = this.tooltip.querySelector('.skill-tooltip-name')!
+    this.tooltipDescription = this.tooltip.querySelector('.skill-tooltip-description')!
+    this.tooltipDetail = this.tooltip.querySelector('.skill-tooltip-detail')!
+    this.tooltipDamage = this.tooltip.querySelector('.skill-tooltip-damage')!
+    this.tooltipStatus = this.tooltip.querySelector('.skill-tooltip-status')!
+    this.tooltipEnhancement = this.tooltip.querySelector('.skill-tooltip-enhancement')!
+    for (const view of this.slots) {
+      view.root.setAttribute('aria-describedby', this.tooltip.id)
+    }
     parent.appendChild(this.root)
+    // transform이 있는 skillbar 안에 fixed 툴팁을 넣으면 좌표계가 슬롯바 기준으로
+    // 바뀐다. body 형제여야 viewport 좌표와 getBoundingClientRect가 일치한다.
+    parent.appendChild(this.tooltip)
+    window.addEventListener('keydown', this.onEscape)
     this.setClass('ranged')
   }
 
@@ -194,14 +275,16 @@ export class SkillBar {
   }
 
   /** 매 프레임 호출한다. DOM 쓰기는 값이 바뀔 때만 일어나게 막아뒀다. */
-  update(book: SkillBook, playerClass?: PlayerClass): void {
+  update(book: SkillBook, playerClass?: PlayerClass, world?: World): void {
+    this.tooltipBook = book
+    this.tooltipWorld = world ?? null
     if (playerClass && playerClass !== this.currentClass) this.setClass(playerClass)
 
     for (const view of this.slots) {
       const s = book[view.meta.id]
 
       if (!s.unlocked) {
-        view.root.disabled = true
+        view.root.setAttribute('aria-disabled', 'true')
         if (view.root.dataset.state !== 'locked') {
           view.root.dataset.state = 'locked'
           view.cd.style.setProperty('--p', '0')
@@ -211,8 +294,8 @@ export class SkillBar {
         continue
       }
 
-      view.root.disabled = false
       const ready = s.cooldown <= 0
+      view.root.setAttribute('aria-disabled', String(!ready))
 
       if (ready) {
         if (view.root.dataset.state !== 'ready') {
@@ -232,6 +315,8 @@ export class SkillBar {
 
       view.wasReady = ready
     }
+
+    if (this.activeTooltip) this.renderTooltip(this.activeTooltip)
   }
 
   /** QWER 아이콘과 슬롯 강조색을 선택한 클래스에 맞춘다. */
@@ -244,8 +329,7 @@ export class SkillBar {
       const def = getSkillDef(playerClass, view.meta.id)
       if (!def) continue
 
-      view.root.title = `${def.name} (${view.meta.key})`
-      view.root.setAttribute('aria-label', `${def.name} — ${view.meta.key}`)
+      view.root.setAttribute('aria-label', `${view.meta.key} ${def.name} — ${def.tag}`)
       view.icon.src = `${import.meta.env.BASE_URL}${def.icon}`
       view.icon.hidden = false
       view.fallback.textContent = def.glyph
@@ -255,6 +339,124 @@ export class SkillBar {
         view.fallback.hidden = false
       }
     }
+    this.tooltipSignature = ''
+    if (this.activeTooltip) this.renderTooltip(this.activeTooltip)
+  }
+
+  private showTooltip(view: SlotView): void {
+    window.clearTimeout(this.tooltipHideTimer)
+    this.activeTooltip = view
+    this.tooltipSignature = ''
+    this.tooltip.hidden = false
+    this.renderTooltip(view)
+    this.positionTooltip(view)
+  }
+
+  private hideTooltip(view?: SlotView): void {
+    if (view && this.activeTooltip !== view) return
+    window.clearTimeout(this.tooltipHideTimer)
+    this.activeTooltip = null
+    this.tooltipSignature = ''
+    this.tooltip.hidden = true
+  }
+
+  private scheduleTooltipHide(): void {
+    window.clearTimeout(this.tooltipHideTimer)
+    this.tooltipHideTimer = window.setTimeout(() => this.hideTooltip(), 1800)
+  }
+
+  private renderTooltip(view: SlotView): void {
+    const playerClass = this.currentClass ?? 'ranged'
+    const def = getSkillDef(playerClass, view.meta.id)
+    if (!def) return
+
+    const runtime = this.tooltipBook?.[view.meta.id]
+    const world = this.tooltipWorld
+    const damageMultiplier =
+      runtime && view.meta.kind === 'core'
+        ? skillDamageMul(this.tooltipBook!, view.meta.id) * (world?.stats.atkDamageMul ?? 1)
+        : 1
+    const damage = getSkillDamageBreakdown(playerClass, view.meta.id, {
+      damageMultiplier,
+      attackDamage: world
+        ? world.stats.atkDamage * world.stats.atkDamageMul
+        : 0,
+      hasTrait: (trait) =>
+        runtime?.branch === trait ||
+        (world !== null && hasUpgradeTrait(world, trait)),
+    })
+    const cooldown = runtime?.maxCooldown ?? def.cooldown
+    const cooldownLeft = runtime?.cooldown ?? 0
+    const status = !runtime?.unlocked
+      ? '미해금'
+      : cooldownLeft > 0
+        ? `재사용 ${formatSeconds(cooldownLeft)}`
+        : '사용 가능'
+
+    let actual = damage ? `피해 ${damage}` : ''
+    if (view.meta.id === 'd') {
+      actual = `회복 ${formatValue(world?.stats.healAmount ?? 35)}`
+    } else if (view.meta.id === 'f') {
+      actual =
+        `거리 ${formatValue(world?.stats.flashRange ?? 8)}` +
+        (damage ? ` · 피해 ${damage}` : '')
+    }
+
+    let enhancement = `재사용 대기시간 ${formatSeconds(cooldown)}`
+    if (view.meta.kind === 'core' && runtime) {
+      const rankBonus = Math.round((skillDamageMul(this.tooltipBook!, view.meta.id) - 1) * 100)
+      const attackBonus = Math.round(((world?.stats.atkDamageMul ?? 1) - 1) * 100)
+      enhancement =
+        `강화 ${runtime.rank}/${MAX_SKILL_RANK} · 랭크 피해 +${rankBonus}%` +
+        (attackBonus !== 0 ? ` · 공격 강화 ${attackBonus > 0 ? '+' : ''}${attackBonus}%` : '') +
+        ` · 재사용 ${formatSeconds(cooldown)}`
+      if (runtime.branch) enhancement += ` · ${describeBranch(runtime.branch)}`
+    }
+
+    const signature = [
+      playerClass,
+      view.meta.id,
+      runtime?.unlocked,
+      runtime?.rank,
+      runtime?.branch,
+      Math.round(cooldownLeft * 10),
+      cooldown,
+      damage,
+      actual,
+      enhancement,
+    ].join('|')
+    if (signature === this.tooltipSignature) return
+    this.tooltipSignature = signature
+
+    this.tooltip.dataset.class = playerClass
+    this.tooltip.dataset.state = runtime?.unlocked ? (cooldownLeft > 0 ? 'cooling' : 'ready') : 'locked'
+    this.tooltipKey.textContent = def.key
+    this.tooltipTag.textContent = def.tag
+    this.tooltipName.textContent = def.name
+    this.tooltipDescription.textContent = def.oneLiner
+    this.tooltipDetail.textContent = def.detail
+    this.tooltipDamage.textContent = actual
+    this.tooltipDamage.hidden = actual.length === 0
+    this.tooltipStatus.textContent = status
+    this.tooltipEnhancement.textContent = enhancement
+    this.tooltip.setAttribute(
+      'aria-label',
+      `${def.key} ${def.name}. ${def.oneLiner}. ${actual}. ${enhancement}. ${status}`,
+    )
+  }
+
+  private positionTooltip(view: SlotView): void {
+    const slot = view.root.getBoundingClientRect()
+    const tip = this.tooltip.getBoundingClientRect()
+    const margin = 8
+    const left = Math.max(
+      margin,
+      Math.min(window.innerWidth - tip.width - margin, slot.left + slot.width * 0.5 - tip.width * 0.5),
+    )
+    let top = slot.top - tip.height - 10
+    if (top < margin) top = slot.bottom + 10
+    this.tooltip.style.left = `${Math.round(left)}px`
+    this.tooltip.style.top = `${Math.round(top)}px`
   }
 
   private flash(view: SlotView): void {
@@ -266,11 +468,35 @@ export class SkillBar {
 
   setVisible(visible: boolean): void {
     this.root.style.display = visible ? '' : 'none'
+    if (!visible) this.hideTooltip()
   }
 
   dispose(): void {
+    window.clearTimeout(this.tooltipHideTimer)
+    window.removeEventListener('keydown', this.onEscape)
+    this.tooltip.remove()
     this.root.remove()
   }
+}
+
+function formatSeconds(value: number): string {
+  if (!Number.isFinite(value)) return '—'
+  return value >= 10 ? `${Math.round(value)}초` : `${Math.round(value * 10) / 10}초`
+}
+
+function formatValue(value: number): string {
+  if (!Number.isFinite(value)) return '—'
+  const rounded = Math.round(value * 10) / 10
+  return Number.isInteger(rounded) ? String(rounded) : rounded.toFixed(1)
+}
+
+function describeBranch(branch: string): string {
+  for (const upgrade of UPGRADES) {
+    const rank = upgrade.ranks.find((candidate) => candidate.trait === branch)
+    if (!rank) continue
+    return `${rank.awakeningName ?? upgrade.name}: ${rank.oneLiner}`
+  }
+  return '각성 효과 활성'
 }
 
 /** SKILL_IDS 순서와 슬롯 구성이 어긋나지 않았는지 개발 중에 확인한다. */

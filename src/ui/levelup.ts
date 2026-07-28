@@ -1,6 +1,20 @@
 import { getSkillDef } from '../content/skills.ts'
-import { UPGRADES, getUpgrade } from '../content/upgrades.ts'
+import {
+  UPGRADES,
+  applyUpgrade,
+  applyRelicUpgrade,
+  getUpgrade,
+  getUpgradePresentation,
+  getUpgradeRank,
+  getRelicFusionPreview,
+  getRelicUpgradeBurstCount,
+  getRelicRollPriority,
+  getUpgradeRollPriority,
+  type UpgradeFamily,
+  type UpgradeRarity,
+} from '../content/upgrades.ts'
 import { pendingReward, rollUpgrades, type UpgradeCandidate } from '../sim/progression.ts'
+import { ELITE_SPAWN_TIMES } from '../sim/enemies.ts'
 import {
   MAX_SKILL_RANK,
   lockedChoosableSkills,
@@ -27,9 +41,9 @@ import { trapFocus } from './focus-trap.ts'
  *   나머지  스킬 랭크업 3택 (반복 가능)
  */
 
-interface Card {
+export interface LevelUpCard {
   id: string
-  kind: 'unlock' | 'upgrade' | 'skill-rank'
+  kind: 'unlock' | 'upgrade' | 'skill-rank' | 'relic-upgrade'
   accent: string
   icon?: string
   glyph: string
@@ -37,18 +51,34 @@ interface Card {
   tag: string
   name: string
   desc: string
+  rarity?: UpgradeRarity
+  family?: UpgradeFamily
+  rank?: number
+  trait?: string
+  badges?: readonly string[]
 }
 
+const ROMAN_RANK = ['', 'I', 'II', 'III'] as const
 
-function upgradeCandidates(world: World): UpgradeCandidate[] {
-  return UPGRADES.map((u) => ({
-    id: u.id,
-    available: u.isAvailable ? u.isAvailable(world) : true,
-    weight: u.weight,
-  }))
+function upgradeCandidates(world: World, relic = false): UpgradeCandidate[] {
+  return UPGRADES.map((upgrade) => {
+    const currentRank = getUpgradeRank(world.upgradesTaken, upgrade.id)
+    return {
+      id: upgrade.id,
+      available: upgrade.isAvailable(world),
+      // 이미 고른 장비가 다시 눈에 띄어야 "빌드를 완성한다"는 선택이 생긴다.
+      weight: upgrade.weight * (currentRank > 0 ? 1.75 : 1),
+      classFilter: upgrade.classFilter,
+      currentRank,
+      maxRank: upgrade.ranks.length,
+      priority: relic
+        ? getRelicRollPriority(world, upgrade)
+        : getUpgradeRollPriority(world, upgrade),
+    }
+  })
 }
 
-function skillCard(world: World, id: SkillId): Card | null {
+function skillCard(world: World, id: SkillId): LevelUpCard | null {
   const def = getSkillDef(world.playerClass, id)
   if (!def) return null
   return {
@@ -74,7 +104,7 @@ function skillCard(world: World, id: SkillId): Card | null {
  * QWER을 찍어 올리는 건 롤·이터널 리턴의 핵심 문법이기도 하다.
  * 지금까지 스킬은 해금된 뒤 영원히 그대로였다.
  */
-function rankCards(world: World): Card[] {
+function rankCards(world: World): LevelUpCard[] {
   const ids = rankableSkills(world.skills)
   if (ids.length === 0) return []
 
@@ -82,7 +112,7 @@ function rankCards(world: World): Card[] {
   // "아직 안 찍은 스킬"이 먼저 눈에 들어와야 선택이 의미를 갖는다.
   const sorted = [...ids].sort((a, b) => world.skills[a].rank - world.skills[b].rank)
 
-  const out: Card[] = []
+  const out: LevelUpCard[] = []
   for (const id of sorted.slice(0, 3)) {
     const def = getSkillDef(world.playerClass, id)
     if (!def) continue
@@ -102,8 +132,88 @@ function rankCards(world: World): Card[] {
   return out
 }
 
-/** 이번 레벨업에 보여줄 카드를 정한다. */
-function buildCards(world: World): Card[] {
+function buildUpgradeCards(world: World, relic = false): LevelUpCard[] {
+  const out: LevelUpCard[] = []
+  for (const choice of rollUpgrades(
+    world.choiceRng,
+    upgradeCandidates(world, relic),
+    3,
+    {
+      playerClass: world.playerClass,
+      taken: world.upgradesTaken,
+      allowRankUps: true,
+    },
+  )) {
+    const upgrade = getUpgrade(choice.id)
+    if (!upgrade) continue
+    const presentation = getUpgradePresentation(upgrade, world.upgradesTaken)
+    const relicBurst = getRelicUpgradeBurstCount(world, upgrade.id)
+    const relicFusion = relic ? getRelicFusionPreview(world, upgrade.id) : undefined
+    const targetRank = relic
+      ? Math.min(presentation.currentRank + relicBurst, presentation.maxRank)
+      : presentation.nextRank
+    const targetDef = upgrade.ranks[targetRank - 1]!
+    const reachesAwakening = !upgrade.fusion && targetRank === 3
+    const rarity: UpgradeRarity = upgrade.fusion
+      ? 'fusion'
+      : reachesAwakening
+        ? 'awakening'
+        : presentation.rarity
+    const accent =
+      rarity === 'fusion'
+        ? '#d98cff'
+        : rarity === 'awakening'
+          ? '#ffd166'
+          : world.playerClass === 'melee'
+            ? '#ff5a6e'
+            : '#4dd0ff'
+    out.push({
+      id: upgrade.id,
+      kind: relic ? 'relic-upgrade' : 'upgrade',
+      accent,
+      glyph: upgrade.glyph,
+      tag: relic
+        ? upgrade.fusion
+          ? '월식 전리품 · 각성 합성'
+          : `월식 전리품 · RANK ${ROMAN_RANK[targetRank]}`
+        : presentation.rarity === 'fusion'
+          ? '각성 합성'
+          : `${presentation.familyLabel} · ${presentation.rankLabel}`,
+      name:
+        reachesAwakening && targetDef.awakeningName
+          ? `${upgrade.name} · ${targetDef.awakeningName}`
+          : presentation.name,
+      desc: relic
+        ? `${targetDef.oneLiner} · 최대 ${relicBurst}랭크를 연속 각인합니다.${
+            relicFusion
+              ? ` · ${relicFusion.name} 동시 발동: ${relicFusion.ranks[0]!.oneLiner}`
+              : ''
+          }`
+        : presentation.oneLiner,
+      rarity,
+      family: presentation.family,
+      rank: relic ? targetRank : choice.rank ?? presentation.nextRank,
+      ...(targetDef.trait ? { trait: targetDef.trait } : {}),
+      badges: relic
+        ? [
+            '정예 전리품',
+            `${relicBurst}단 연속 각인`,
+            relicFusion ? `즉시 융합 · ${relicFusion.name}` : '조합 완성 시 즉시 융합',
+            presentation.familyLabel,
+            upgrade.fusion ? '융합' : `RANK ${ROMAN_RANK[targetRank]}`,
+            ...(reachesAwakening ? ['각성'] : []),
+          ]
+        : presentation.badges,
+    })
+  }
+  return out
+}
+
+/** 이번 레벨업 또는 정예 전리품에 보여줄 카드와 배지 데이터를 정한다. */
+export function buildLevelUpCards(world: World): LevelUpCard[] {
+  // 같은 틱에 레벨업이 겹쳐도 정예 보상을 먼저 연다. 레벨업 대기는 그대로 남는다.
+  if (world.pendingRelicChoices > 0) return buildUpgradeCards(world, true)
+
   const reward = pendingReward(world.progression)
 
   if (reward === 'skill-rank') {
@@ -115,7 +225,9 @@ function buildCards(world: World): Card[] {
   if (reward === 'unlock-choice' || reward === 'unlock-last') {
     const locked = lockedChoosableSkills(world.skills)
     if (locked.length > 0) {
-      return locked.map((id) => skillCard(world, id)).filter((c): c is Card => c !== null)
+      return locked
+        .map((id) => skillCard(world, id))
+        .filter((card): card is LevelUpCard => card !== null)
     }
     // 이미 다 갖고 있으면 강화로 흘려보낸다.
   }
@@ -125,29 +237,10 @@ function buildCards(world: World): Card[] {
     if (c) return [c]
   }
 
-  const out: Card[] = []
-  for (const choice of rollUpgrades(
-    world.choiceRng,
-    upgradeCandidates(world),
-    3,
-    world.upgradesTaken,
-  )) {
-    const u = getUpgrade(choice.id)
-    if (!u) continue
-    out.push({
-      id: u.id,
-      kind: 'upgrade',
-      accent: '#4dd0ff',
-      glyph: u.glyph,
-      tag: '강화',
-      name: u.name,
-      desc: u.oneLiner,
-    })
-  }
-  return out
+  return buildUpgradeCards(world)
 }
 
-function applyCard(world: World, card: Card): void {
+export function applyLevelUpCard(world: World, card: LevelUpCard): void {
   if (card.kind === 'unlock') {
     const def = getSkillDef(world.playerClass, card.id as SkillId)
     if (def) unlockSkill(world.skills, card.id as SkillId, def.cooldown * world.stats.cooldownMul)
@@ -160,11 +253,12 @@ function applyCard(world: World, card: Card): void {
     return
   }
 
-  const u = getUpgrade(card.id)
-  if (u) {
-    u.apply(world)
-    world.upgradesTaken.add(card.id)
+  if (card.kind === 'relic-upgrade') {
+    applyRelicUpgrade(world, card.id)
+    return
   }
+
+  applyUpgrade(world, card.id)
 }
 
 /**
@@ -172,7 +266,7 @@ function applyCard(world: World, card: Card): void {
  * 선택 효과는 여기서 적용하고, 호출부가 resolveLevelUp을 부른다.
  */
 export function showLevelUp(parent: HTMLElement, world: World): Promise<void> {
-  const cards = buildCards(world)
+  const cards = buildLevelUpCards(world)
 
   // 낼 카드가 하나도 없으면 화면을 띄우지 않고 조용히 넘어간다.
   // 빈 화면에서 심사자가 멈추는 것보다 낫다.
@@ -180,11 +274,13 @@ export function showLevelUp(parent: HTMLElement, world: World): Promise<void> {
 
   const isUnlock = cards[0]!.kind === 'unlock'
   const isRank = cards[0]!.kind === 'skill-rank'
+  const isRelic = cards[0]!.kind === 'relic-upgrade'
   const single = cards.length === 1
 
   return new Promise((resolve) => {
     const root = document.createElement('div')
     root.className = 'levelup'
+    if (isRelic) root.classList.add('relic-reward')
     // 프로젝트의 다른 모달(결과·일시정지·메인메뉴·캐릭터선택)은 전부
     // 다이얼로그 시맨틱과 포커스 트랩을 갖는데 여기만 빠져 있었다.
     // 트랩이 없으면 Tab이 뒤에 깔린 스킬바 버튼으로 새어 나간다.
@@ -195,9 +291,15 @@ export function showLevelUp(parent: HTMLElement, world: World): Promise<void> {
     const banner = document.createElement('div')
     banner.className = 'banner'
     banner.innerHTML =
-      `<div class="lv">LEVEL ${world.progression.level}</div>` +
+      `<div class="lv">${
+        isRelic
+          ? `ELITE TROVE · MOON SEAL ${world.relicsClaimed}/${ELITE_SPAWN_TIMES.length}`
+          : `LEVEL ${world.progression.level}`
+      }</div>` +
       `<h2 id="levelup-title">${
-        isUnlock
+        isRelic
+          ? '월식 전리품을 각인하세요'
+          : isUnlock
           ? single
             ? '새로운 힘을 얻었다'
             : '스킬을 해금하세요'
@@ -213,12 +315,12 @@ export function showLevelUp(parent: HTMLElement, world: World): Promise<void> {
 
     let done = false
     let releaseFocusTrap = (): void => {}
-    const pick = (card: Card): void => {
+    const pick = (card: LevelUpCard): void => {
       if (done) return
       done = true
       window.removeEventListener('keydown', onKey)
       releaseFocusTrap()
-      applyCard(world, card)
+      applyLevelUpCard(world, card)
       root.remove()
       resolve()
     }
@@ -228,8 +330,23 @@ export function showLevelUp(parent: HTMLElement, world: World): Promise<void> {
       el.className = 'lvcard'
       el.type = 'button'
       el.dataset.kind = card.kind
+      if (card.rarity) el.dataset.rarity = card.rarity
+      if (card.family) el.dataset.family = card.family
+      if (card.rank) el.dataset.rank = String(card.rank)
+      if (card.trait) el.dataset.trait = card.trait
       el.style.setProperty('--accent', card.accent)
 
+      const badges =
+        card.badges && card.badges.length > 0
+          ? `<div class="card-badges">${card.badges
+              .map(
+                (badge) =>
+                  `<span class="${
+                    badge.startsWith('RANK') || badge === '합성' ? 'rank-badge' : 'card-badge'
+                  }">${badge}</span>`,
+              )
+              .join('')}</div>`
+          : ''
       el.innerHTML =
         `<div class="hotkey">${i + 1}</div>` +
         `<div class="top">` +
@@ -241,6 +358,7 @@ export function showLevelUp(parent: HTMLElement, world: World): Promise<void> {
         (card.slotLabel ? `<span class="slot-label">${card.slotLabel}</span>` : '') +
         `<span class="tag">${card.tag}</span>` +
         `</div>` +
+        badges +
         `<h3>${card.name}</h3>` +
         `<p>${card.desc}</p>`
 

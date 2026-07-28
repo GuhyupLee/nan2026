@@ -9,7 +9,13 @@ import {
 import { ARENA_RADIUS, DT, MAX_TICKS_PER_FRAME } from './sim/constants.ts'
 import { createInput } from './sim/types.ts'
 import type { PlayerClass, World } from './sim/types.ts'
-import { createWorld, drainEvents, resolveLevelUp, stepWorld } from './sim/world.ts'
+import {
+  createWorld,
+  drainEvents,
+  resolveLevelUp,
+  resolveRewardChoice,
+  stepWorld,
+} from './sim/world.ts'
 import { BossBar } from './ui/bossbar.ts'
 import { showCharacterSelect } from './ui/charselect.ts'
 import { Hud } from './ui/hud.ts'
@@ -143,6 +149,7 @@ if (import.meta.env.DEV) {
       project,
       showLevelUp,
       resolveLevelUp,
+      resolveRewardChoice,
       setWorld(w: World) {
         world = w
       },
@@ -190,7 +197,7 @@ function frame(now: number): void {
   // 그렇고, 특히 저사양 기기에서 이 낭비가 그대로 발열과 프레임으로 온다.
   // 일시정지·레벨업은 반투명이라 계속 그린다.
   if (activeRun) renderer.render(world, accumulator / DT)
-  skillBar.update(world.skills, world.playerClass)
+  skillBar.update(world.skills, world.playerClass, world)
   hud.update(world, project, Math.min(rawDt, 0.1))
   bossBar.update(world)
   // 렌더 전용 전투 이벤트를 비우기 전에 사운드도 같은 이벤트를 읽는다.
@@ -234,7 +241,7 @@ function frame(now: number): void {
     void showLevelUp(document.body, target).then(() => {
       audio.ui('select')
       releaseGameplayInput()
-      resolveLevelUp(target)
+      resolveRewardChoice(target)
       choiceOpen = false
       // 카드를 읽던 시간이 다음 프레임 델타로 밀려들지 않게 시계를 다시 맞춘다.
       lastTime = performance.now()
@@ -329,7 +336,7 @@ function beginRun(playerClass: PlayerClass): void {
   simInput.skillsPressed = 0
 
   // 숨겨진 동안 새 월드 상태를 먼저 반영해 낡은 쿨다운·체력바가 비치지 않게 한다.
-  skillBar.update(world.skills, world.playerClass)
+  skillBar.update(world.skills, world.playerClass, world)
   hud.update(world, project, 0)
   bossBar.update(world)
   skillBar.setVisible(true)
@@ -345,6 +352,14 @@ function beginRun(playerClass: PlayerClass): void {
   fpsFrames = 0
   statsTimer = 0.25
   fps = 0
+  if (
+    import.meta.env.DEV &&
+    new URLSearchParams(window.location.search).get('qa') === 'relic'
+  ) {
+    world.pendingRelicChoices = 1
+    world.relicsClaimed = 1
+    world.awaitingChoice = true
+  }
   running = true
 }
 

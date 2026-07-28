@@ -60,7 +60,12 @@ function sanitize(list: unknown): RunRecord[] {
         typeof r === 'object' &&
         r !== null &&
         Number.isFinite((r as RunRecord).score) &&
-        Number.isFinite((r as RunRecord).time),
+        Number.isFinite((r as RunRecord).kills) &&
+        Number.isFinite((r as RunRecord).level) &&
+        Number.isFinite((r as RunRecord).time) &&
+        Number.isFinite((r as RunRecord).at) &&
+        !Number.isNaN(new Date((r as RunRecord).at).getTime()) &&
+        typeof (r as RunRecord).victory === 'boolean',
     )
     .slice(0, KEEP)
 }

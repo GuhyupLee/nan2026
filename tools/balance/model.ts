@@ -1,4 +1,11 @@
-import { UPGRADES, getUpgrade } from '../../src/content/upgrades.ts'
+import {
+  UPGRADES,
+  applyUpgrade,
+  applyRelicUpgrade,
+  getUpgradeRank,
+  getRelicRollPriority,
+  getUpgradeRollPriority,
+} from '../../src/content/upgrades.ts'
 import { getSkillDef } from '../../src/content/skills.ts'
 import { DT, RUN_TIME_LIMIT } from '../../src/sim/constants.ts'
 import {
@@ -17,7 +24,12 @@ import {
   unlockSkill,
 } from '../../src/sim/skills.ts'
 import { createInput, type PlayerClass, type World } from '../../src/sim/types.ts'
-import { createWorld, resolveLevelUp, stepWorld } from '../../src/sim/world.ts'
+import {
+  createWorld,
+  resolveLevelUp,
+  resolveRewardChoice,
+  stepWorld,
+} from '../../src/sim/world.ts'
 
 /**
  * 넓게 흩어진 고정 시드. 밸런스 수치는 이 목록 전체로 재며, 일부만 골라
@@ -57,11 +69,17 @@ export interface BalanceRunResult {
   outcome: World['outcome']
 }
 
-function upgradeCandidates(world: World) {
+function upgradeCandidates(world: World, relic = false) {
   return UPGRADES.map((upgrade) => ({
     id: upgrade.id,
     available: upgrade.isAvailable ? upgrade.isAvailable(world) : true,
     weight: upgrade.weight,
+    classFilter: upgrade.classFilter,
+    currentRank: getUpgradeRank(world.upgradesTaken, upgrade.id),
+    maxRank: upgrade.ranks.length,
+    priority: relic
+      ? getRelicRollPriority(world, upgrade)
+      : getUpgradeRollPriority(world, upgrade),
   }))
 }
 
@@ -72,6 +90,22 @@ function upgradeCandidates(world: World) {
  * 가중 추첨된 첫 강화라는 재현 가능한 한 가지 실제 빌드가 된다.
  */
 function resolveFirstCard(world: World): void {
+  if (world.pendingRelicChoices > 0) {
+    const choice = rollUpgrades(
+      world.choiceRng,
+      upgradeCandidates(world, true),
+      3,
+      {
+        playerClass: world.playerClass,
+        taken: world.upgradesTaken,
+        allowRankUps: true,
+      },
+    )[0]
+    if (choice !== undefined) applyRelicUpgrade(world, choice.id)
+    resolveRewardChoice(world)
+    return
+  }
+
   const reward = pendingReward(world.progression)
 
   if (reward === 'unlock-choice' || reward === 'unlock-last') {
@@ -95,14 +129,14 @@ function resolveFirstCard(world: World): void {
       world.choiceRng,
       upgradeCandidates(world),
       3,
-      world.upgradesTaken,
+      {
+        playerClass: world.playerClass,
+        taken: world.upgradesTaken,
+        allowRankUps: true,
+      },
     )[0]
     if (choice !== undefined) {
-      const upgrade = getUpgrade(choice.id)
-      if (upgrade) {
-        upgrade.apply(world)
-        world.upgradesTaken.add(upgrade.id)
-      }
+      applyUpgrade(world, choice.id)
     }
   }
 

@@ -27,11 +27,14 @@ import {
 } from './enemies.ts'
 import {
   MELEE_XP_GAIN_MULTIPLIER,
+  RANGED_XP_GAIN_MULTIPLIER,
   addXp,
   consumeLevelUp,
   createProgression,
+  upgradeTraitToken,
 } from './progression.ts'
 import { createRng } from './rng.ts'
+import { stepEliteRewardBeats, stepRelicDrops } from './rewards.ts'
 import { createSkillBook, tickSkills, unlockSkill } from './skills.ts'
 import { createStats } from './stats.ts'
 import type { Input, Player, PlayerClass, World } from './types.ts'
@@ -75,6 +78,8 @@ export function createWorld(seed: number, playerClass: PlayerClass = 'ranged'): 
     stats,
     player,
     playerAction: null,
+    bufferedSkill: null,
+    basicAttackSequence: 0,
     kills: 0,
     progression: createProgression(),
     skills,
@@ -89,6 +94,10 @@ export function createWorld(seed: number, playerClass: PlayerClass = 'ranged'): 
       hp: 0,
       maxHp: BOSS_MAX_HP,
     },
+    eliteBeatIndex: 0,
+    relicDrops: [],
+    pendingRelicChoices: 0,
+    relicsClaimed: 0,
     spawnEnabled: true,
     zones: [],
     blasts: [],
@@ -127,9 +136,16 @@ export function stepWorld(world: World, input: Input): void {
   // 같은 틱의 이동이 그 새 위치에서 이어져야 순간이동이 매끄럽다.
   stepAbilities(world, input)
   stepPlayer(world, input)
+  // 정예 인장은 플레이어 이동 뒤를 추적한다. 회수로 선택 화면이 열려도
+  // 현재 고정 틱은 끝까지 마치고 다음 프레임부터 멈춰 결정론을 유지한다.
+  stepRelicDrops(world)
 
   const p = world.player
   if (world.spawnEnabled) {
+    // 일반 스폰보다 먼저 정예 자리를 확보한다. 보스와 달리 정예는 세 번의
+    // 고정 보상 비트이며 풀 용량으로 실패하면 다음 틱에 재시도한다.
+    stepEliteRewardBeats(world)
+
     // 일반 스폰보다 먼저 보스 슬롯을 확보한다. 용량 부족으로 실패하면
     // spawned를 올리지 않아 다음 틱에 안전하게 다시 시도한다.
     if (!world.boss.spawned && world.time >= BOSS_SPAWN_TIME) {
@@ -163,11 +179,43 @@ export function stepWorld(world: World, input: Input): void {
     world.stats.radius,
     world.time,
     world.boss.spawnedAt,
+    world.relicsClaimed,
   )
   // 무적 중에는 접촉 피해를 받지 않는다. 대시·궁극기가 성립하는 근거다.
   if (res.contactDamage > 0 && world.time >= p.invulnUntil) {
     // 클래스별 피해 감소를 여기 한 곳에서만 적용한다.
-    p.hp = Math.max(0, p.hp - res.contactDamage * world.stats.damageTakenMul)
+    let incoming = res.contactDamage * world.stats.damageTakenMul
+
+    const photonSpent = 'state:photon-barrier:spent'
+    if (
+      incoming >= p.hp &&
+      world.upgradesTaken.has(upgradeTraitToken('photon-barrier')) &&
+      !world.upgradesTaken.has(photonSpent)
+    ) {
+      world.upgradesTaken.add(photonSpent)
+      p.invulnUntil = world.time + 1.2
+      incoming = 0
+      if (world.rings.length < 32) {
+        world.rings.push({ x: p.pos.x, y: p.pos.y, radius: 3.4, kind: 0 })
+      }
+    }
+
+    const guardSpent = 'state:perfect-guard:spent'
+    if (
+      incoming > 0 &&
+      p.hp - incoming <= world.stats.maxHp * 0.5 &&
+      world.upgradesTaken.has(upgradeTraitToken('perfect-guard')) &&
+      !world.upgradesTaken.has(guardSpent)
+    ) {
+      world.upgradesTaken.add(guardSpent)
+      p.gauge = Math.min(100, p.gauge + 35)
+      incoming = 0
+      if (world.rings.length < 32) {
+        world.rings.push({ x: p.pos.x, y: p.pos.y, radius: 3, kind: 3 })
+      }
+    }
+
+    p.hp = Math.max(0, p.hp - incoming)
     // 같은 틱에 보스를 먼저 쓰러뜨렸다면 승리를 사망으로 덮지 않는다.
     // 반대 순서에서도 damageEnemy가 victory를 설정하므로 동시 판정은 승리 우선이다.
     if (p.hp <= 0 && world.outcome === 'alive') world.outcome = 'dead'
@@ -218,9 +266,13 @@ export function drainEvents(world: World): void {
  * XP는 반드시 이 함수를 통해서만 들어온다 — awaitingChoice 동기화를 놓치지 않기 위해서다.
  */
 export function grantXp(world: World, amount: number): void {
-  const classMultiplier = world.playerClass === 'melee' ? MELEE_XP_GAIN_MULTIPLIER : 1
+  const classMultiplier =
+    world.playerClass === 'melee'
+      ? MELEE_XP_GAIN_MULTIPLIER
+      : RANGED_XP_GAIN_MULTIPLIER
   addXp(world.progression, amount * classMultiplier, world.time)
-  world.awaitingChoice = world.progression.pendingLevelUps > 0
+  world.awaitingChoice =
+    world.pendingRelicChoices > 0 || world.progression.pendingLevelUps > 0
 }
 
 /**
@@ -229,7 +281,19 @@ export function grantXp(world: World, amount: number): void {
  */
 export function resolveLevelUp(world: World): void {
   consumeLevelUp(world.progression)
-  world.awaitingChoice = world.progression.pendingLevelUps > 0
+  world.awaitingChoice =
+    world.pendingRelicChoices > 0 || world.progression.pendingLevelUps > 0
+}
+
+/**
+ * 화면에 가장 먼저 떠 있는 보상을 하나 소진한다.
+ * 전리품과 레벨업이 같은 틱에 겹치면 전리품을 먼저 처리하고 레벨업은 보존한다.
+ */
+export function resolveRewardChoice(world: World): void {
+  if (world.pendingRelicChoices > 0) world.pendingRelicChoices -= 1
+  else consumeLevelUp(world.progression)
+  world.awaitingChoice =
+    world.pendingRelicChoices > 0 || world.progression.pendingLevelUps > 0
 }
 
 const moveDir = vec2()

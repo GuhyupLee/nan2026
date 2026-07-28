@@ -1,4 +1,5 @@
 import { xpToNext } from '../sim/progression.ts'
+import { effectiveAtkDamage } from '../sim/stats.ts'
 import type { World } from '../sim/types.ts'
 import { RUN_TIME_LIMIT } from '../sim/constants.ts'
 
@@ -26,11 +27,24 @@ export class Hud {
   private readonly xpFill: HTMLDivElement
   private readonly xpBar: HTMLDivElement
   private readonly clock: HTMLDivElement
+  private readonly passive: HTMLDivElement
+  private readonly passiveName: HTMLElement
+  private readonly passiveValue: HTMLElement
+  private readonly passiveDetail: HTMLElement
+  private readonly passiveFill: HTMLDivElement
+  private readonly damageVignette: HTMLDivElement
 
   private readonly screen = { x: 0, y: 0 }
   /** 화면에 남아 흐르는 붉은 잔상 비율. 실제 체력보다 천천히 따라간다. */
   private ghostRatio = 1
   private lastLevel = 0
+  private renderedWorld: World | null = null
+  private lastHp = 0
+  private pendingDamage = 0
+  private damagePulse = 0
+  private markedEnemies = 0
+  private passivePollLeft = 0
+  private readonly reducedMotion = window.matchMedia('(prefers-reduced-motion: reduce)')
 
   constructor(parent: HTMLElement) {
     this.floatBar = document.createElement('div')
@@ -53,6 +67,26 @@ export class Hud {
     this.clock.className = 'clock'
     parent.appendChild(this.clock)
 
+    this.passive = document.createElement('div')
+    this.passive.className = 'passive-hud'
+    this.passive.innerHTML =
+      `<div class="passive-emblem" aria-hidden="true"><span>P</span></div>` +
+      `<div class="passive-copy">` +
+      `<div class="passive-heading"><strong></strong><b></b></div>` +
+      `<small></small>` +
+      `<div class="passive-track"><div class="passive-fill"></div></div>` +
+      `</div>`
+    this.passiveName = this.passive.querySelector('.passive-heading strong')!
+    this.passiveValue = this.passive.querySelector('.passive-heading b')!
+    this.passiveDetail = this.passive.querySelector('.passive-copy small')!
+    this.passiveFill = this.passive.querySelector('.passive-fill')!
+    parent.appendChild(this.passive)
+
+    this.damageVignette = document.createElement('div')
+    this.damageVignette.className = 'damage-vignette'
+    this.damageVignette.setAttribute('aria-hidden', 'true')
+    parent.appendChild(this.damageVignette)
+
     this.setVisible(false)
   }
 
@@ -60,6 +94,38 @@ export class Hud {
     const p = world.player
     const s = world.stats
     const ratio = s.maxHp > 0 ? Math.max(0, Math.min(1, p.hp / s.maxHp)) : 0
+
+    if (this.renderedWorld !== world) {
+      this.renderedWorld = world
+      this.lastHp = p.hp
+      this.pendingDamage = 0
+      this.damagePulse = 0
+      this.passivePollLeft = 0
+      this.passive.dataset.class = world.playerClass
+    }
+
+    // 지속 접촉 피해는 작은 값이 매 틱 들어온다. 그대로 번쩍이면 붉은 화면이
+    // 배경이 되므로, 읽을 만한 덩어리가 됐을 때만 가장자리를 짧게 울린다.
+    if (p.hp < this.lastHp && !this.reducedMotion.matches) {
+      this.pendingDamage += this.lastHp - p.hp
+      if (this.pendingDamage >= 5) {
+        this.damagePulse = Math.max(
+          this.damagePulse,
+          Math.min(0.72, 0.24 + (this.pendingDamage / Math.max(1, s.maxHp)) * 2.4),
+        )
+        this.pendingDamage = 0
+      }
+    } else if (p.hp > this.lastHp) {
+      this.pendingDamage = 0
+    }
+    this.lastHp = p.hp
+    this.damagePulse = Math.max(0, this.damagePulse - dt * 1.7)
+    const criticalVignette = ratio <= 0.28 ? (0.28 - ratio) * 1.15 : 0
+    const vignette = this.reducedMotion.matches
+      ? criticalVignette
+      : Math.max(criticalVignette, this.damagePulse)
+    this.damageVignette.style.setProperty('--damage-alpha', vignette.toFixed(3))
+    this.damageVignette.dataset.critical = String(ratio <= 0.25)
 
     // --- 캐릭터 위 체력바 ---
     // 머리 위 약간(1.95)에 띄운다. 캐릭터 신장이 1.75다.
@@ -106,6 +172,43 @@ export class Hud {
     this.clock.dataset.phase =
       world.boss.active && t <= 30 ? 'critical' : world.boss.active ? 'boss' : 'normal'
     this.clock.setAttribute('aria-label', `남은 시간 ${mm}분 ${ss}초`)
+
+    // --- 클래스 패시브 ---
+    if (world.playerClass === 'ranged') {
+      this.passivePollLeft -= dt
+      if (this.passivePollLeft <= 0) {
+        this.passivePollLeft = 0.12
+        let marked = 0
+        for (let i = 0; i < world.enemies.count; i++) {
+          if (world.enemies.markExpire[i]! > world.time) marked += 1
+        }
+        this.markedEnemies = marked
+      }
+      const marked = this.markedEnemies
+      const litDamage = effectiveAtkDamage(s) + s.markBonus
+      this.passiveName.textContent = '점등'
+      this.passiveValue.textContent = marked > 0 ? `${marked}체` : '대기'
+      this.passiveDetail.textContent =
+        marked > 0
+          ? `점등 평타 ${formatHudNumber(litDamage)} · 처치 회복 ${formatHudNumber(s.markKillHeal)}`
+          : `스킬 적중으로 표식 · 점등 평타 ${formatHudNumber(litDamage)}`
+      this.passiveFill.style.width = `${Math.min(100, marked * 12.5)}%`
+      this.passive.dataset.ready = String(marked > 0)
+    } else {
+      const gauge = Math.max(0, Math.min(100, p.gauge))
+      const swipeDamage = effectiveAtkDamage(s) * 1.45
+      this.passiveName.textContent = p.empowered ? '월참' : '참흔'
+      this.passiveValue.textContent = p.empowered ? '준비' : `${Math.round(gauge)}%`
+      this.passiveDetail.textContent = p.empowered
+        ? `다음 평타 광역 ${formatHudNumber(swipeDamage)} · QWE 재사용 단축`
+        : `근처 적을 베어 축적 · 월참 ${formatHudNumber(swipeDamage)}`
+      this.passiveFill.style.width = `${p.empowered ? 100 : gauge}%`
+      this.passive.dataset.ready = String(p.empowered)
+    }
+    this.passive.setAttribute(
+      'aria-label',
+      `${this.passiveName.textContent ?? ''}, ${this.passiveDetail.textContent ?? ''}`,
+    )
   }
 
   setVisible(visible: boolean): void {
@@ -113,5 +216,13 @@ export class Hud {
     this.floatBar.style.display = d
     this.xpBar.style.display = d
     this.clock.style.display = d
+    this.passive.style.display = d
+    this.damageVignette.style.display = d
   }
+}
+
+function formatHudNumber(value: number): string {
+  if (!Number.isFinite(value)) return '—'
+  if (Math.abs(value - Math.round(value)) < 0.05) return String(Math.round(value))
+  return value.toFixed(1)
 }

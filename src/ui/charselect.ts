@@ -1,4 +1,5 @@
 import type { PlayerClass } from '../sim/types.ts'
+import { getClassSkills, getSkillDef } from '../content/skills.ts'
 
 /**
  * 캐릭터 선택 화면.
@@ -60,6 +61,103 @@ export const CLASS_OPTIONS: ClassOption[] = [
     hotkey: '2',
   },
 ]
+
+const PASSIVE_PREVIEW: Readonly<
+  Record<PlayerClass, { name: string; label: string; description: string }>
+> = {
+  ranged: {
+    name: '점등',
+    label: 'PASSIVE · LIGHT MARK',
+    description: '스킬로 점등한 적에게 평타가 추가 피해를 주고, 처치하면 빛을 회수해 회복합니다.',
+  },
+  melee: {
+    name: '참흔 · 월참',
+    label: 'PASSIVE · MOON SCAR',
+    description: '근처의 적을 베며 참흔을 채웁니다. 100이 되면 다음 평타가 광역 월참으로 승격됩니다.',
+  },
+}
+
+function createSkillChip(
+  playerClass: PlayerClass,
+  id: 'q' | 'w' | 'e' | 'r' | 'd' | 'f',
+): HTMLElement | null {
+  const def = getSkillDef(playerClass, id)
+  if (!def) return null
+
+  const chip = document.createElement('span')
+  chip.className = 'kit-skill'
+  chip.setAttribute('role', 'listitem')
+  chip.setAttribute('aria-label', `${def.key} ${def.name}: ${def.oneLiner}`)
+  chip.title = `${def.key} · ${def.name}\n${def.oneLiner}`
+
+  const icon = document.createElement('img')
+  icon.src = `${import.meta.env.BASE_URL}${def.icon}`
+  icon.alt = ''
+  icon.decoding = 'async'
+
+  const copy = document.createElement('span')
+  const key = document.createElement('b')
+  key.textContent = def.key
+  const name = document.createElement('small')
+  name.textContent = def.name
+  copy.append(key, name)
+
+  chip.append(icon, copy)
+  return chip
+}
+
+function createKitPreview(playerClass: PlayerClass): HTMLElement {
+  const preview = document.createElement('div')
+  preview.className = 'kit-preview'
+
+  const label = document.createElement('span')
+  label.className = 'kit-label'
+  label.textContent = 'LOADOUT'
+  preview.appendChild(label)
+
+  const core = document.createElement('div')
+  core.className = 'kit-row kit-core'
+  core.setAttribute('role', 'list')
+  core.setAttribute('aria-label', 'Q W E R 스킬')
+  for (const def of getClassSkills(playerClass)) {
+    const chip = createSkillChip(playerClass, def.id as 'q' | 'w' | 'e' | 'r')
+    if (chip) core.appendChild(chip)
+  }
+  preview.appendChild(core)
+
+  const utility = document.createElement('div')
+  utility.className = 'kit-row kit-utility'
+  utility.setAttribute('role', 'list')
+  utility.setAttribute('aria-label', '소환사 주문 D F')
+  for (const id of ['d', 'f'] as const) {
+    const chip = createSkillChip(playerClass, id)
+    if (chip) utility.appendChild(chip)
+  }
+  preview.appendChild(utility)
+
+  const d = getSkillDef(playerClass, 'd')
+  const f = getSkillDef(playerClass, 'f')
+  const utilityCopy = document.createElement('p')
+  utilityCopy.className = 'kit-utility-copy'
+  utilityCopy.textContent =
+    `D ${d?.name ?? '회복'} — ${d?.oneLiner ?? '체력을 회복합니다'} · ` +
+    `F ${f?.name ?? '점멸'} — ${f?.oneLiner ?? '순간이동합니다'}`
+  preview.appendChild(utilityCopy)
+
+  const passiveDef = PASSIVE_PREVIEW[playerClass]
+  const passive = document.createElement('div')
+  passive.className = 'passive-preview'
+  const passiveLabel = document.createElement('span')
+  passiveLabel.textContent = passiveDef.label
+  const passiveName = document.createElement('strong')
+  passiveName.textContent = passiveDef.name
+  const passiveCopy = document.createElement('p')
+  passiveCopy.textContent = passiveDef.description
+  passive.append(passiveLabel, passiveName, passiveCopy)
+  preview.appendChild(passive)
+
+  return preview
+}
 
 /**
  * 선택 화면을 띄우고 고를 때까지 기다린다.
@@ -143,7 +241,19 @@ export function showCharacterSelect(
       card.type = 'button'
       card.style.setProperty('--accent', opt.accent)
       card.dataset.class = opt.id
-      card.setAttribute('aria-label', `${opt.name} — ${opt.epithet}`)
+      const coreSummary = getClassSkills(opt.id)
+        .map((skill) => `${skill.key} ${skill.name}, ${skill.oneLiner}`)
+        .join('. ')
+      const d = getSkillDef(opt.id, 'd')
+      const f = getSkillDef(opt.id, 'f')
+      const passive = PASSIVE_PREVIEW[opt.id]
+      card.setAttribute(
+        'aria-label',
+        `${opt.name}, ${opt.epithet}. ${coreSummary}. ` +
+          `D ${d?.name ?? '회복'}, ${d?.oneLiner ?? ''}. ` +
+          `F ${f?.name ?? '점멸'}, ${f?.oneLiner ?? ''}. ` +
+          `패시브 ${passive.name}, ${passive.description}`,
+      )
 
       const img = document.createElement('img')
       img.className = 'portrait'
@@ -172,6 +282,7 @@ export function showCharacterSelect(
         `<div class="epithet">${opt.epithet}</div>` +
         `<div class="tagline">${opt.tagline}</div>` +
         `<div class="traits">${opt.traits.map((t) => `<span>${t}</span>`).join('')}</div>`
+      info.appendChild(createKitPreview(opt.id))
       card.appendChild(info)
 
       const selectLabel = document.createElement('div')

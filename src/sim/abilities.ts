@@ -1,7 +1,11 @@
 import { ARENA_RADIUS } from './constants.ts'
-import { castSkill } from './kits.ts'
+import { takeBufferedPlayerSkill } from './actions.ts'
+import { castSkill, MARK_DURATION } from './kits.ts'
+import { upgradeTraitToken } from './progression.ts'
 import { consumeCooldown, SKILL_D, SKILL_E, SKILL_F, SKILL_Q, SKILL_R, SKILL_W } from './skills.ts'
+import { effectiveAtkDamage } from './stats.ts'
 import type { Input, World } from './types.ts'
+import { pushBlast } from './zones.ts'
 
 /**
  * 소환사 주문 — D 회복 / F 점멸.
@@ -72,6 +76,23 @@ function tryFlash(world: World): boolean {
 
   pushRing(world, fromX, fromY, 1.6, 0)
   pushRing(world, nx, ny, 2.2, 0)
+  if (
+    world.playerClass === 'melee' &&
+    world.upgradesTaken.has(upgradeTraitToken('afterimage-step'))
+  ) {
+    pushBlast(world, {
+      kind: 1,
+      x: fromX,
+      y: fromY,
+      radius: 3.2,
+      damage: effectiveAtkDamage(world.stats) * 0.65,
+      impulse: 8,
+      markDuration: MARK_DURATION,
+      slowMul: 1,
+      slowDuration: 0,
+      fireAt: world.time + 0.18,
+    })
+  }
   return true
 }
 
@@ -79,10 +100,21 @@ function tryHeal(world: World): boolean {
   const p = world.player
   if (!consumeCooldown(world.skills, 'd')) return false
 
+  const overflow = Math.max(
+    0,
+    p.hp + world.stats.healAmount - world.stats.maxHp,
+  )
   p.hp = Math.min(world.stats.maxHp, p.hp + world.stats.healAmount)
   // 롤의 회복처럼 짧은 이동속도 증가가 붙는다. 회복만 있으면
   // "맞으면서 회복"이 되지만, 이속이 붙으면 "빠져나오면서 회복"이 된다.
   p.speedBoostUntil = world.time + world.stats.healBoostTime
+  if (
+    overflow > 0 &&
+    world.upgradesTaken.has(upgradeTraitToken('overflow-guard'))
+  ) {
+    // 초과 회복량이 크더라도 긴 무적으로 바뀌지 않게 보호 시간을 고정한다.
+    p.invulnUntil = Math.max(p.invulnUntil, world.time + 0.65)
+  }
 
   pushRing(world, p.pos.x, p.pos.y, 3.2, 1)
   return true
@@ -98,6 +130,9 @@ function pushRing(world: World, x: number, y: number, radius: number, kind: numb
  */
 export function stepAbilities(world: World, input: Input): void {
   const pressed = input.skillsPressed
+
+  const buffered = takeBufferedPlayerSkill(world)
+  if (buffered) castSkill(world, buffered)
   if (pressed === 0) return
 
   // 소환사 주문이 먼저다. 위기에서 점멸이 스킬 뒤로 밀리면 안 된다.

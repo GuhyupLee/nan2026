@@ -22,6 +22,13 @@ const ACTION_PRIORITY: Record<CharacterAction, number> = {
   r: 40,
 }
 
+const BASIC_ATTACK_RECOVERY_START: Readonly<
+  Partial<Record<CharacterAction, number>>
+> = {
+  attack: 0.72,
+  empowered: 0.74,
+}
+
 /** 새 동작의 짧은 예비 자세가 걷기 블렌드에 묻히지 않는 최대 진입 시간. */
 const ACTION_FADE_IN = 0.018
 /** 이전 one-shot만 빠르게 걷어내는 교차 페이드. */
@@ -48,6 +55,16 @@ export function canStartVrmAction(
   const currentPriority = ACTION_PRIORITY[current]
   const incomingPriority = ACTION_PRIORITY[incoming]
   if (incomingPriority > currentPriority) return true
+
+  const recoveryStart = BASIC_ATTACK_RECOVERY_START[current]
+  if (
+    recoveryStart !== undefined &&
+    (incoming === 'attack' || incoming === 'empowered') &&
+    currentProgress >= recoveryStart
+  ) {
+    // 공격속도 강화의 다음 타격은 접촉 뒤 회수 구간만 줄여야 타격 모션이 빠지지 않는다.
+    return true
+  }
 
   return false
 }

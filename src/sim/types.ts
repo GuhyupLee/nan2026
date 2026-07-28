@@ -8,6 +8,7 @@ import type { SpatialHash } from './spatial.ts'
 import type { Stats } from './stats.ts'
 import type { Vec2 } from './vec.ts'
 import type { PendingBlast, Zone } from './zones.ts'
+import type { RelicDrop } from './rewards.ts'
 
 /**
  * 한 틱 분량의 플레이어 입력.
@@ -56,9 +57,9 @@ export interface PendingPlayerAction {
   kind: PlayerActionKind
   /** 평타면 null, QWER면 해당 슬롯. */
   slot: SkillId | null
-  /** 시작 시 고정한 시전 방향. */
+  /** 판정 직전에 현재 조준점으로 갱신하는 시전 방향. 근접 W 경로만 시작 시 고정한다. */
   angle: number
-  /** 지면 지정 스킬을 위해 시작 시 고정한 조준점. */
+  /** 판정 직전에 갱신하는 조준점. 근접 W 경로만 시작 시 고정한다. */
   targetX: number
   targetY: number
   /** 입력을 받아들인 정확한 시뮬레이션 시각. */
@@ -75,6 +76,13 @@ export interface PendingPlayerAction {
     destinationX: number
     destinationY: number
   }
+}
+
+/** 후딜 말미에 들어온 QWER를 다음 행동 가능 틱까지 보존한다. */
+export interface BufferedSkillInput {
+  slot: SkillId
+  queuedAt: number
+  expiresAt: number
 }
 
 export interface ActionStartEvent {
@@ -108,8 +116,8 @@ export interface Player {
    * 처치 회복의 남은 예산(HP 단위). 토큰 버킷이다.
    *
    * 처치당 회복에 상한이 없으면 뱀서라이크에서 회복이 피해를 압도한다.
-   * 계측: 5분에 3,045킬 × 0.6 = 최대 1,800 회복 대 받은 피해 54.
-   * 체력이 구조적으로 줄어들 수가 없어서 위험시간이 0%였다.
+   * 초기 계측에서는 처치 회복이 받은 피해를 크게 앞질러 위험시간이 0%였다.
+   * 현재는 회복량만큼만 예산을 소비하며, 예산은 초당 4·최대 12로 제한한다.
    *
    * 매 틱 `KILL_HEAL_RATE`만큼 차오르고 `KILL_HEAL_CAP`에서 멈춘다.
    * 잡몹을 한 번에 쓸어도 그 순간 회복은 예산만큼만 나가고, 대신 조용한
@@ -214,11 +222,15 @@ export interface World {
   player: Player
   /** 현재 선딜·후딜 중인 QWER. 평타는 조작감을 위해 즉시 판정한다. */
   playerAction: PendingPlayerAction | null
+  /** 후딜 마지막 0.15초에 들어온 다음 QWER. 리플레이 상태에도 포함한다. */
+  bufferedSkill: BufferedSkillInput | null
+  /** 「삼중 회절」의 세 번째 평타를 결정하는 누적 발사 횟수. */
+  basicAttackSequence: number
   /** 이번 판 누적 처치 수. 점수의 기본 축. */
   kills: number
   progression: Progression
   skills: SkillBook
-  /** 이미 획득한 강화 id. 같은 카드가 다시 뜨지 않게 한다. */
+  /** 강화 id·랭크·각성 trait와 일회성 소비 상태를 함께 기록한다. */
   upgradesTaken: Set<string>
 
   /** 직전 틱의 조준 지점(월드 좌표). 자동 공격과 조준 표시가 읽는다. */
@@ -227,6 +239,14 @@ export interface World {
   enemies: EnemyPool
   enemyHash: SpatialHash
   boss: BossState
+  /** 다음에 등장할 정예 비트의 인덱스. 지정 비트는 각각 한 번만 소비한다. */
+  eliteBeatIndex: number
+  /** 정예가 남긴 월식 인장. 지연 뒤 플레이어를 추적한다. */
+  relicDrops: RelicDrop[]
+  /** 획득했지만 아직 선택하지 않은 전리품 보상 수. 레벨업보다 먼저 처리한다. */
+  pendingRelicChoices: number
+  /** 한 판에서 실제로 회수한 월식 인장 수. 결과·밸런스 계측용. */
+  relicsClaimed: number
   /**
    * 스폰을 돌릴 것인가.
    * 단위 테스트에서 이동·시간 같은 성질만 격리해 보려면 꺼야 한다.
