@@ -34,6 +34,7 @@ import {
   BOSS_WINDUP_AT,
   ELITE_SPAWN_TIMES,
   ENEMY_TYPES,
+  MAX_ENEMIES,
   MIN_ENEMY_SPAWN_DISTANCE,
   TYPE_BOSS,
   TYPE_BRUTE,
@@ -51,6 +52,7 @@ import {
   updateSpawner,
   type EnemyPool,
 } from '../src/sim/enemies.ts'
+import { queryCircle } from '../src/sim/query.ts'
 import {
   LEVEL_REWARDS,
   MAX_LEVEL,
@@ -1775,6 +1777,54 @@ console.log('\nsim smoke check\n')
   check(
     '같은 시드와 입력의 근거리 W 경로는 결정론적으로 동일하다',
     deterministicA.every((value, index) => value === deterministicB[index]),
+  )
+
+  const flashDuringDash = createWorld(823, 'melee')
+  flashDuringDash.spawnEnabled = false
+  flashDuringDash.lastAim.x = 12
+  flashDuringDash.lastAim.y = 0
+  unlockSkill(flashDuringDash.skills, 'w', 1)
+  castSkill(flashDuringDash, 'w')
+  while (flashDuringDash.time < 0.22) {
+    stepWorld(flashDuringDash, createInput())
+  }
+  const beforeFlashX = flashDuringDash.player.pos.x
+  const flashInput = createInput()
+  flashInput.aim.x = beforeFlashX
+  flashInput.aim.y = 20
+  flashInput.skillsPressed = SKILL_F
+  stepWorld(flashDuringDash, flashInput)
+  const afterFlashX = flashDuringDash.player.pos.x
+  const afterFlashY = flashDuringDash.player.pos.y
+  stepWorld(flashDuringDash, createInput())
+  check(
+    '근거리 W 도중 점멸은 원래 돌진 보간에 덮이지 않는다',
+    afterFlashY > 7.5 &&
+      Math.abs(flashDuringDash.player.pos.x - afterFlashX) < 1e-9 &&
+      Math.abs(flashDuringDash.player.pos.y - afterFlashY) < 1e-9 &&
+      flashDuringDash.playerAction?.meleeDash?.destinationY === afterFlashY,
+    `beforeX=${beforeFlashX} after=${afterFlashX},${afterFlashY} next=${flashDuringDash.player.pos.x},${flashDuringDash.player.pos.y}`,
+  )
+}
+
+// --- 고밀도 판정 버퍼: EnemyPool 절대 상한 전체를 보존한다 ---
+{
+  const pool = createEnemyPool()
+  pool.count = MAX_ENEMIES
+  pool.x.fill(0)
+  pool.y.fill(0)
+  pool.hp.fill(1)
+  pool.type.fill(TYPE_WALKER)
+  const hash = createEnemyHash()
+  hash.rebuild(pool.count, pool.x, pool.y)
+  let visited = 0
+  queryCircle(pool, hash, 0, 0, 2, () => {
+    visited += 1
+  })
+  check(
+    '고밀도 원형 판정은 600개 적 슬롯을 모두 방문한다',
+    visited === MAX_ENEMIES,
+    `visited=${visited}/${MAX_ENEMIES}`,
   )
 }
 

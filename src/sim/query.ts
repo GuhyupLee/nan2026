@@ -1,4 +1,4 @@
-import { ENEMY_TYPES, type EnemyPool } from './enemies.ts'
+import { ENEMY_TYPES, MAX_ENEMIES, type EnemyPool } from './enemies.ts'
 import type { SpatialHash } from './spatial.ts'
 
 /**
@@ -17,7 +17,9 @@ import type { SpatialHash } from './spatial.ts'
 /** @param i 적 인덱스 @param dist2 판정 기준점까지 거리 제곱 */
 export type EnemyVisitor = (i: number, dist2: number) => void
 
-const buf = new Int32Array(512)
+// EnemyPool의 절대 상한과 같아야 고밀도 엔드리스에서도 뒤쪽 슬롯이 조용히
+// 판정에서 누락되지 않는다.
+const buf = new Int32Array(MAX_ENEMIES)
 
 /** 원. 가장 흔한 형태 — 폭발, 접촉, 회복 범위. */
 export function queryCircle(

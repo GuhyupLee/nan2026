@@ -74,6 +74,17 @@ function tryFlash(world: World): boolean {
   p.vel.x = 0
   p.vel.y = 0
 
+  const meleeDash = world.playerAction?.meleeDash
+  if (meleeDash) {
+    // F는 소환사 주문이라 QWER보다 우선한다. 진행 중인 W가 다음 stepPlayer에서
+    // 원래 보간 경로를 다시 쓰면 점멸이 통째로 사라지므로, 점멸 위치에서 남은
+    // 돌진 이동만 취소한다. W의 판정·후딜·무적은 유지되어 입력은 낭비되지 않는다.
+    meleeDash.originX = nx
+    meleeDash.originY = ny
+    meleeDash.destinationX = nx
+    meleeDash.destinationY = ny
+  }
+
   pushRing(world, fromX, fromY, 1.6, 0)
   pushRing(world, nx, ny, 2.2, 0)
   if (
