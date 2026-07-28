@@ -43,7 +43,7 @@ export function getLoadoutBriefingItems(
     glyph: skill.glyph,
     group: 'core',
     availability: 'level-up',
-    availabilityLabel: skill.id === 'r' ? 'Lv8 자동 해금' : '레벨업 선택',
+    availabilityLabel: skill.id === 'r' ? 'Lv8' : '레벨업',
   }))
 
   const passive = getPassiveDef(playerClass)
@@ -51,7 +51,7 @@ export function getLoadoutBriefingItems(
     ...passive,
     group: 'utility',
     availability: 'automatic',
-    availabilityLabel: '자동 발동',
+    availabilityLabel: '자동',
   }
 
   const utility: LoadoutBriefingItem[] = UTILITY_IDS.map((id) => {
@@ -66,7 +66,7 @@ export function getLoadoutBriefingItems(
       glyph: skill.glyph,
       group: 'utility',
       availability: 'ready',
-      availabilityLabel: '즉시 사용',
+      availabilityLabel: '사용 가능',
     }
   })
 
@@ -163,27 +163,16 @@ export function showLoadoutBriefing(
     heading.className = 'loadout-briefing-heading'
     const kicker = document.createElement('span')
     kicker.className = 'loadout-briefing-kicker'
-    kicker.textContent = `전투 브리핑 · ${option.name}`
+    kicker.textContent = `기술표 · ${option.name}`
     const title = document.createElement('h2')
     title.id = 'loadout-briefing-title'
-    title.textContent = '스킬을 확인하세요'
+    title.textContent = 'Q W E R · P · D F'
     const intro = document.createElement('p')
     intro.id = 'loadout-briefing-intro'
     intro.textContent =
-      'Q W E는 레벨업 때 원하는 순서로 선택하고 R은 레벨 8에 자동으로 해금됩니다. P는 자동으로 작동하며 D와 F는 처음부터 사용할 수 있습니다.'
+      'QWE는 레벨업 · R은 Lv8 · P는 자동 · D/F는 처음부터 사용'
     heading.append(kicker, title, intro)
-
-    const legend = document.createElement('div')
-    legend.className = 'loadout-briefing-legend'
-    legend.setAttribute('aria-label', '스킬 사용 가능 시점')
-    const unlockLegend = document.createElement('span')
-    unlockLegend.dataset.kind = 'level-up'
-    unlockLegend.textContent = 'QWE 선택 · R Lv8 해금'
-    const readyLegend = document.createElement('span')
-    readyLegend.dataset.kind = 'ready'
-    readyLegend.textContent = 'P 자동 적용 · D/F 즉시 사용'
-    legend.append(unlockLegend, readyLegend)
-    header.append(heading, legend)
+    header.append(heading)
 
     const coreSection = document.createElement('section')
     coreSection.className = 'loadout-briefing-section loadout-briefing-core'
@@ -192,10 +181,8 @@ export function showLoadoutBriefing(
     coreHeading.className = 'loadout-briefing-section-heading'
     const coreTitle = document.createElement('h3')
     coreTitle.id = 'loadout-core-title'
-    coreTitle.textContent = 'Q W E R · 전투 스킬'
-    const coreHint = document.createElement('span')
-    coreHint.textContent = 'QWE는 원하는 순서 · R은 Lv8 자동 해금'
-    coreHeading.append(coreTitle, coreHint)
+    coreTitle.textContent = 'Q W E R'
+    coreHeading.append(coreTitle)
     const coreGrid = document.createElement('div')
     coreGrid.className = 'loadout-briefing-grid loadout-briefing-core-grid'
     coreGrid.setAttribute('role', 'list')
@@ -209,10 +196,8 @@ export function showLoadoutBriefing(
     utilityHeading.className = 'loadout-briefing-section-heading'
     const utilityTitle = document.createElement('h3')
     utilityTitle.id = 'loadout-utility-title'
-    utilityTitle.textContent = 'P · D F · 패시브·보조 기술'
-    const utilityHint = document.createElement('span')
-    utilityHint.textContent = 'P 자동 적용 · D/F 전투 시작 즉시 사용'
-    utilityHeading.append(utilityTitle, utilityHint)
+    utilityTitle.textContent = 'P · D · F'
+    utilityHeading.append(utilityTitle)
     const utilityGrid = document.createElement('div')
     utilityGrid.className = 'loadout-briefing-grid loadout-briefing-utility-grid'
     utilityGrid.setAttribute('role', 'list')
@@ -223,21 +208,21 @@ export function showLoadoutBriefing(
     footer.className = 'loadout-briefing-footer'
     const help = document.createElement('p')
     help.textContent = window.matchMedia('(pointer: coarse)').matches
-      ? '전투 중에는 화면 아래의 같은 아이콘을 누르세요. 길게 누르면 설명을 다시 볼 수 있습니다.'
-      : '전투 중에는 화면 아래 아이콘에 마우스를 올리거나 포커스하면 설명을 다시 볼 수 있습니다.'
+      ? '전투 중에는 화면 아래의 같은 아이콘을 누르세요.'
+      : '전투 중 아이콘에 마우스를 올리면 설명을 다시 볼 수 있습니다.'
 
     const actions = document.createElement('div')
     actions.className = 'loadout-briefing-actions'
     const back = document.createElement('button')
     back.className = 'loadout-briefing-back'
     back.type = 'button'
-    back.textContent = '캐릭터 다시 선택'
+    back.textContent = '캐릭터 선택'
 
     const start = document.createElement('button')
     start.className = 'loadout-briefing-start'
     start.type = 'button'
     const startLabel = document.createElement('span')
-    startLabel.textContent = `전투 시작 · ${option.name}`
+    startLabel.textContent = '전투 시작'
     const startKey = document.createElement('small')
     startKey.textContent = 'ENTER'
     start.append(startLabel, startKey)

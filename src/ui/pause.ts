@@ -4,7 +4,7 @@ import { trapFocus } from './focus-trap.ts'
 
 export type PauseAction = 'resume' | 'menu'
 
-type VolumeKey = 'master' | 'sfx'
+type VolumeKey = 'master' | 'music' | 'sfx'
 
 const clamp01 = (value: number): number => Math.max(0, Math.min(1, value))
 
@@ -150,7 +150,11 @@ export function showSettings(
         const next = Number(slider.value) / 100
         output.value = `${slider.value}%`
         const patch: Partial<AudioSettings> =
-          key === 'master' ? { master: next } : { sfx: next }
+          key === 'master'
+            ? { master: next }
+            : key === 'music'
+              ? { music: next }
+              : { sfx: next }
         audio.setSettings(patch)
       }
 
@@ -172,6 +176,7 @@ export function showSettings(
       '게임의 모든 소리를 함께 조절합니다.',
       initial.master,
     )
+    addVolume('music', '배경 음악', '메뉴와 전투 음악의 크기입니다.', initial.music)
     addVolume('sfx', '효과음', '공격, 피격, 스킬 소리의 크기입니다.', initial.sfx)
 
     const mute = makeButton('settings-toggle', '음소거')

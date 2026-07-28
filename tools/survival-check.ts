@@ -124,21 +124,31 @@ function resolveFirstChoice(world: World): void {
       maxRank: upgrade.ranks.length,
       priority: getUpgradeRollPriority(world, upgrade),
     }))
-    const choices = rollUpgrades(world.choiceRng, candidates, 3, {
+    const choices = rollUpgrades(world.choiceRng, candidates, 4, {
       playerClass: world.playerClass,
       taken: world.upgradesTaken,
       allowRankUps: true,
     })
     // 생존 계측 봇은 선택지를 무작정 첫 칸만 누르지 않는다. 체력이 낮은
     // 클래스가 방어 장비를 봤는데도 버리는 정책은 난이도 대신 봇의 실수를
-    // 측정하므로, 노출된 세 장 안에서는 클래스의 대표 생존 장비를 우선한다.
+    // 측정하므로, 노출된 네 장 안에서는 클래스의 대표 생존 장비를 우선한다.
     const defensiveIds =
       world.playerClass === 'ranged'
         ? ['photon-core']
         : ['ironwall-breath', 'bloodflow-breath']
+    const defensiveChoice = choices.find((candidate) =>
+      defensiveIds.includes(candidate.id),
+    )
+    const defensiveRank = defensiveChoice
+      ? getUpgradeRank(world.upgradesTaken, defensiveChoice.id)
+      : 0
+    const needsDefense =
+      world.player.hp / world.stats.maxHp < 0.55 || defensiveRank === 0
     const choice =
-      choices.find((candidate) => defensiveIds.includes(candidate.id)) ??
-      choices[0]
+      defensiveChoice && needsDefense
+        ? defensiveChoice
+        : choices.find((candidate) => !defensiveIds.includes(candidate.id)) ??
+          choices[0]
     if (choice) applyUpgrade(world, choice.id)
   }
 

@@ -11,12 +11,12 @@ import type { PlayerClass } from './types.ts'
 
 /**
  * 비트 시트가 지정한 레벨 도달 목표 시각(초).
- * 인덱스 i = 레벨 (i+1). 즉 [1] = Lv2 = 14초.
+ * 인덱스 i = 레벨 (i+1). 즉 [1] = Lv2 = 12초.
  */
 export const TARGET_LEVEL_TIMES = [
   0, // Lv1  0:00
-  14, // Lv2  0:14
-  27, // Lv3  0:27
+  12, // Lv2  0:12
+  25, // Lv3  0:25
   40, // Lv4  0:40
   53, // Lv5  0:53
   66, // Lv6  1:06
@@ -55,10 +55,10 @@ export const MAX_LEVEL = TARGET_LEVEL_TIMES.length
  * 스폰 또는 적 체력을 바꾸면 반드시 npm run balance로 곡선을 다시 확인한다.
  */
 export const XP_FOR_NEXT = [
-  21,
-  43,
+  16,
+  36,
   60,
-  76,
+  88,
   97,
   101,
   163,

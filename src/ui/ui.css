@@ -3873,7 +3873,7 @@ body.pickup-buff-active #hint:not(.hidden) {
 
 .levelup .banner {
   position: relative;
-  width: min(82rem, calc(100vw - var(--ui-safe-left) - var(--ui-safe-right) - 2rem));
+  width: min(92rem, calc(100vw - var(--ui-safe-left) - var(--ui-safe-right) - 2rem));
   padding: 0 0 0 1rem;
   display: grid;
   grid-template-columns: minmax(0, 1fr) auto;
@@ -3940,6 +3940,11 @@ body.pickup-buff-active #hint:not(.hidden) {
   gap: 0.8rem;
 }
 
+.levelup[data-card-count='4'] .cards {
+  width: min(92rem, calc(100vw - var(--ui-safe-left) - var(--ui-safe-right) - 2rem));
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+}
+
 .levelup[data-card-count='1'] .cards {
   width: min(28rem, calc(100vw - var(--ui-safe-left) - var(--ui-safe-right) - 2rem));
   grid-template-columns: minmax(0, 1fr);
@@ -3953,7 +3958,7 @@ body.pickup-buff-active #hint:not(.hidden) {
 .lvcard {
   width: auto;
   min-width: 0;
-  min-height: 21rem;
+  min-height: 16.5rem;
   padding: 1.08rem 1rem 0.86rem;
   gap: 0.66rem;
   border-color: #414b57;
@@ -3977,13 +3982,12 @@ body.pickup-buff-active #hint:not(.hidden) {
 .lvcard .hotkey {
   top: 0.72rem;
   right: 0.72rem;
-  width: auto;
-  height: auto;
-  min-height: 1.7rem;
-  padding: 0.18rem 0.38rem 0.18rem 0.46rem;
-  display: flex;
-  align-items: center;
-  gap: 0.36rem;
+  width: 1.8rem;
+  height: 1.8rem;
+  min-height: 0;
+  padding: 0;
+  display: grid;
+  place-items: center;
   border-color: #52606d;
   color: #dce3ea;
   background: #080c11;
@@ -4003,7 +4007,7 @@ body.pickup-buff-active #hint:not(.hidden) {
 .lvcard .top {
   position: relative;
   min-height: 3.2rem;
-  padding-right: 5.3rem;
+  padding-right: 2.35rem;
   gap: 0.68rem;
 }
 
@@ -4047,7 +4051,7 @@ body.pickup-buff-active #hint:not(.hidden) {
 }
 
 .choice-heading {
-  min-height: 2.7rem;
+  min-height: 2.3rem;
   display: flex;
   flex-direction: column;
   justify-content: flex-end;
@@ -4070,7 +4074,7 @@ body.pickup-buff-active #hint:not(.hidden) {
 }
 
 .choice-effect {
-  min-height: 5.15rem;
+  min-height: 3.85rem;
   padding: 0.68rem 0.72rem 0.72rem;
   display: flex;
   flex-direction: column;
@@ -4099,7 +4103,8 @@ body.pickup-buff-active #hint:not(.hidden) {
 }
 
 .lvcard .choice-detail,
-.lvcard .choice-preview {
+.lvcard .choice-preview,
+.lvcard .choice-route {
   margin: 0;
   display: block;
   color: #8e9aa7;
@@ -4109,11 +4114,17 @@ body.pickup-buff-active #hint:not(.hidden) {
 }
 
 .lvcard .choice-preview {
-  min-height: 2.8rem;
+  min-height: 2.35rem;
   padding: 0.48rem 0.56rem;
   border: 1px solid #303946;
   color: #aab5c0;
   background: rgba(7, 11, 16, 0.58);
+}
+
+.lvcard .choice-route {
+  padding-top: 0.42rem;
+  border-top: 1px solid #2e3843;
+  color: color-mix(in srgb, var(--accent) 62%, #aab4be);
 }
 
 .lvcard[data-rarity='awakening'] .choice-preview,
@@ -4226,7 +4237,8 @@ body.pickup-buff-active #hint:not(.hidden) {
   .levelup .banner,
   .levelup .cards,
   .levelup[data-card-count='1'] .cards,
-  .levelup[data-card-count='2'] .cards {
+  .levelup[data-card-count='2'] .cards,
+  .levelup[data-card-count='4'] .cards {
     width: min(35rem, calc(100vw - var(--ui-safe-left) - var(--ui-safe-right) - 1.2rem));
   }
 
@@ -4240,7 +4252,8 @@ body.pickup-buff-active #hint:not(.hidden) {
   }
 
   .levelup .cards,
-  .levelup[data-card-count='2'] .cards {
+  .levelup[data-card-count='2'] .cards,
+  .levelup[data-card-count='4'] .cards {
     grid-template-columns: 1fr;
     padding-bottom: max(var(--ui-safe-bottom), 0.7rem);
   }
@@ -4274,6 +4287,10 @@ body.pickup-buff-active #hint:not(.hidden) {
     overflow: hidden;
     -webkit-box-orient: vertical;
     -webkit-line-clamp: 2;
+  }
+
+  .lvcard .choice-route {
+    min-height: 0;
   }
 }
 
@@ -4321,6 +4338,11 @@ body.pickup-buff-active #hint:not(.hidden) {
     grid-template-columns: repeat(2, minmax(0, 1fr));
   }
 
+  .levelup[data-card-count='4'] .cards {
+    width: min(92rem, 96vw);
+    grid-template-columns: repeat(4, minmax(0, 1fr));
+  }
+
   .lvcard {
     min-height: 0;
     padding: 0.62rem 0.68rem 0.55rem;
@@ -4350,7 +4372,8 @@ body.pickup-buff-active #hint:not(.hidden) {
   }
 
   .lvcard .choice-detail,
-  .lvcard .choice-preview {
+  .lvcard .choice-preview,
+  .lvcard .choice-route {
     display: none;
   }
 
@@ -7818,5 +7841,527 @@ body.pickup-buff-active #hint:not(.hidden) {
 
   .loadout-briefing.closing .loadout-briefing-panel {
     transform: none;
+  }
+}
+
+/* --------------------------------------------------------------------------
+   Moonlight ledger
+
+   선택 가능한 전승만 카드로 남기고, 영구 수치와 해금은 장부형 행으로
+   압축한다. 같은 대시보드 타일을 반복하지 않고 상태와 다음 행동을 한 줄에서
+   읽게 하는 편집 화면이다.
+   -------------------------------------------------------------------------- */
+
+.meta-panel {
+  width: min(72rem, calc(100vw - var(--ui-safe-left) - var(--ui-safe-right) - 1.6rem));
+  padding: clamp(1rem, 2vw, 1.5rem);
+  border-left-color: var(--ui-gold);
+  background:
+    linear-gradient(135deg, rgba(215, 175, 98, 0.055), transparent 24rem),
+    #0c1117;
+}
+
+.meta-heading {
+  align-items: center;
+  padding-bottom: 0.9rem;
+}
+
+.meta-brand {
+  min-width: 0;
+  display: grid;
+  grid-template-columns: 3.6rem minmax(0, 1fr);
+  align-items: center;
+  gap: 0.85rem;
+}
+
+.meta-brand > img {
+  width: 3.6rem;
+  aspect-ratio: 1;
+  object-fit: contain;
+  opacity: 0.86;
+  filter: sepia(0.22) saturate(0.78);
+}
+
+.meta-heading h2 {
+  margin: 0;
+  font-size: clamp(1.75rem, 3.7vw, 2.75rem);
+}
+
+.meta-heading p {
+  margin-top: 0.25rem;
+  max-width: 38rem;
+}
+
+.meta-heading-actions {
+  flex: 0 0 auto;
+  display: flex;
+  align-items: stretch;
+  gap: 0.48rem;
+}
+
+.meta-currency {
+  min-width: 10.5rem;
+  padding: 0.5rem 0.68rem;
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 0.7rem;
+  border: 1px solid rgba(215, 175, 98, 0.3);
+  border-left: 2px solid var(--ui-gold);
+  text-align: left;
+}
+
+.meta-currency span + span {
+  padding-left: 0.7rem;
+  border-left: 1px solid rgba(215, 175, 98, 0.2);
+}
+
+.meta-currency strong {
+  font-size: 1.08rem;
+}
+
+.meta-close {
+  min-width: 4.8rem;
+  padding: 0.45rem 0.58rem;
+  border: 1px solid #48535f;
+  color: #c1c9d0;
+  background: #111820;
+  font: inherit;
+  font-size: max(11px, 0.62rem);
+  font-weight: 730;
+  cursor: pointer;
+}
+
+.meta-close kbd {
+  display: block;
+  margin-top: 0.15rem;
+  color: #778493;
+  font: inherit;
+  font-size: max(9px, 0.48rem);
+}
+
+.meta-close:hover,
+.meta-close:focus-visible {
+  border-color: var(--ui-gold);
+  color: #fff;
+  outline: 2px solid var(--ui-gold);
+  outline-offset: 2px;
+}
+
+.meta-section {
+  margin-top: 1.05rem;
+}
+
+.meta-section > header {
+  margin-bottom: 0.55rem;
+  display: flex;
+  align-items: end;
+  justify-content: space-between;
+  gap: 0.8rem;
+}
+
+.meta-section > header h3 {
+  color: #edf0f2;
+  font-size: 1rem;
+}
+
+.meta-section > header p {
+  margin: 0.15rem 0 0;
+  color: #7f8c99;
+  font-size: max(10px, 0.58rem);
+}
+
+.meta-doctrine-section > header > span {
+  color: var(--ui-gold-bright);
+  font-size: max(10px, 0.58rem);
+  font-weight: 760;
+}
+
+.meta-doctrine-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 0.62rem;
+}
+
+.meta-doctrine-card {
+  min-width: 0;
+  padding: 0.78rem 0.82rem 0.72rem;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 0.7rem 0.9rem;
+  border: 1px solid #36414c;
+  border-left: 3px solid #596674;
+  background: #10161d;
+}
+
+.meta-doctrine-card[data-doctrine-state='equipped'] {
+  border-color: rgba(215, 175, 98, 0.72);
+  border-left-color: var(--ui-gold);
+  background:
+    linear-gradient(100deg, rgba(215, 175, 98, 0.11), transparent 55%),
+    #151811;
+}
+
+.meta-doctrine-card[data-doctrine-state='owned'] {
+  border-left-color: #8ca2b5;
+}
+
+.meta-doctrine-card[data-doctrine-state='shortage'] {
+  border-color: #2c353e;
+  color: #87919c;
+  background: #0c1117;
+}
+
+.meta-doctrine-card > header {
+  min-width: 0;
+  grid-column: 1;
+}
+
+.meta-doctrine-card > header small {
+  color: #778593;
+  font-size: max(9px, 0.49rem);
+  font-weight: 720;
+  letter-spacing: 0.08em;
+}
+
+.meta-doctrine-card h4 {
+  margin: 0.15rem 0 0;
+  color: #f0f2f3;
+  font-family: var(--font-serif);
+  font-size: max(15px, 0.9rem);
+}
+
+.meta-doctrine-card > header > span {
+  display: inline-block;
+  margin-top: 0.24rem;
+  color: var(--ui-gold-dim);
+  font-size: max(10px, 0.54rem);
+  font-weight: 740;
+}
+
+.meta-doctrine-card ol {
+  min-width: 0;
+  margin: 0;
+  padding: 0;
+  grid-column: 1;
+  display: grid;
+  gap: 0.24rem;
+  list-style: none;
+}
+
+.meta-doctrine-card li {
+  min-width: 0;
+  display: grid;
+  grid-template-columns: 1.6rem minmax(0, 1fr);
+  gap: 0.35rem;
+  color: #aeb8c2;
+  font-size: max(10px, 0.57rem);
+  line-height: 1.35;
+}
+
+.meta-doctrine-card li b {
+  color: #d0b879;
+  font-variant-numeric: tabular-nums;
+}
+
+.meta-doctrine-card > footer {
+  grid-column: 2;
+  grid-row: 1 / span 2;
+  display: flex;
+  align-items: end;
+}
+
+.meta-doctrine-card button,
+.meta-row-action button {
+  min-width: 5.2rem;
+  min-height: 2.1rem;
+  padding: 0.4rem 0.58rem;
+  border: 1px solid #4d5a66;
+  color: #d2dae1;
+  background: #121a22;
+  font: inherit;
+  font-size: max(11px, 0.59rem);
+  font-weight: 760;
+  cursor: pointer;
+}
+
+.meta-doctrine-card button:hover,
+.meta-doctrine-card button:focus-visible,
+.meta-row-action button:hover,
+.meta-row-action button:focus-visible {
+  border-color: var(--ui-gold);
+  color: #fff;
+  outline: 2px solid var(--ui-gold);
+  outline-offset: 2px;
+}
+
+.meta-doctrine-card[data-doctrine-state='equipped'] button {
+  border-color: rgba(215, 175, 98, 0.72);
+  color: #f4dda3;
+  background: rgba(64, 46, 20, 0.68);
+}
+
+.meta-doctrine-card button:disabled,
+.meta-row-action button:disabled {
+  border-color: #303943;
+  color: #8d98a3;
+  background: #0d1319;
+  cursor: not-allowed;
+}
+
+.meta-lower-grid {
+  display: grid;
+  grid-template-columns: minmax(18rem, 0.72fr) minmax(0, 1.28fr);
+  gap: 0.85rem;
+}
+
+.meta-ledger-section {
+  min-width: 0;
+}
+
+.meta-stat-list,
+.meta-unlock-list {
+  border-top: 1px solid #34404b;
+}
+
+.meta-stat-row,
+.meta-unlock-row {
+  min-width: 0;
+  padding: 0.65rem 0.15rem 0.65rem 0.65rem;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 0.85rem;
+  border-bottom: 1px solid #27313b;
+  border-left: 2px solid transparent;
+}
+
+.meta-stat-row[data-purchase-state='affordable'],
+.meta-unlock-row[data-purchase-state='affordable'] {
+  border-left-color: var(--ui-gold);
+  background: linear-gradient(90deg, rgba(215, 175, 98, 0.075), transparent 68%);
+}
+
+.meta-stat-row[data-purchase-state='complete'],
+.meta-unlock-row[data-purchase-state='complete'] {
+  border-left-color: rgba(104, 211, 148, 0.5);
+}
+
+.meta-row-copy {
+  min-width: 0;
+}
+
+.meta-row-copy header {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 0.55rem;
+}
+
+.meta-row-copy header > small {
+  color: #82909d;
+  font-size: max(9px, 0.48rem);
+  font-weight: 730;
+}
+
+.meta-row-copy strong {
+  color: #e7ebee;
+  font-size: max(12px, 0.69rem);
+}
+
+.meta-row-copy header b {
+  color: #c9d1d8;
+  font-size: max(10px, 0.58rem);
+  font-weight: 700;
+}
+
+.meta-row-copy p {
+  margin: 0.2rem 0 0;
+  color: #8d99a5;
+  font-size: max(10px, 0.56rem);
+  line-height: 1.4;
+  word-break: keep-all;
+}
+
+.meta-unlock-progress {
+  display: block;
+  margin-top: 0.24rem;
+  color: var(--ui-gold-dim);
+  font-size: max(9px, 0.5rem);
+  font-weight: 680;
+}
+
+.meta-row-action {
+  display: flex;
+  align-items: center;
+  gap: 0.42rem;
+}
+
+.meta-row-action small {
+  color: #9f8b5d;
+  font-size: max(9px, 0.49rem);
+  white-space: nowrap;
+}
+
+.meta-row-state {
+  min-width: 5.2rem;
+  color: #94c7a8;
+  font-size: max(10px, 0.57rem);
+  font-weight: 730;
+  text-align: center;
+}
+
+.meta-stat-row .meta-rank {
+  margin: 0.4rem 0 0;
+}
+
+.meta-stat-row .meta-rank i {
+  width: 1.15rem;
+}
+
+.meta-footer {
+  margin-top: 1rem;
+  padding-top: 0.75rem;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 1rem;
+  border-top: 1px solid #34404b;
+}
+
+.meta-footer > span {
+  color: #73808e;
+  font-size: max(10px, 0.56rem);
+}
+
+.meta-footer .meta-back {
+  width: 9rem;
+  margin: 0;
+}
+
+@media (max-width: 860px) {
+  .meta-panel {
+    width: min(45rem, calc(100vw - var(--ui-safe-left) - var(--ui-safe-right) - 1rem));
+  }
+
+  .meta-heading {
+    align-items: stretch;
+    flex-direction: column;
+  }
+
+  .meta-heading-actions {
+    justify-content: space-between;
+  }
+
+  .meta-lower-grid {
+    grid-template-columns: 1fr;
+  }
+}
+
+@media (max-width: 620px) {
+  .meta-overlay {
+    place-items: stretch;
+    padding: 0;
+  }
+
+  .meta-panel {
+    width: 100%;
+    max-height: 100dvh;
+    padding:
+      max(0.8rem, env(safe-area-inset-top))
+      max(0.7rem, env(safe-area-inset-right))
+      max(0.8rem, env(safe-area-inset-bottom))
+      max(0.7rem, env(safe-area-inset-left));
+    border-width: 0 0 0 3px;
+  }
+
+  .meta-brand {
+    grid-template-columns: 2.75rem minmax(0, 1fr);
+  }
+
+  .meta-brand > img {
+    width: 2.75rem;
+  }
+
+  .meta-heading-actions {
+    width: 100%;
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) auto;
+  }
+
+  .meta-currency {
+    width: auto;
+    min-width: 0;
+  }
+
+  .meta-doctrine-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .meta-doctrine-card {
+    grid-template-columns: minmax(0, 1fr) 5.4rem;
+  }
+
+  .meta-stat-row,
+  .meta-unlock-row {
+    align-items: stretch;
+    grid-template-columns: 1fr;
+  }
+
+  .meta-row-action {
+    justify-content: space-between;
+  }
+
+  .meta-row-action button {
+    min-width: 7rem;
+  }
+
+  .meta-footer {
+    align-items: stretch;
+    flex-direction: column;
+  }
+
+  .meta-footer .meta-back {
+    width: 100%;
+  }
+}
+
+/* 시작 기술표는 해금 시점을 카드마다 한 번만 말한다. */
+.loadout-briefing-header {
+  grid-template-columns: 1fr;
+}
+
+.loadout-briefing-card {
+  min-height: 6.35rem;
+}
+
+.loadout-briefing-utility .loadout-briefing-card {
+  min-height: 5.9rem;
+}
+
+@media (max-width: 640px) {
+  .loadout-briefing-card,
+  .loadout-briefing-utility .loadout-briefing-card {
+    padding: 0.5rem;
+    grid-template-columns: 2.75rem minmax(0, 1fr);
+    gap: 0.5rem;
+  }
+
+  .loadout-briefing-icon {
+    width: 2.75rem;
+  }
+
+  .loadout-briefing-copy p {
+    display: -webkit-box;
+    overflow: hidden;
+    -webkit-box-orient: vertical;
+    -webkit-line-clamp: 2;
+  }
+
+  .loadout-briefing-actions {
+    flex-direction: row;
+  }
+
+  .loadout-briefing-actions button {
+    min-width: 0;
   }
 }

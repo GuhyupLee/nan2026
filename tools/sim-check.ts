@@ -226,6 +226,17 @@ console.log('\nsim smoke check\n')
     '요구 XP는 단조 증가하지 않아도 되지만 전부 양수다',
     XP_FOR_NEXT.every((xp) => xp > 0),
   )
+  check(
+    '초반 XP 곡선이 Lv2·Lv3 진입을 앞당기고 Lv5 누적 XP는 보존한다',
+    XP_FOR_NEXT.slice(0, 4).join(',') === '16,36,60,88' &&
+      XP_FOR_NEXT.slice(0, 4).reduce((sum, xp) => sum + xp, 0) === 200,
+    XP_FOR_NEXT.slice(0, 4).join(','),
+  )
+  check(
+    '전체 요구 XP 총량은 후반 페이스를 보존한다',
+    XP_FOR_NEXT.reduce((sum, xp) => sum + xp, 0) === 5643,
+    `${XP_FOR_NEXT.reduce((sum, xp) => sum + xp, 0)} XP`,
+  )
   // 클래스마다 자동 공격·QWER의 처치율이 달라 같은 목표 곡선에 맞춘 보정값이다.
   check(
     '클래스 XP 보정 배율이 0과 1 사이다',
@@ -312,6 +323,16 @@ console.log('\nsim smoke check\n')
   const medianDetails = playerClasses
     .map((playerClass) => `${playerClass}=${lv26Medians.get(playerClass)!.toFixed(1)}s`)
     .join(', ')
+  const earlyMedianDetails = playerClasses
+    .map((playerClass) => {
+      const classSamples = curveSamples.filter(
+        (qwer) => qwer.playerClass === playerClass,
+      )
+      const lv2 = median(classSamples.map((qwer) => qwer.levelTimes[1] ?? Infinity))
+      const lv3 = median(classSamples.map((qwer) => qwer.levelTimes[2] ?? Infinity))
+      return `${playerClass}=Lv2 ${lv2.toFixed(1)}s/Lv3 ${lv3.toFixed(1)}s`
+    })
+    .join(', ')
 
   check(
     '각 클래스 시드의 80% 이상이 만렙이며 나머지도 Lv25에 도달한다',
@@ -358,6 +379,21 @@ console.log('\nsim smoke check\n')
     '클래스별 Lv26 중앙값 격차가 10초 이하다',
     Math.abs(lv26Medians.get('ranged')! - lv26Medians.get('melee')!) <= 10,
     medianDetails,
+  )
+  check(
+    '클래스별 Lv2·Lv3 중앙값이 초반 목표 ±3초다',
+    playerClasses.every((playerClass) => {
+      const classSamples = curveSamples.filter(
+        (qwer) => qwer.playerClass === playerClass,
+      )
+      const lv2 = median(classSamples.map((qwer) => qwer.levelTimes[1] ?? Infinity))
+      const lv3 = median(classSamples.map((qwer) => qwer.levelTimes[2] ?? Infinity))
+      return (
+        Math.abs(lv2 - TARGET_LEVEL_TIMES[1]!) <= 3 &&
+        Math.abs(lv3 - TARGET_LEVEL_TIMES[2]!) <= 3
+      )
+    }),
+    earlyMedianDetails,
   )
   check(
     'QWER 실제 처치율이 자동 공격 기준선보다 시드별 50% 이상 높다',

@@ -4,6 +4,7 @@ import {
   applyUpgrade,
   applyRelicUpgrade,
   getUpgrade,
+  getUpgradeFusionRoute,
   getUpgradePresentation,
   getUpgradeRank,
   getRelicFusionPreview,
@@ -72,6 +73,8 @@ export interface LevelUpCard {
   preview?: string
   /** 융합 카드가 요구하는 완성된 두 경로. */
   fusionIngredients?: readonly string[]
+  /** 재료 카드에서 미리 보여 주는 다음 융합과 짝 경로 진행도. */
+  fusionRoute?: string
   rankProgress?: {
     /** Segments already owned before this choice. */
     current: number
@@ -118,6 +121,10 @@ const UPGRADE_TARGETS: Readonly<Record<string, readonly string[]>> = {
   'singularity-interferometer': ['Q와 W 융합', 'Q와 W 융합', 'Q와 W 융합'],
   'eclipse-sword-codex': ['Q와 R 융합', 'Q와 R 융합', 'Q와 R 융합'],
   'revival-seal': ['생존', '생존', '생존'],
+  'wanderer-inscription': ['아이템 획득', '이동', '회복'],
+  'executioner-inscription': ['기본 공격 피해', '기본 공격 속도', '기본 공격 관통'],
+  'guardian-inscription': ['최대 체력', '받는 피해', '회복'],
+  'timekeeper-inscription': ['QWER 재사용', 'D/F 재사용', '점멸'],
 }
 
 export function getUpgradeChoiceTarget(id: string, rank: number): string {
@@ -172,7 +179,7 @@ function skillCard(world: World, id: SkillId): LevelUpCard | null {
     pathName: def.name,
     stepName: def.tag,
     target: `신규 ${def.key} 스킬`,
-    context: '새 스킬 해금',
+    context: '신규',
   }
 }
 
@@ -196,7 +203,7 @@ function rankCards(world: World): LevelUpCard[] {
   const sorted = [...ids].sort((a, b) => world.skills[a].rank - world.skills[b].rank)
 
   const out: LevelUpCard[] = []
-  for (const id of sorted.slice(0, 3)) {
+  for (const id of sorted) {
     const def = getSkillDef(world.playerClass, id)
     if (!def) continue
     const next = world.skills[id].rank + 1
@@ -209,11 +216,11 @@ function rankCards(world: World): LevelUpCard[] {
       slotLabel: def.key,
       tag: `스킬 강화 · Lv${next}`,
       name: `${def.name} +1`,
-    desc: '피해 20% 증가 · 재사용 대기시간 5% 감소',
+      desc: '피해 20% 증가 · 재사용 대기시간 5% 감소',
       pathName: def.name,
       stepName: `Lv${world.skills[id].rank} → Lv${next}`,
       target: `${def.key} · ${def.name}`,
-      context: '보유 스킬 강화',
+      context: '계속',
     })
   }
   return out
@@ -224,7 +231,7 @@ function buildUpgradeCards(world: World, relic = false): LevelUpCard[] {
   for (const choice of rollUpgrades(
     world.choiceRng,
     upgradeCandidates(world, relic),
-    3,
+    relic ? 3 : 4,
     {
       playerClass: world.playerClass,
       taken: world.upgradesTaken,
@@ -240,7 +247,15 @@ function buildUpgradeCards(world: World, relic = false): LevelUpCard[] {
       ? Math.min(presentation.currentRank + relicBurst, presentation.maxRank)
       : presentation.nextRank
     const targetDef = upgrade.ranks[targetRank - 1]!
-    const reachesAwakening = !upgrade.fusion && targetRank === 3
+    const completesLegacy =
+      !upgrade.fusion &&
+      upgrade.family === 'legacy' &&
+      targetRank === upgrade.ranks.length &&
+      upgrade.ranks.length > 1
+    const reachesAwakening =
+      !upgrade.fusion &&
+      upgrade.family !== 'legacy' &&
+      targetRank === 3
     const rarity: UpgradeRarity = upgrade.fusion
       ? 'fusion'
       : reachesAwakening
@@ -269,25 +284,32 @@ function buildUpgradeCards(world: World, relic = false): LevelUpCard[] {
         }`
       : undefined
     const context = upgrade.fusion
-      ? '융합 완성'
+      ? '융합'
       : reachesAwakening
-        ? '각성 완성'
+        ? '각성'
         : relic
-          ? `${relicBurst}단 연속 강화`
-          : presentation.currentRank > 0
-            ? '기존 경로 이어가기'
-            : '새 강화 경로'
+          ? `+${relicBurst}단계`
+          : completesLegacy
+            ? '완성'
+            : presentation.currentRank > 0
+              ? '계속'
+              : '신규'
     const finalRank =
       !upgrade.fusion && upgrade.ranks.length >= 3 ? upgrade.ranks[2] : undefined
     const preview =
       finalRank && targetRank < 3
-        ? `3단계 각성 · ${plainEffect(finalRank.oneLiner)}`
+        ? `III · ${plainEffect(finalRank.oneLiner)}`
         : reachesAwakening
-          ? '이번 선택으로 3단계 각성이 완성됩니다.'
-          : undefined
+          ? 'III · 각성 완성'
+          : completesLegacy
+            ? 'III · 전승 경로 완성'
+            : undefined
     const fusionIngredients = upgrade.fusion
       ? upgrade.fusion.requires.map((id) => getUpgrade(id)?.name ?? id)
       : undefined
+    const fusionRoute = upgrade.fusion
+      ? undefined
+      : getUpgradeFusionRoute(world, upgrade.id)
 
     out.push({
       id: upgrade.id,
@@ -317,6 +339,13 @@ function buildUpgradeCards(world: World, relic = false): LevelUpCard[] {
       ...(detail ? { detail } : {}),
       ...(preview ? { preview } : {}),
       ...(fusionIngredients ? { fusionIngredients } : {}),
+      ...(fusionRoute
+        ? {
+            fusionRoute:
+              `이어지는 빌드 · ${fusionRoute.partnerName} ` +
+              `${fusionRoute.partnerRank}/III → ${fusionRoute.name}`,
+          }
+        : {}),
       ...(targetDef.trait ? { trait: targetDef.trait } : {}),
       badges: relic
         ? [
@@ -464,17 +493,16 @@ export function showLevelUp(
     banner.className = 'banner'
     const coarsePointer = window.matchMedia('(pointer: coarse)').matches
     const title = isRelic
-      ? '큰 보상 하나를 고르세요'
+      ? '정예 전리품'
       : isUnlock
-        ? single
-          ? '새 스킬을 확인하세요'
-          : '새 스킬 하나를 고르세요'
+        ? '스킬 해금'
         : isRank
-          ? '주력 스킬 하나를 키우세요'
-          : '이번에 키울 능력을 고르세요'
+          ? '스킬 강화'
+          : '강화 선택'
     const guide = single
       ? '확인하면 즉시 적용되고 전투가 계속됩니다.'
-      : '각 카드의 선택 효과를 비교하세요. 고른 효과는 즉시 적용됩니다.'
+      : '효과와 다음 단계를 비교하세요.'
+    const keyRange = cards.length === 1 ? '1' : `1–${cards.length}`
     banner.innerHTML =
       `<div class="banner-copy"><div class="lv">${
         isRelic
@@ -484,7 +512,7 @@ export function showLevelUp(
       `<h2 id="levelup-title">${title}</h2>` +
       `<p id="levelup-guide">${guide}</p></div>` +
       `<div class="levelup-controls">${
-        coarsePointer ? '카드를 눌러 선택' : '1·2·3 빠른 선택 · ← → 이동 · Enter 확정'
+        coarsePointer ? '카드를 눌러 선택' : `${keyRange} 선택 · ← → 이동 · Enter`
       }</div>`
     root.appendChild(banner)
 
@@ -539,14 +567,25 @@ export function showLevelUp(
       const stepName = card.stepName
       const target = card.target ?? '전투 능력'
       const context = card.context ?? '즉시 적용'
-      const actionHint = coarsePointer ? '눌러서 선택' : `${i + 1} 키 또는 클릭`
+      const accessibleBuildDetails = [
+        card.preview,
+        card.fusionRoute,
+        card.fusionIngredients
+          ? `융합 재료 ${card.fusionIngredients.join(' 그리고 ')}`
+          : undefined,
+        card.rankProgress
+          ? `경로 진행 ${card.rankProgress.current}에서 ${card.rankProgress.target}, 총 3단계`
+          : undefined,
+      ]
+        .filter((value): value is string => Boolean(value))
+        .join('. ')
       el.setAttribute(
         'aria-label',
         `${i + 1}번. ${target}. ${pathName}. ${stepName ?? ''}. ` +
-          `선택 효과: ${card.desc}. ${context}.`,
+          `선택 효과: ${card.desc}. ${context}. ${accessibleBuildDetails}`,
       )
       el.innerHTML =
-        `<div class="hotkey"><small>빠른 선택</small><b>${i + 1}</b></div>` +
+        `<div class="hotkey"><b>${i + 1}</b></div>` +
         `<div class="top">` +
         `<div class="icon">${
           card.icon
@@ -560,12 +599,12 @@ export function showLevelUp(
         `<div class="choice-heading"><h3>${pathName}</h3>` +
         (stepName ? `<span>${stepName}</span>` : '') +
         `</div>` +
-        `<div class="choice-effect"><small>선택 효과</small><strong>${card.desc}</strong></div>` +
+        `<div class="choice-effect"><strong>${card.desc}</strong></div>` +
         (card.detail ? `<p class="choice-detail">${card.detail}</p>` : '') +
         (card.preview ? `<p class="choice-preview">${card.preview}</p>` : '') +
+        (card.fusionRoute ? `<p class="choice-route">${card.fusionRoute}</p>` : '') +
         rankProgress +
-        fusionProgress +
-        `<div class="choice-action"><span>${actionHint}</span><strong>이 강화 선택</strong></div>`
+        fusionProgress
 
       el.addEventListener('click', () => pick(card, el))
       cardElements.push(el)

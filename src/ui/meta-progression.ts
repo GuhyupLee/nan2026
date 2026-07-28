@@ -1,7 +1,7 @@
 import type { RunMetaSnapshot } from '../sim/types.ts'
 
 export const META_STORAGE_KEY = 'myeongwol-meta-v1'
-export const META_VERSION = 1
+export const META_VERSION = 2
 
 export type MetaStatId = 'vitality' | 'stride'
 export type MetaUnlockId =
@@ -9,7 +9,12 @@ export type MetaUnlockId =
   | 'supernova-specimen'
   | 'eclipse-execution-array'
   | 'revival-seal'
-export type MetaPurchaseId = MetaStatId | MetaUnlockId
+export type MetaDoctrineId =
+  | 'wanderer-inscription'
+  | 'executioner-inscription'
+  | 'guardian-inscription'
+  | 'timekeeper-inscription'
+export type MetaPurchaseId = MetaStatId | MetaUnlockId | MetaDoctrineId
 
 export interface MetaProgress {
   version: typeof META_VERSION
@@ -19,10 +24,13 @@ export interface MetaProgress {
   vitalityRank: number
   strideRank: number
   purchasedUnlocks: MetaUnlockId[]
+  purchasedDoctrines: MetaDoctrineId[]
+  equippedDoctrineIds: MetaDoctrineId[]
 }
 
 export interface MetaUnlockDef {
   id: MetaUnlockId
+  scopeLabel: string
   name: string
   description: string
   cost: number
@@ -33,35 +41,80 @@ export interface MetaUnlockDef {
 export const META_UNLOCKS: readonly MetaUnlockDef[] = [
   {
     id: 'decapitating-flash',
-    name: '단두 일섬',
-    description: '월아 처형 계열 카드를 강화 풀에 추가합니다.',
+    scopeLabel: '월아 · 공격 경로',
+    name: '참두 일섬',
+    description: 'III에서 체력 18% 이하 일반 적을 처형합니다.',
     cost: 300,
     conditionLabel: '누적 3,000 처치',
     condition: (progress) => progress.lifetimeKills >= 3000,
   },
   {
     id: 'supernova-specimen',
+    scopeLabel: '루멘 · 융합',
     name: '초신성 표본',
-    description: '루멘의 간섭·이중 초점 각성을 합성할 수 있습니다.',
+    description: '간섭 필라멘트 III + 이중 초점 III.',
     cost: 260,
     conditionLabel: '누적 1,500 처치',
     condition: (progress) => progress.lifetimeKills >= 1500,
   },
   {
     id: 'eclipse-execution-array',
+    scopeLabel: '월아 · 융합',
     name: '월식 처형진',
-    description: '월아의 처형·쌍격 각성을 합성할 수 있습니다.',
+    description: '참두 일섬 III + 월영 쌍격 III.',
     cost: 360,
     conditionLabel: '보스 처치 1회',
     condition: (progress) => progress.bossWins >= 1,
   },
   {
     id: 'revival-seal',
-    name: '회생의 월인',
-    description: '사망 시 한 번 되살아나는 공용 카드를 추가합니다.',
+    scopeLabel: '공용 · 생존',
+    name: '귀환의 인장',
+    description: '런마다 한 번, 치명상을 버티고 체력 50%로 돌아옵니다.',
     cost: 500,
     conditionLabel: '보스 처치 1회',
     condition: (progress) => progress.bossWins >= 1,
+  },
+] as const
+
+export interface MetaDoctrineDef {
+  id: MetaDoctrineId
+  name: string
+  pathName: string
+  rankLines: readonly [string, string, string]
+  cost: number
+}
+
+export const META_DOCTRINE_SLOT_MAX = 2
+
+export const META_DOCTRINES: readonly MetaDoctrineDef[] = [
+  {
+    id: 'wanderer-inscription',
+    name: '유랑자의 나침반',
+    pathName: '유랑자의 나침반',
+    rankLines: ['아이템 획득 범위 +25%', '이동 속도 +6%', '전장 회복 +40%'],
+    cost: 180,
+  },
+  {
+    id: 'executioner-inscription',
+    name: '집행자의 매듭',
+    pathName: '집행자의 매듭',
+    rankLines: ['공격 피해 +10%', '기본 공격 간격 -10%', '기본 공격 관통 +1'],
+    cost: 220,
+  },
+  {
+    id: 'guardian-inscription',
+    name: '수호월 인장',
+    pathName: '수호월 인장',
+    rankLines: ['최대 체력 +18', '받는 피해 -7%', '회복량 +14'],
+    cost: 240,
+  },
+  {
+    id: 'timekeeper-inscription',
+    name: '시계공의 월침',
+    pathName: '시계공의 월침',
+    rankLines: ['QWER 재사용 대기시간 -7%', 'D/F 재사용 대기시간 -12%', '점멸 거리 +2'],
+    cost: 280,
   },
 ] as const
 
@@ -78,6 +131,8 @@ function freshProgress(): MetaProgress {
     vitalityRank: 0,
     strideRank: 0,
     purchasedUnlocks: [],
+    purchasedDoctrines: [],
+    equippedDoctrineIds: [],
   }
 }
 
@@ -88,8 +143,12 @@ function finiteInt(value: unknown, min: number, max: number): number {
   return Math.max(min, Math.min(max, Math.floor(value)))
 }
 
-function isMetaUnlockId(value: unknown): value is MetaUnlockId {
+export function isMetaUnlockId(value: unknown): value is MetaUnlockId {
   return META_UNLOCKS.some((unlock) => unlock.id === value)
+}
+
+export function isMetaDoctrineId(value: unknown): value is MetaDoctrineId {
+  return META_DOCTRINES.some((doctrine) => doctrine.id === value)
 }
 
 export function sanitizeMetaProgress(value: unknown): MetaProgress {
@@ -97,6 +156,20 @@ export function sanitizeMetaProgress(value: unknown): MetaProgress {
   const source = value as Partial<MetaProgress>
   const purchasedUnlocks = Array.isArray(source.purchasedUnlocks)
     ? Array.from(new Set(source.purchasedUnlocks.filter(isMetaUnlockId)))
+    : []
+  const purchasedDoctrines = Array.isArray(source.purchasedDoctrines)
+    ? Array.from(new Set(source.purchasedDoctrines.filter(isMetaDoctrineId)))
+    : []
+  const purchasedDoctrineSet = new Set(purchasedDoctrines)
+  const equippedDoctrineIds = Array.isArray(source.equippedDoctrineIds)
+    ? Array.from(
+        new Set(
+          source.equippedDoctrineIds.filter(
+            (id): id is MetaDoctrineId =>
+              isMetaDoctrineId(id) && purchasedDoctrineSet.has(id),
+          ),
+        ),
+      ).slice(0, META_DOCTRINE_SLOT_MAX)
     : []
   return {
     version: META_VERSION,
@@ -110,6 +183,8 @@ export function sanitizeMetaProgress(value: unknown): MetaProgress {
     ),
     strideRank: finiteInt(source.strideRank, 0, META_STAT_RANK_MAX),
     purchasedUnlocks,
+    purchasedDoctrines,
+    equippedDoctrineIds,
   }
 }
 
@@ -162,9 +237,14 @@ export function createRunMetaSnapshot(
     // 6칸을 다 찍어도 런 파워가 크게 흔들리지 않는 작은 보정이다.
     maxHpBonus: safe.vitalityRank * 3,
     speedMultiplier: 1 + safe.strideRank * 0.01,
-    unlockedUpgradeIds: META_UNLOCKS.filter((unlock) =>
-      isMetaUnlockActive(safe, unlock.id),
-    ).map((unlock) => unlock.id),
+    unlockedUpgradeIds: [
+      ...META_UNLOCKS.filter((unlock) =>
+        isMetaUnlockActive(safe, unlock.id),
+      ).map((unlock) => unlock.id),
+      ...META_DOCTRINES.filter((doctrine) =>
+        safe.equippedDoctrineIds.includes(doctrine.id),
+      ).map((doctrine) => doctrine.id),
+    ],
   }
 }
 
@@ -233,6 +313,32 @@ export function purchaseMetaItem(id: MetaPurchaseId): {
     }
   }
 
+  if (isMetaDoctrineId(id)) {
+    const doctrine = META_DOCTRINES.find((candidate) => candidate.id === id)!
+    if (
+      current.purchasedDoctrines.includes(id) ||
+      current.moonlight < doctrine.cost
+    ) {
+      return { progress: current, purchased: false }
+    }
+    const equippedDoctrineIds =
+      current.equippedDoctrineIds.length < META_DOCTRINE_SLOT_MAX
+        ? [...current.equippedDoctrineIds, id]
+        : current.equippedDoctrineIds
+    return {
+      progress: write({
+        ...current,
+        moonlight: current.moonlight - doctrine.cost,
+        purchasedDoctrines: [...current.purchasedDoctrines, id],
+        equippedDoctrineIds,
+      }),
+      purchased: true,
+    }
+  }
+
+  if (!isMetaUnlockId(id)) {
+    return { progress: current, purchased: false }
+  }
   const unlock = META_UNLOCKS.find((candidate) => candidate.id === id)
   if (
     !unlock ||
@@ -248,5 +354,39 @@ export function purchaseMetaItem(id: MetaPurchaseId): {
       purchasedUnlocks: [...current.purchasedUnlocks, id],
     }),
     purchased: true,
+  }
+}
+
+export function toggleMetaDoctrine(id: MetaDoctrineId): {
+  progress: MetaProgress
+  changed: boolean
+  equipped: boolean
+} {
+  const current = read()
+  if (!current.purchasedDoctrines.includes(id)) {
+    return { progress: current, changed: false, equipped: false }
+  }
+  if (current.equippedDoctrineIds.includes(id)) {
+    return {
+      progress: write({
+        ...current,
+        equippedDoctrineIds: current.equippedDoctrineIds.filter(
+          (equippedId) => equippedId !== id,
+        ),
+      }),
+      changed: true,
+      equipped: false,
+    }
+  }
+  if (current.equippedDoctrineIds.length >= META_DOCTRINE_SLOT_MAX) {
+    return { progress: current, changed: false, equipped: false }
+  }
+  return {
+    progress: write({
+      ...current,
+      equippedDoctrineIds: [...current.equippedDoctrineIds, id],
+    }),
+    changed: true,
+    equipped: true,
   }
 }

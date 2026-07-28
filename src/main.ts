@@ -445,7 +445,7 @@ function frame(now: number): void {
     choiceOpen = true
     releaseGameplayInput()
     const target = world
-    void showLevelUp(document.body, target, () => audio.ui('select')).then(() => {
+    void showLevelUp(document.body, target, () => audio.upgradeChoice()).then(() => {
       releaseGameplayInput()
       resolveRewardChoice(target)
       choiceOpen = false
@@ -538,6 +538,7 @@ function beginRun(
   outcomeOpen = false
   pauseOpen = false
   audio.reset()
+  audio.playGameMusic()
   void audio.unlock()
 
   // 직전 판의 포인터·1틱 입력·안내 상태가 새 판으로 넘어가지 않게 한다.
@@ -693,6 +694,7 @@ async function start(): Promise<void> {
   outcomeOpen = false
   activeRun = false
   pauseButton.setVisible(false)
+  audio.playMenuMusic()
   requestMenuWarmup()
   let metaProgress = loadMetaProgress()
   const difficulty = await showMainMenu(
@@ -723,14 +725,14 @@ async function start(): Promise<void> {
         useVrmModels ? preloadVrm : undefined,
       )
       void audio.unlock()
-      audio.ui('select')
+      audio.characterSelect(playerClass)
 
       // 사용자가 일곱 슬롯을 읽는 동안 선택한 모델도 함께 준비한다. 브리핑을
       // 닫은 뒤 로딩 화면이 다시 끼어드는 시간을 대부분 없앤다.
       const modelReady = useVrmModels ? ensureVrm(playerClass) : null
       const decision = await showLoadoutBriefing(document.body, playerClass)
       void audio.unlock()
-      audio.ui(decision === 'start' ? 'select' : 'back')
+      audio.ui(decision === 'start' ? 'confirm' : 'back')
       if (decision === 'back') continue
       return { playerClass, modelReady }
     }
@@ -822,6 +824,7 @@ window.addEventListener('keydown', (event) => {
 
 // 모바일에서 앱을 내렸다 돌아왔을 때 전투가 진행돼 있지 않게 한다.
 document.addEventListener('visibilitychange', () => {
+  audio.setSuspended(document.hidden)
   const transition = outcomeTransition
   if (transition !== null) {
     const now = performance.now()

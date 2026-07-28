@@ -23,19 +23,21 @@ function verifyClass(playerClass: PlayerClass): void {
   for (const key of ['Q', 'W', 'E'] as const) {
     const item = items.find((entry) => entry.key === key)!
     assert(item.availability === 'level-up', `${playerClass} ${key} 해금 상태가 잘못됨`)
-    assert(item.availabilityLabel === '레벨업 선택', `${playerClass} ${key} 해금 문구가 잘못됨`)
+    assert(item.availabilityLabel === '레벨업', `${playerClass} ${key} 해금 문구가 잘못됨`)
   }
 
   const ultimate = items.find((item) => item.key === 'R')!
   assert(ultimate.availability === 'level-up', `${playerClass} R 해금 상태가 잘못됨`)
-  assert(ultimate.availabilityLabel === 'Lv8 자동 해금', `${playerClass} R 해금 문구가 잘못됨`)
+  assert(ultimate.availabilityLabel === 'Lv8', `${playerClass} R 해금 문구가 잘못됨`)
 
   const passive = items.find((item) => item.key === 'P')!
   assert(passive.availability === 'automatic', `${playerClass} P가 자동 패시브로 표시되지 않음`)
+  assert(passive.availabilityLabel === '자동', `${playerClass} P 상태 문구가 잘못됨`)
 
   for (const key of ['D', 'F'] as const) {
     const item = items.find((entry) => entry.key === key)!
     assert(item.availability === 'ready', `${playerClass} ${key}가 즉시 사용으로 표시되지 않음`)
+    assert(item.availabilityLabel === '사용 가능', `${playerClass} ${key} 상태 문구가 잘못됨`)
   }
 }
 

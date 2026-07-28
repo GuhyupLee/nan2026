@@ -5,6 +5,7 @@ import {
   applyUpgradeBurst,
   getUpgrade,
   getUpgradeBranchPresentation,
+  getUpgradeFusionRoute,
   getUpgradePresentation,
   getUpgradeRank,
   getRelicFusionPreview,
@@ -204,6 +205,99 @@ for (const upgrade of UPGRADES) {
   )
 }
 
+// 전승 각인은 런 스냅샷으로만 열리며, 선택한 경로는 세 단계의 빌드가 된다.
+{
+  const legacyIds = [
+    'wanderer-inscription',
+    'executioner-inscription',
+    'guardian-inscription',
+    'timekeeper-inscription',
+  ] as const
+  const locked = createWorld(261, 'ranged')
+  for (const id of legacyIds) {
+    assert(!getUpgrade(id)!.isAvailable(locked), `${id}가 기본 런에 노출됨`)
+  }
+
+  const world = createWorld(262, 'ranged', {
+    meta: {
+      version: 1,
+      maxHpBonus: 0,
+      speedMultiplier: 1,
+      unlockedUpgradeIds: [...legacyIds],
+    },
+  })
+  unlockCombatSkills(world)
+  for (const id of legacyIds) {
+    assert(getUpgrade(id)!.isAvailable(world), `${id}가 런 스냅샷으로 열리지 않음`)
+  }
+
+  const pickupRadius = world.stats.pickupRadiusMul
+  const speed = world.stats.speed
+  const battlefieldHeal = world.stats.battlefieldHealMul
+  assert(applyUpgrade(world, 'wanderer-inscription')?.rank === 1, '유랑자 I 적용 실패')
+  assert(applyUpgrade(world, 'wanderer-inscription')?.rank === 2, '유랑자 II 적용 실패')
+  assert(applyUpgrade(world, 'wanderer-inscription')?.rank === 3, '유랑자 III 적용 실패')
+  assert(world.stats.pickupRadiusMul === pickupRadius * 1.25, '유랑자 획득 반경 효과가 다름')
+  assert(world.stats.speed === speed * 1.06, '유랑자 이동 속도 효과가 다름')
+  assert(
+    world.stats.battlefieldHealMul === battlefieldHeal * 1.4,
+    '유랑자 회복 구슬 효과가 다름',
+  )
+
+  const damage = world.stats.atkDamageMul
+  const interval = world.stats.atkIntervalMul
+  const pierce = world.stats.atkPierce
+  applyUpgrade(world, 'executioner-inscription')
+  applyUpgrade(world, 'executioner-inscription')
+  applyUpgrade(world, 'executioner-inscription')
+  assert(world.stats.atkDamageMul === damage * 1.1, '집행자 공격 피해 효과가 다름')
+  assert(world.stats.atkIntervalMul === interval * 0.9, '집행자 공격 간격 효과가 다름')
+  assert(world.stats.atkPierce === pierce + 1, '집행자 관통 효과가 다름')
+
+  const maxHp = world.stats.maxHp
+  const hp = world.player.hp
+  const damageTaken = world.stats.damageTakenMul
+  const healAmount = world.stats.healAmount
+  applyUpgrade(world, 'guardian-inscription')
+  applyUpgrade(world, 'guardian-inscription')
+  applyUpgrade(world, 'guardian-inscription')
+  assert(world.stats.maxHp === maxHp + 18, '수호월 최대 체력 효과가 다름')
+  assert(world.player.hp === hp + 18, '수호월 현재 체력 효과가 다름')
+  assert(world.stats.damageTakenMul === damageTaken * 0.93, '수호월 피해 감소 효과가 다름')
+  assert(world.stats.healAmount === healAmount + 14, '수호월 회복량 효과가 다름')
+
+  const qCooldown = world.skills.q.maxCooldown
+  const dCooldown = world.skills.d.maxCooldown
+  const fCooldown = world.skills.f.maxCooldown
+  const flashRange = world.stats.flashRange
+  applyUpgrade(world, 'timekeeper-inscription')
+  assert(world.stats.cooldownMul === 0.93, '시계공 전역 쿨다운 배수가 다름')
+  assert(world.skills.q.maxCooldown === qCooldown * 0.93, '시계공 QWER 쿨다운 효과가 다름')
+  applyUpgrade(world, 'timekeeper-inscription')
+  assert(world.skills.d.maxCooldown === dCooldown * 0.88, '시계공 D 쿨다운 효과가 다름')
+  assert(world.skills.f.maxCooldown === fCooldown * 0.88, '시계공 F 쿨다운 효과가 다름')
+  applyUpgrade(world, 'timekeeper-inscription')
+  assert(world.stats.flashRange === flashRange + 2, '시계공 점멸 거리 효과가 다름')
+
+  const legacy = getUpgrade('wanderer-inscription')!
+  const legacyRanks = [
+    getUpgradePresentation(legacy, new Set()).rankLabel,
+    getUpgradePresentation(legacy, new Set([legacy.id])).rankLabel,
+    getUpgradePresentation(
+      legacy,
+      new Set([legacy.id, upgradeRankToken(legacy.id, 2)]),
+    ).rankLabel,
+  ]
+  assert(
+    legacyRanks.join('|') === '전승 I|전승 II|전승 III',
+    '3랭크 전승 표기가 단계별로 구분되지 않음',
+  )
+  assert(
+    getUpgradePresentation(getUpgrade('revival-seal')!, new Set()).rankLabel === '전승',
+    '1랭크 귀환의 인장 표기가 바뀜',
+  )
+}
+
 // 새 문맥은 중첩을 허용하지만, Set만 받는 레거시 호출은 기존 제외 규칙을 지킨다.
 {
   const pool: UpgradeCandidate[] = [
@@ -258,6 +352,29 @@ for (const upgrade of UPGRADES) {
     fusionChoices[0]?.id === 'singularity-interferometer',
     '해금된 합성 카드가 첫 칸에 보장되지 않음',
   )
+}
+
+// 재료 카드를 고를 때 다음 융합과 현재 짝 경로 진행도를 계획할 수 있다.
+{
+  const world = createWorld(253, 'ranged')
+  unlockCombatSkills(world)
+  applyUpgrade(world, 'gravity-prism')
+  applyUpgrade(world, 'gravity-prism')
+  const route = getUpgradeFusionRoute(world, 'orbit-lens')
+  assert(route?.id === 'singularity-interferometer', '재료 카드의 융합 목적지를 찾지 못함')
+  assert(route.partnerName === '중력 프리즘', '융합 짝 경로명이 잘못됨')
+  assert(route.partnerRank === 2, '융합 짝 경로 진행도가 잘못됨')
+
+  world.progression.level = 3
+  world.progression.pendingLevelUps = 1
+  const cards = buildLevelUpCards(world)
+  const material = cards.find((card) => card.id === 'orbit-lens')
+  if (material) {
+    assert(
+      material.fusionRoute?.includes('사건지평 간섭계'),
+      '재료 카드가 이어지는 융합을 노출하지 않음',
+    )
+  }
 }
 
 // 클래스 필터는 후보가 실수로 available=true여도 근접 풀에서 광학 장치를 제거한다.
@@ -381,4 +498,27 @@ for (const upgrade of UPGRADES) {
   assert(cards[0]?.name.includes('귀환 궤도'), 'UI 카드에 각성 이름이 없음')
 }
 
-console.log('upgrade-system: 7 suites passed')
+// 일반 강화와 QWER 연마는 네 선택지를 모두 비교할 수 있다.
+{
+  const upgradeWorld = createWorld(405, 'ranged')
+  unlockCombatSkills(upgradeWorld)
+  upgradeWorld.progression.level = 3
+  upgradeWorld.progression.pendingLevelUps = 1
+  const upgrades = buildLevelUpCards(upgradeWorld)
+  assert(
+    upgrades.length === 4 && upgrades.every((card) => card.kind === 'upgrade'),
+    '일반 강화가 4택으로 노출되지 않음',
+  )
+
+  const rankWorld = createWorld(406, 'ranged')
+  unlockCombatSkills(rankWorld)
+  rankWorld.progression.level = 6
+  rankWorld.progression.pendingLevelUps = 1
+  const ranks = buildLevelUpCards(rankWorld)
+  assert(
+    ranks.length === 4 && ranks.every((card) => card.kind === 'skill-rank'),
+    'QWER 연마가 네 스킬을 모두 보여주지 않음',
+  )
+}
+
+console.log('upgrade-system: 9 suites passed')

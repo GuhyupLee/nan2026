@@ -970,6 +970,159 @@ const FUSION_UPGRADES: readonly UpgradeDef[] = [
 
 const LEGACY_UPGRADES: readonly UpgradeDef[] = [
   defineUpgrade({
+    id: 'wanderer-inscription',
+    name: '유랑자의 나침반',
+    glyph: '⌖',
+    weight: 6,
+    classFilter: [...RANGED, ...MELEE],
+    family: 'legacy',
+    unlockId: 'wanderer-inscription',
+    ranks: [
+      {
+        rank: 1,
+        displayName: '먼 길의 손',
+        oneLiner: 'XP 보석과 전장 아이템 획득 반경 +25%',
+      },
+      {
+        rank: 2,
+        displayName: '바람걸음',
+        oneLiner: '이동 속도 +6%',
+      },
+      {
+        rank: 3,
+        displayName: '샘의 기억',
+        oneLiner: '회복 구슬 회복량 +40%',
+      },
+    ],
+    effects: [
+      (w) => {
+        w.stats.pickupRadiusMul *= 1.25
+      },
+      (w) => {
+        w.stats.speed *= 1.06
+      },
+      (w) => {
+        w.stats.battlefieldHealMul *= 1.4
+      },
+    ],
+  }),
+  defineUpgrade({
+    id: 'executioner-inscription',
+    name: '집행자의 매듭',
+    glyph: '結',
+    weight: 6,
+    classFilter: [...RANGED, ...MELEE],
+    family: 'legacy',
+    unlockId: 'executioner-inscription',
+    ranks: [
+      {
+        rank: 1,
+        displayName: '집행 칼날',
+        oneLiner: '평타와 QWER 피해 +10%',
+      },
+      {
+        rank: 2,
+        displayName: '끊김 없는 추격',
+        oneLiner: '평타 공격 간격 -10%',
+      },
+      {
+        rank: 3,
+        displayName: '관통 판결',
+        oneLiner: '평타 관통 +1',
+      },
+    ],
+    effects: [
+      (w) => {
+        w.stats.atkDamageMul *= 1.1
+      },
+      (w) => {
+        w.stats.atkIntervalMul *= 0.9
+      },
+      (w) => {
+        w.stats.atkPierce += 1
+      },
+    ],
+  }),
+  defineUpgrade({
+    id: 'guardian-inscription',
+    name: '수호월 인장',
+    glyph: '盾',
+    weight: 5,
+    classFilter: [...RANGED, ...MELEE],
+    family: 'legacy',
+    unlockId: 'guardian-inscription',
+    ranks: [
+      {
+        rank: 1,
+        displayName: '달빛 갑주',
+        oneLiner: '최대 체력과 현재 체력 +18',
+      },
+      {
+        rank: 2,
+        displayName: '봉합 결계',
+        oneLiner: '받는 피해 -7%',
+      },
+      {
+        rank: 3,
+        displayName: '회복 각인',
+        oneLiner: '회복(D) 회복량 +14',
+      },
+    ],
+    effects: [
+      (w) => {
+        w.stats.maxHp += 18
+        w.player.hp = Math.min(w.stats.maxHp, w.player.hp + 18)
+      },
+      (w) => {
+        w.stats.damageTakenMul *= 0.93
+      },
+      (w) => {
+        w.stats.healAmount += 14
+      },
+    ],
+  }),
+  defineUpgrade({
+    id: 'timekeeper-inscription',
+    name: '시계공의 월침',
+    glyph: '刻',
+    weight: 7,
+    classFilter: [...RANGED, ...MELEE],
+    family: 'legacy',
+    unlockId: 'timekeeper-inscription',
+    ranks: [
+      {
+        rank: 1,
+        displayName: '칠성 태엽',
+        oneLiner: 'QWER 재사용 대기시간 -7%',
+      },
+      {
+        rank: 2,
+        displayName: '쌍침 동조',
+        oneLiner: 'D·F 재사용 대기시간 -12%',
+      },
+      {
+        rank: 3,
+        displayName: '도약 눈금',
+        oneLiner: '점멸(F) 이동 거리 +2',
+      },
+    ],
+    effects: [
+      (w) => {
+        w.stats.cooldownMul *= 0.93
+        for (const slot of ['q', 'w', 'e', 'r'] as const) {
+          if (w.skills[slot].unlocked) scaleSkillCooldown(w, slot, 0.93)
+        }
+      },
+      (w) => {
+        scaleSkillCooldown(w, 'd', 0.88)
+        scaleSkillCooldown(w, 'f', 0.88)
+      },
+      (w) => {
+        w.stats.flashRange += 2
+      },
+    ],
+  }),
+  defineUpgrade({
     id: 'revival-seal',
     name: '귀환의 인장',
     glyph: '印',
@@ -1033,6 +1186,53 @@ function isFusionContentUnlocked(world: World, fusion: UpgradeDef): boolean {
     !fusion.unlockId ||
     world.runConfig.meta.unlockedUpgradeIds.includes(fusion.unlockId)
   )
+}
+
+export interface UpgradeFusionRoute {
+  id: string
+  name: string
+  partnerId: string
+  partnerName: string
+  partnerRank: number
+}
+
+/**
+ * 재료 카드를 고르는 순간 그 경로가 어느 융합으로 이어지는지 보여준다.
+ * 여러 조합에 쓰이는 재료라면 현재 가장 많이 완성된 짝을 먼저 안내한다.
+ */
+export function getUpgradeFusionRoute(
+  world: World,
+  materialId: string,
+): UpgradeFusionRoute | null {
+  const routes = FUSION_UPGRADES.flatMap((fusion) => {
+    if (
+      !fusion.classFilter.includes(world.playerClass) ||
+      !isFusionContentUnlocked(world, fusion) ||
+      !fusion.fusion?.requires.includes(materialId)
+    ) {
+      return []
+    }
+    const partnerId =
+      fusion.fusion.requires[0] === materialId
+        ? fusion.fusion.requires[1]
+        : fusion.fusion.requires[0]
+    return [
+      {
+        id: fusion.id,
+        name: fusion.name,
+        partnerId,
+        partnerName: getUpgrade(partnerId)?.name ?? partnerId,
+        partnerRank: readRank(world.upgradesTaken, partnerId),
+      },
+    ]
+  })
+
+  routes.sort(
+    (a, b) =>
+      b.partnerRank - a.partnerRank ||
+      a.name.localeCompare(b.name, 'ko-KR'),
+  )
+  return routes[0] ?? null
 }
 
 /**
@@ -1107,7 +1307,13 @@ export function getUpgradePresentation(
   // 노출하면 원거리 3택이 모두 "광학 장치"로 보여 선택지를 구분할 수 없다.
   // 화면에는 각 장비의 고유 경로명을 쓰고, 시각 그룹은 data-family로 유지한다.
   const familyLabel = upgrade.name
-  const rankLabel = fusion ? '합성' : legacy ? '전승' : `RANK ${romanRank(nextRank)}`
+  const rankLabel = fusion
+    ? '합성'
+    : legacy
+      ? maxRank === 1
+        ? '전승'
+        : `전승 ${romanRank(nextRank)}`
+      : `RANK ${romanRank(nextRank)}`
   const name = fusion ? upgrade.name : `${upgrade.name} · ${rankDef.displayName}`
   const badges = [
     familyLabel,
