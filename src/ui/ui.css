@@ -4200,19 +4200,18 @@ button {
 }
 
 .lvcard[data-family='optical-device'] {
-  --family-accent: #67d8f2;
+  --family-accent: #67def4;
+  --family-secondary: #b7f5ff;
 }
 
 .lvcard[data-family='sword-art'] {
-  --family-accent: #ef7685;
+  --family-accent: #f37889;
+  --family-secondary: #ffc0c8;
 }
 
 .lvcard[data-family='fusion'] {
-  --family-accent: #d3ae67;
-}
-
-.lvcard[data-family] {
-  border-bottom-color: var(--family-accent, var(--accent));
+  --family-accent: #c59aff;
+  --family-secondary: #e7c676;
 }
 
 .lvcard[data-rarity='awakening'] {
@@ -4268,6 +4267,179 @@ button {
 .lvcard[data-kind='relic-upgrade']::after {
   height: 3px;
   background: linear-gradient(90deg, transparent, #e4bd70, var(--accent), transparent);
+}
+
+/* 가족색은 1px 하단 테두리가 아니라 프레임·아이콘·배지 전체에서 반복한다.
+   문양도 함께 써서 시안/진홍/보라를 색만으로 구분하지 않게 한다. */
+.lvcard[data-family] {
+  border-left-width: 3px;
+  border-left-color: var(--family-accent);
+  border-top-color: color-mix(in srgb, var(--family-accent) 58%, #4b5562);
+  border-right-color: color-mix(in srgb, var(--family-accent) 24%, #39424d);
+}
+
+.lvcard[data-family]::after {
+  height: 3px;
+  background: linear-gradient(
+    90deg,
+    var(--family-accent) 0%,
+    color-mix(in srgb, var(--family-accent) 62%, var(--accent)) 64%,
+    var(--accent) 82%,
+    transparent 100%
+  );
+  box-shadow: 0 0 0.75rem color-mix(in srgb, var(--family-accent) 28%, transparent);
+}
+
+.lvcard[data-family] .icon {
+  border-color: color-mix(in srgb, var(--family-accent) 64%, #44505e);
+  color: var(--family-accent);
+  box-shadow:
+    inset 0 -3px rgba(0, 0, 0, 0.28),
+    0 0 0.8rem color-mix(in srgb, var(--family-accent) 12%, transparent);
+}
+
+.lvcard[data-family] .tag {
+  color: color-mix(in srgb, var(--family-accent) 54%, #aeb7c2);
+}
+
+.family-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.28rem;
+  border-color: color-mix(in srgb, var(--family-accent) 62%, #45505d);
+  color: color-mix(in srgb, var(--family-accent) 78%, white);
+  background:
+    linear-gradient(
+      105deg,
+      color-mix(in srgb, var(--family-accent) 18%, #0b1016),
+      #0b1016 72%
+    );
+  font-weight: 820;
+  letter-spacing: 0.045em;
+}
+
+.family-badge::before {
+  content: '';
+  width: 0.58rem;
+  height: 0.58rem;
+  flex: none;
+  border: 1px solid var(--family-accent);
+  background: var(--family-accent);
+  box-shadow: 0 0 0.5rem color-mix(in srgb, var(--family-accent) 58%, transparent);
+}
+
+.lvcard[data-family='optical-device'] .family-badge::before {
+  border-radius: 50%;
+  background: radial-gradient(
+    circle,
+    transparent 0 25%,
+    var(--family-accent) 29% 48%,
+    transparent 52%
+  );
+}
+
+.lvcard[data-family='sword-art'] .family-badge::before {
+  transform: rotate(45deg) scale(0.72);
+}
+
+.lvcard[data-family='fusion'] .family-badge::before {
+  border: 0;
+  background: linear-gradient(135deg, var(--family-accent), var(--family-secondary));
+  clip-path: polygon(
+    50% 0,
+    61% 36%,
+    100% 50%,
+    61% 64%,
+    50% 100%,
+    39% 64%,
+    0 50%,
+    39% 36%
+  );
+}
+
+/* 고정된 세 칸에서 평면 채움은 보유, 사선 발광은 이번 선택, 점선 외곽은
+   미획득이다. 전리품의 2단 각인은 offered 칸이 둘 켜져 즉시 구분된다. */
+.rank-progress {
+  min-height: 1.42rem;
+  padding: 0.26rem 0.4rem 0.24rem;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.7rem;
+  border-block: 1px solid color-mix(in srgb, var(--family-accent) 22%, #303945);
+  background:
+    linear-gradient(
+      90deg,
+      color-mix(in srgb, var(--family-accent) 8%, #0a0e14),
+      rgba(8, 11, 16, 0.5)
+    );
+}
+
+.rank-progress-label {
+  flex: none;
+  color: color-mix(in srgb, var(--family-accent) 72%, #aab4c0);
+  font-size: max(9px, 0.5rem);
+  font-weight: 880;
+  line-height: 1;
+  letter-spacing: 0.14em;
+}
+
+.rank-pips {
+  width: min(7.2rem, 58%);
+  display: grid;
+  grid-template-columns: repeat(3, minmax(1.15rem, 1fr));
+  gap: 0.22rem;
+}
+
+.rank-pip {
+  position: relative;
+  height: 0.42rem;
+  border: 1px solid #46515e;
+  background: #151b23;
+  clip-path: polygon(0 0, calc(100% - 0.2rem) 0, 100% 50%, calc(100% - 0.2rem) 100%, 0 100%);
+}
+
+.rank-pip[data-state='owned'] {
+  border-color: color-mix(in srgb, var(--family-accent) 62%, #52606e);
+  background:
+    linear-gradient(
+      180deg,
+      color-mix(in srgb, var(--family-accent) 72%, white),
+      color-mix(in srgb, var(--family-accent) 58%, #18202a)
+    );
+  box-shadow: inset 0 1px rgba(255, 255, 255, 0.25);
+}
+
+.rank-pip[data-state='offered'] {
+  border-color: color-mix(in srgb, var(--family-secondary) 78%, white);
+  background:
+    repeating-linear-gradient(
+      120deg,
+      color-mix(in srgb, var(--family-accent) 88%, white) 0 0.22rem,
+      color-mix(in srgb, var(--family-secondary) 80%, #3c2f1c) 0.22rem 0.38rem
+    );
+  box-shadow:
+    0 0 0.55rem color-mix(in srgb, var(--family-accent) 68%, transparent),
+    inset 0 1px rgba(255, 255, 255, 0.42);
+  animation: rank-pip-offered 1.35s ease-in-out infinite;
+}
+
+.rank-pip[data-state='locked'] {
+  border-style: dashed;
+  border-color: #4a5562;
+  background: rgba(13, 17, 23, 0.72);
+}
+
+@keyframes rank-pip-offered {
+  0%,
+  100% {
+    filter: brightness(0.92);
+    transform: scaleY(0.9);
+  }
+  50% {
+    filter: brightness(1.16);
+    transform: scaleY(1);
+  }
 }
 
 /* 1280px에서 두 표를 억지로 반으로 나누면 기록일 열이 잘린다. 이 구간은
@@ -4350,6 +4522,15 @@ button {
   .lvcard p {
     margin-right: 1.1rem;
     -webkit-line-clamp: 3;
+  }
+
+  .rank-progress {
+    min-height: 1.28rem;
+    padding-block: 0.2rem;
+  }
+
+  .rank-pips {
+    width: min(6.4rem, 48%);
   }
 }
 
@@ -4520,10 +4701,24 @@ button {
   .skill-tooltip,
   .damage-vignette,
   .lvcard::after,
+  .levelup.resolving .lvcard.selected,
+  .levelup.resolving .lvcard.rejected,
   .levelup.resolving .lvcard.selected::before,
+  .rank-pip[data-state='offered'],
   .cast-mode-option,
   .settings-volume input[type='range'] {
     animation: none;
     transition: none;
+  }
+
+  .levelup.resolving .lvcard.selected,
+  .levelup.resolving .lvcard.rejected,
+  .rank-pip[data-state='offered'] {
+    transform: none;
+    filter: none;
+  }
+
+  .levelup.resolving .lvcard.selected::before {
+    display: none;
   }
 }

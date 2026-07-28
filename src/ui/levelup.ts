@@ -56,6 +56,14 @@ export interface LevelUpCard {
   rank?: number
   trait?: string
   badges?: readonly string[]
+  familyLabel?: string
+  rankProgress?: {
+    /** Segments already owned before this choice. */
+    current: number
+    /** Segments owned after accepting this choice. */
+    target: number
+    label: 'RANK' | 'FUSION'
+  }
 }
 
 const ROMAN_RANK = ['', 'I', 'II', 'III'] as const
@@ -161,12 +169,26 @@ function buildUpgradeCards(world: World, relic = false): LevelUpCard[] {
         : presentation.rarity
     const accent =
       rarity === 'fusion'
-        ? '#d98cff'
+        ? '#e4bd70'
         : rarity === 'awakening'
           ? '#ffd166'
           : world.playerClass === 'melee'
             ? '#ff5a6e'
             : '#4dd0ff'
+    const rankProgress = upgrade.fusion
+      ? {
+          // A fusion card is the capstone after two completed ingredients.
+          // Treat those ingredients as the owned segments and the fusion as
+          // the offered third segment instead of misleadingly showing 1/3.
+          current: 2,
+          target: 3,
+          label: 'FUSION' as const,
+        }
+      : {
+          current: presentation.currentRank,
+          target: targetRank,
+          label: 'RANK' as const,
+        }
     out.push({
       id: upgrade.id,
       kind: relic ? 'relic-upgrade' : 'upgrade',
@@ -189,7 +211,9 @@ function buildUpgradeCards(world: World, relic = false): LevelUpCard[] {
         : presentation.oneLiner,
       rarity,
       family: presentation.family,
+      familyLabel: presentation.familyLabel,
       rank: relic ? targetRank : choice.rank ?? presentation.nextRank,
+      rankProgress,
       ...(targetDef.trait ? { trait: targetDef.trait } : {}),
       badges: relic
         ? [
@@ -256,6 +280,36 @@ export function applyLevelUpCard(world: World, card: LevelUpCard): void {
   }
 
   applyUpgrade(world, card.id)
+}
+
+/**
+ * Three fixed segments make upgrade history readable without opening a tooltip.
+ * Flat fill = already owned, hatched glow = this choice, outline = unavailable.
+ */
+function rankProgressMarkup(card: LevelUpCard): string {
+  if (!card.rankProgress) return ''
+
+  const current = Math.max(0, Math.min(3, Math.floor(card.rankProgress.current)))
+  const target = Math.max(current, Math.min(3, Math.floor(card.rankProgress.target)))
+  const offered = target - current
+  const missing = 3 - target
+  const accessibleLabel =
+    card.rankProgress.label === 'FUSION'
+      ? '융합 진행: 재료 각성 2칸 보유, 이번 선택으로 융합 완성'
+      : `랭크 진행: 현재 ${current}칸 보유, 이번 선택 ${offered}칸, 미획득 ${missing}칸`
+
+  let pips = ''
+  for (let rank = 1; rank <= 3; rank += 1) {
+    const state = rank <= current ? 'owned' : rank <= target ? 'offered' : 'locked'
+    pips += `<span class="rank-pip" data-state="${state}" aria-hidden="true"></span>`
+  }
+
+  return (
+    `<div class="rank-progress" role="img" aria-label="${accessibleLabel}">` +
+    `<span class="rank-progress-label" aria-hidden="true">${card.rankProgress.label}</span>` +
+    `<span class="rank-pips">${pips}</span>` +
+    `</div>`
+  )
 }
 
 /**
@@ -349,13 +403,19 @@ export function showLevelUp(parent: HTMLElement, world: World): Promise<void> {
         card.badges && card.badges.length > 0
           ? `<div class="card-badges">${card.badges
               .map(
-                (badge) =>
-                  `<span class="${
-                    badge.startsWith('RANK') || badge === '합성' ? 'rank-badge' : 'card-badge'
-                  }">${badge}</span>`,
+                (badge) => {
+                  const badgeClass =
+                    badge === card.familyLabel
+                      ? 'card-badge family-badge'
+                      : badge.startsWith('RANK') || badge === '합성' || badge === '융합'
+                        ? 'rank-badge'
+                        : 'card-badge'
+                  return `<span class="${badgeClass}">${badge}</span>`
+                },
               )
               .join('')}</div>`
           : ''
+      const rankProgress = rankProgressMarkup(card)
       el.innerHTML =
         `<div class="hotkey">${i + 1}</div>` +
         `<div class="top">` +
@@ -367,6 +427,7 @@ export function showLevelUp(parent: HTMLElement, world: World): Promise<void> {
         (card.slotLabel ? `<span class="slot-label">${card.slotLabel}</span>` : '') +
         `<span class="tag">${card.tag}</span>` +
         `</div>` +
+        rankProgress +
         badges +
         `<h3>${card.name}</h3>` +
         `<p>${card.desc}</p>`
