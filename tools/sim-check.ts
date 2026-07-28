@@ -11,6 +11,7 @@ import {
   ARENA_RADIUS,
   DT,
   FLASH_COOLDOWN,
+  PLAYER_RADIUS,
   RUN_TIME_LIMIT,
 } from '../src/sim/constants.ts'
 import {
@@ -32,6 +33,7 @@ import {
   BOSS_WINDUP_AT,
   ELITE_SPAWN_TIMES,
   ENEMY_TYPES,
+  MIN_ENEMY_SPAWN_DISTANCE,
   TYPE_BOSS,
   TYPE_ELITE,
   TYPE_WALKER,
@@ -41,8 +43,11 @@ import {
   enemyHealthMultiplier,
   removeEnemy,
   spawnBoss,
+  spawnElite,
   spawnEnemy,
   targetAliveCount,
+  updateSpawner,
+  type EnemyPool,
 } from '../src/sim/enemies.ts'
 import {
   LEVEL_REWARDS,
@@ -55,7 +60,7 @@ import {
   rollUpgrades,
   type UpgradeCandidate,
 } from '../src/sim/progression.ts'
-import { createRng } from '../src/sim/rng.ts'
+import { createRng, type Rng } from '../src/sim/rng.ts'
 import {
   RELIC_ARM_DELAY,
   stepEliteRewardBeats,
@@ -912,6 +917,130 @@ console.log('\nsim smoke check\n')
 
 // --- 적 시스템 ---
 {
+  const boundaryX = ARENA_RADIUS - PLAYER_RADIUS
+  const boundaryY = 0
+  const spawnCases = [
+    {
+      label: '일반',
+      type: TYPE_WALKER,
+      spawn(pool: EnemyPool, rng: Rng): boolean {
+        const before = pool.count
+        spawnEnemy(pool, rng, boundaryX, boundaryY, TYPE_WALKER)
+        return pool.count === before + 1
+      },
+    },
+    {
+      label: '정예',
+      type: TYPE_ELITE,
+      spawn: (pool: EnemyPool, rng: Rng) =>
+        spawnElite(pool, rng, boundaryX, boundaryY, ELITE_SPAWN_TIMES[0]!),
+    },
+    {
+      label: '보스',
+      type: TYPE_BOSS,
+      spawn: (pool: EnemyPool, rng: Rng) =>
+        spawnBoss(pool, rng, boundaryX, boundaryY),
+    },
+  ] as const
+
+  for (const spawnCase of spawnCases) {
+    // 이 시드는 기존 방사형 clamp에서 플레이어 바로 오른쪽을 뽑아
+    // 일반 0.37 / 정예 0.81 / 보스 1.50 거리까지 붕괴하던 재현 시드다.
+    const seed = 1951
+    const pool = createEnemyPool()
+    const rng = createRng(seed)
+    const referenceRng = createRng(seed)
+    referenceRng.next()
+    referenceRng.next()
+
+    const spawned = spawnCase.spawn(pool, rng)
+    const playerDistance = Math.hypot(
+      pool.x[0]! - boundaryX,
+      pool.y[0]! - boundaryY,
+    )
+    const arenaDistance = Math.hypot(pool.x[0]!, pool.y[0]!)
+    const arenaLimit = ARENA_RADIUS - ENEMY_TYPES[spawnCase.type]!.radius - 0.5
+
+    check(
+      `경계 플레이어 옆에 ${spawnCase.label} 적이 즉시 스폰되지 않는다`,
+      spawned &&
+        pool.type[0] === spawnCase.type &&
+        playerDistance >= MIN_ENEMY_SPAWN_DISTANCE - 1e-4,
+      `distance=${playerDistance.toFixed(4)}`,
+    )
+    check(
+      `${spawnCase.label} 대체 스폰도 몸체까지 아레나 경계 안이다`,
+      arenaDistance <= arenaLimit + 1e-4,
+      `distance=${arenaDistance.toFixed(4)} limit=${arenaLimit.toFixed(4)}`,
+    )
+    check(
+      `${spawnCase.label} 대체 탐색은 추가 난수를 소비하지 않는다`,
+      rng.state() === referenceRng.state(),
+      `${rng.state()} vs ${referenceRng.state()}`,
+    )
+
+    const replayPool = createEnemyPool()
+    const replayRng = createRng(seed)
+    spawnCase.spawn(replayPool, replayRng)
+    check(
+      `${spawnCase.label} 안전 스폰은 같은 시드에서 같은 좌표다`,
+      replayPool.x[0] === pool.x[0] &&
+        replayPool.y[0] === pool.y[0] &&
+        replayRng.state() === rng.state(),
+    )
+  }
+
+  const boundaryPool = createEnemyPool()
+  const boundaryRng = createRng(8128)
+  updateSpawner(boundaryPool, boundaryRng, 0, boundaryX, boundaryY)
+  updateSpawner(boundaryPool, boundaryRng, 0, boundaryX, boundaryY)
+  check(
+    '경계 안전 스폰도 일반 적 목표 수를 그대로 채운다',
+    boundaryPool.count === Math.floor(targetAliveCount(0)),
+    `count=${boundaryPool.count}`,
+  )
+  check(
+    '목표 수로 채운 일반 적도 모두 최소 거리와 경계를 지킨다',
+    Array.from({ length: boundaryPool.count }).every((_, index) => {
+      const x = boundaryPool.x[index]!
+      const y = boundaryPool.y[index]!
+      const type = boundaryPool.type[index]!
+      return (
+        Math.hypot(x - boundaryX, y - boundaryY) >=
+          MIN_ENEMY_SPAWN_DISTANCE - 1e-4 &&
+        Math.hypot(x, y) <=
+          ARENA_RADIUS - ENEMY_TYPES[type]!.radius - 0.5 + 1e-4
+      )
+    }),
+  )
+
+  const sweepPool = createEnemyPool()
+  let allBoundarySpawnsSafe = true
+  for (let heading = 0; heading < 8; heading += 1) {
+    const angle = (heading / 8) * Math.PI * 2
+    const px = Math.cos(angle) * (ARENA_RADIUS - PLAYER_RADIUS)
+    const py = Math.sin(angle) * (ARENA_RADIUS - PLAYER_RADIUS)
+    for (let seed = 0; seed < 64; seed += 1) {
+      for (const type of [TYPE_WALKER, TYPE_ELITE, TYPE_BOSS]) {
+        sweepPool.count = 0
+        spawnEnemy(sweepPool, createRng(seed), px, py, type)
+        const x = sweepPool.x[0]!
+        const y = sweepPool.y[0]!
+        const limit = ARENA_RADIUS - ENEMY_TYPES[type]!.radius - 0.5
+        if (
+          Math.hypot(x - px, y - py) < MIN_ENEMY_SPAWN_DISTANCE - 1e-4 ||
+          Math.hypot(x, y) > limit + 1e-4
+        ) {
+          allBoundarySpawnsSafe = false
+        }
+      }
+    }
+  }
+  check(
+    '경계 전 방향·64시드의 일반/정예/보스 스폰이 안전거리와 경계를 지킨다',
+    allBoundarySpawnsSafe,
+  )
+
   const w = createWorld(7)
   const input = createInput()
   input.aim.x = 10

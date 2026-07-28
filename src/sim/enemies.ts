@@ -339,8 +339,75 @@ function rollType(rng: Rng, time: number): number {
   return TYPE_BRUTE
 }
 
-/** 화면 밖에서 스폰시킬 거리. 카메라 시야보다 살짝 넓게. */
-const SPAWN_RING = 17
+/**
+ * 경계 보정 뒤에도 보장할 플레이어 중심 안전거리.
+ * 가장 빠른 러셔도 접촉까지 0.6초 이상 걸려 보고 반응할 여유가 생긴다.
+ */
+export const MIN_ENEMY_SPAWN_DISTANCE = 8
+/** 정상 위치에서는 카메라 시야보다 살짝 먼 17~21 링에서 등장한다. */
+const SPAWN_RING_MIN_DISTANCE = 17
+const SPAWN_RING_MAX_DISTANCE = 21
+/** 첫 후보가 경계 밖이면 RNG를 더 쓰지 않고 원주를 고정 간격으로 탐색한다. */
+const SPAWN_POSITION_ATTEMPTS = 16
+
+interface SpawnPosition {
+  x: number
+  y: number
+}
+
+/**
+ * 플레이어 중심 스폰 링과 아레나가 겹치는 지점을 결정론적으로 찾는다.
+ *
+ * 후보를 아레나 원주로 방사형 압축하면 경계에 선 플레이어 바로 옆까지
+ * 스폰 거리가 줄어든다. 기존 보정점이 안전하면 그대로 쓰고, 안전거리 안으로
+ * 무너지는 경우에만 같은 원주를 돌며 다음 후보를 찾는다.
+ */
+function safeSpawnPosition(
+  px: number,
+  py: number,
+  angle: number,
+  distance: number,
+  limit: number,
+): SpawnPosition {
+  const angleStep = (Math.PI * 2) / SPAWN_POSITION_ATTEMPTS
+  const minimumDistanceSq =
+    MIN_ENEMY_SPAWN_DISTANCE * MIN_ENEMY_SPAWN_DISTANCE
+  for (let attempt = 0; attempt < SPAWN_POSITION_ATTEMPTS; attempt += 1) {
+    const candidateAngle = angle + attempt * angleStep
+    const x = px + Math.cos(candidateAngle) * distance
+    const y = py + Math.sin(candidateAngle) * distance
+    const arenaDistance = Math.hypot(x, y)
+    if (arenaDistance <= limit) return { x, y }
+
+    // 기존 경계 스폰이 이미 안전거리 밖이면 좌표를 그대로 보존한다.
+    // 즉시 접촉으로 붕괴하는 좁은 각도만 다음 후보로 넘긴다.
+    const scale = limit / arenaDistance
+    const clampedX = x * scale
+    const clampedY = y * scale
+    const playerDx = clampedX - px
+    const playerDy = clampedY - py
+    if (
+      playerDx * playerDx + playerDy * playerDy >=
+      minimumDistanceSq
+    ) {
+      return { x: clampedX, y: clampedY }
+    }
+  }
+
+  // 정상 월드 좌표에서는 위 탐색이 반드시 성공한다. 외부 호출이 비정상 좌표를
+  // 넘겨도 플레이어 반대편 경계로 보내 즉시 접촉 스폰만큼은 만들지 않는다.
+  const playerDistance = Math.hypot(px, py)
+  if (playerDistance > 1e-9) {
+    return {
+      x: (-px / playerDistance) * limit,
+      y: (-py / playerDistance) * limit,
+    }
+  }
+  return {
+    x: Math.cos(angle) * limit,
+    y: Math.sin(angle) * limit,
+  }
+}
 
 export function spawnEnemy(
   pool: EnemyPool,
@@ -355,18 +422,18 @@ export function spawnEnemy(
   const def = ENEMY_TYPES[type]!
   const i = pool.count++
 
-  // 플레이어 주변 링 위. 아레나를 벗어나면 안쪽으로 접는다.
+  // 플레이어 주변 링 위. 첫 각도가 경계 밖이면 같은 거리의 대체 각도를 찾는다.
+  // 각도와 거리용 RNG 두 번만 소비해 기존 결정론적 스트림을 보존한다.
   const a = rng.next() * Math.PI * 2
-  const d = randRange(rng, SPAWN_RING, SPAWN_RING + 4)
-  let sx = px + Math.cos(a) * d
-  let sy = py + Math.sin(a) * d
-  const dist = Math.hypot(sx, sy)
+  const d = randRange(
+    rng,
+    SPAWN_RING_MIN_DISTANCE,
+    SPAWN_RING_MAX_DISTANCE,
+  )
   const limit = ARENA_RADIUS - def.radius - 0.5
-  if (dist > limit) {
-    const s = limit / dist
-    sx *= s
-    sy *= s
-  }
+  const spawn = safeSpawnPosition(px, py, a, d, limit)
+  const sx = spawn.x
+  const sy = spawn.y
 
   pool.x[i] = sx
   pool.y[i] = sy
