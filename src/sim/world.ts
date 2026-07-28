@@ -9,13 +9,27 @@ import {
 import { MELEE_W_DASH_END, MELEE_W_PREPARE_END } from './action-timing.ts'
 import { currentSpeed, stepAbilities } from './abilities.ts'
 import { releaseFinishedPlayerAction } from './actions.ts'
+import {
+  BATTLEFIELD_BOMB_MAX_KILLS,
+  BATTLEFIELD_HEAL_AMOUNT,
+  BATTLEFIELD_MAGNET_DURATION,
+  BATTLEFIELD_MAGNET_MAX_REMAINING,
+  PICKUP_BOMB,
+  PICKUP_HEAL,
+  PICKUP_MAGNET,
+  collectedBattlefieldPickupCount,
+  createBattlefieldPickupPool,
+  stepBattlefieldPickups,
+} from './battlefield-pickups.ts'
 import { stepAutoAttack } from './combat.ts'
-import { sweepDead } from './damage.ts'
+import { damageEnemy, sweepDead } from './damage.ts'
 import { stepGauge, stepKits } from './kits.ts'
 import { stepZones } from './zones.ts'
 import {
   BOSS_MAX_HP,
   BOSS_SPAWN_TIME,
+  TYPE_BOSS,
+  TYPE_ELITE,
   createEnemyHash,
   createEnemyPool,
   rebuildEnemyHash,
@@ -74,6 +88,7 @@ export function createWorld(seed: number, playerClass: PlayerClass = 'ranged'): 
     rng: createRng(seed),
     // 시드는 같되 스트림을 갈라 서로 간섭하지 않게 한다.
     choiceRng: createRng((seed ^ 0x9e3779b9) >>> 0),
+    pickupRng: createRng((seed ^ 0x51ed270b) >>> 0),
     arenaRadius: ARENA_RADIUS,
     playerClass,
     stats,
@@ -88,6 +103,7 @@ export function createWorld(seed: number, playerClass: PlayerClass = 'ranged'): 
     lastAim: vec2(1, 0),
     enemies: createEnemyPool(),
     xpGems: createXpGemPool(),
+    battlefieldPickups: createBattlefieldPickupPool(),
     enemyHash: createEnemyHash(),
     boss: {
       spawned: false,
@@ -140,7 +156,21 @@ export function stepWorld(world: World, input: Input): void {
   stepAbilities(world, input)
   stepPlayer(world, input)
   const p = world.player
-  const collectedXp = stepXpGems(world.xpGems, p.pos.x, p.pos.y, DT)
+  const collectedPickups = stepBattlefieldPickups(
+    world.battlefieldPickups,
+    p.pos.x,
+    p.pos.y,
+    world.time,
+  )
+  applyBattlefieldPickupEffects(world, collectedPickups)
+
+  const collectedXp = stepXpGems(
+    world.xpGems,
+    p.pos.x,
+    p.pos.y,
+    DT,
+    world.time < world.battlefieldPickups.magnetUntil,
+  )
   if (collectedXp > 0) grantXp(world, collectedXp)
   // 정예 인장은 플레이어 이동 뒤를 추적한다. 회수로 선택 화면이 열려도
   // 현재 고정 틱은 끝까지 마치고 다음 프레임부터 멈춰 결정론을 유지한다.
@@ -250,6 +280,54 @@ export function stepWorld(world: World, input: Input): void {
     world.time >= RUN_TIME_LIMIT
   ) {
     world.outcome = 'timeout'
+  }
+}
+
+/** Applies packed pickup counts without allocating a temporary result object. */
+function applyBattlefieldPickupEffects(world: World, collected: number): void {
+  if (collected === 0) return
+
+  const pickups = world.battlefieldPickups
+  const healCount = collectedBattlefieldPickupCount(collected, PICKUP_HEAL)
+  if (healCount > 0) {
+    world.player.hp = Math.min(
+      world.stats.maxHp,
+      world.player.hp + BATTLEFIELD_HEAL_AMOUNT * healCount,
+    )
+    pickups.healActivations += healCount
+  }
+
+  const magnetCount = collectedBattlefieldPickupCount(collected, PICKUP_MAGNET)
+  if (magnetCount > 0) {
+    const remaining = Math.max(0, pickups.magnetUntil - world.time)
+    pickups.magnetUntil =
+      world.time +
+      Math.min(
+        BATTLEFIELD_MAGNET_MAX_REMAINING,
+        remaining + BATTLEFIELD_MAGNET_DURATION * magnetCount,
+      )
+    pickups.magnetActivations += magnetCount
+  }
+
+  const bombCount = collectedBattlefieldPickupCount(collected, PICKUP_BOMB)
+  if (bombCount > 0) {
+    detonateBattlefieldBomb(world, BATTLEFIELD_BOMB_MAX_KILLS * bombCount)
+    pickups.bombActivations += bombCount
+  }
+}
+
+/**
+ * Clears ordinary enemies only. Elites and the boss stay on their authored
+ * reward/victory paths, and bomb kills cannot recursively roll utility drops.
+ */
+function detonateBattlefieldBomb(world: World, maxKills: number): void {
+  const pool = world.enemies
+  let kills = 0
+  for (let i = pool.count - 1; i >= 0 && kills < maxKills; i -= 1) {
+    if (pool.hp[i]! <= 0) continue
+    const type = pool.type[i]!
+    if (type === TYPE_BOSS || type === TYPE_ELITE) continue
+    if (damageEnemy(world, i, pool.hp[i]!, false)) kills += 1
   }
 }
 

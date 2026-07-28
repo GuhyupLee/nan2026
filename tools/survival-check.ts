@@ -64,6 +64,9 @@ interface Result {
   relics: number
   awakenings: number
   fusions: number
+  healPickups: number
+  magnetPickups: number
+  bombPickups: number
 }
 
 function resolveFirstChoice(world: World): void {
@@ -313,6 +316,9 @@ function run(cls: PlayerClass, seed: number): Result {
     relics: world.relicsClaimed,
     awakenings,
     fusions,
+    healPickups: world.battlefieldPickups.healActivations,
+    magnetPickups: world.battlefieldPickups.magnetActivations,
+    bombPickups: world.battlefieldPickups.bombActivations,
   }
 }
 
@@ -340,7 +346,11 @@ function summarize(rows: Result[], cls: PlayerClass): void {
       `강화 ${String(median(selected.map((row) => row.upgradeRanks))).padStart(2)}  ` +
       `인장 ${String(median(selected.map((row) => row.relics))).padStart(1)}  ` +
       `각성 ${String(median(selected.map((row) => row.awakenings))).padStart(1)}  ` +
-      `합성 ${String(median(selected.map((row) => row.fusions))).padStart(1)}`,
+      `합성 ${String(median(selected.map((row) => row.fusions))).padStart(1)}  ` +
+      `pickups H/M/B ` +
+      `${median(selected.map((row) => row.healPickups))}/` +
+      `${median(selected.map((row) => row.magnetPickups))}/` +
+      `${median(selected.map((row) => row.bombPickups))}`,
   )
 }
 

@@ -1,3 +1,4 @@
+import { tryDropBattlefieldPickup } from './battlefield-pickups.ts'
 import { ENEMY_TYPES, removeEnemy, TYPE_BOSS, TYPE_ELITE } from './enemies.ts'
 import { dropRelic } from './rewards.ts'
 import type { World } from './types.ts'
@@ -63,9 +64,15 @@ function pushDamageFeedback(
 
 /**
  * 적에게 피해를 준다.
+ * @param allowBattlefieldPickupDrop 폭탄 연쇄 드롭을 막을 때만 false
  * @returns 이번 타격으로 죽었으면 true
  */
-export function damageEnemy(world: World, i: number, amount: number): boolean {
+export function damageEnemy(
+  world: World,
+  i: number,
+  amount: number,
+  allowBattlefieldPickupDrop = true,
+): boolean {
   const pool = world.enemies
   // 이미 죽어 스윕을 기다리는 적은 다시 때리지 않는다 — XP 중복 지급 방지.
   if (pool.hp[i]! <= 0) return false
@@ -101,6 +108,15 @@ export function damageEnemy(world: World, i: number, amount: number): boolean {
   const def = ENEMY_TYPES[pool.type[i]!]!
   world.kills += 1
   dropXpGem(world.xpGems, pool.x[i]!, pool.y[i]!, def.xp)
+  if (!isBoss && !isElite && allowBattlefieldPickupDrop) {
+    tryDropBattlefieldPickup(
+      world.battlefieldPickups,
+      world.pickupRng,
+      world.time,
+      pool.x[i]!,
+      pool.y[i]!,
+    )
+  }
 
   // 점등된 적이 죽으면 빛이 돌아온다 — 원거리의 지속 회복.
   //

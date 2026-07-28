@@ -116,6 +116,7 @@ export function stepXpGems(
   playerX: number,
   playerY: number,
   dt: number,
+  forceAttract = false,
 ): number {
   const pickupRadiusSquared = XP_GEM_PICKUP_RADIUS * XP_GEM_PICKUP_RADIUS
   const magnetRadiusSquared = XP_GEM_MAGNET_RADIUS * XP_GEM_MAGNET_RADIUS
@@ -137,7 +138,10 @@ export function stepXpGems(
       continue
     }
 
-    if (pool.attracted[i] === 0 && distanceSquared <= magnetRadiusSquared) {
+    if (
+      pool.attracted[i] === 0 &&
+      (forceAttract || distanceSquared <= magnetRadiusSquared)
+    ) {
       pool.attracted[i] = 1
     }
     if (pool.attracted[i] === 0 || travel <= 0) continue

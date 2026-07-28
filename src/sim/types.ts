@@ -1,4 +1,5 @@
 import type { RingEvent } from './abilities.ts'
+import type { BattlefieldPickupPool } from './battlefield-pickups.ts'
 import type { DeathEvent, EnemyPool } from './enemies.ts'
 import type { Progression } from './progression.ts'
 import type { Rng } from './rng.ts'
@@ -233,6 +234,8 @@ export interface World {
    * 판을 재현할 수 없고, 결정론 계약이 UI에 인질로 잡힌다.
    */
   choiceRng: Rng
+  /** Utility-drop RNG, isolated so pickups never perturb spawn geometry. */
+  pickupRng: Rng
   arenaRadius: number
   playerClass: PlayerClass
   /** 강화 카드가 건드리는 런타임 스탯. 게임 코드는 상수가 아니라 이걸 읽는다. */
@@ -257,6 +260,8 @@ export interface World {
   enemies: EnemyPool
   /** Fixed-capacity XP drops. Only entries below count are active. */
   xpGems: XpGemPool
+  /** Fixed-capacity healing, magnet, and bomb drops. */
+  battlefieldPickups: BattlefieldPickupPool
   enemyHash: SpatialHash
   boss: BossState
   /** 다음에 등장할 정예 비트의 인덱스. 지정 비트는 각각 한 번만 소비한다. */
