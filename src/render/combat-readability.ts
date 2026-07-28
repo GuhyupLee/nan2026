@@ -21,19 +21,24 @@ import {
 } from '../sim/surges.ts'
 import type { World } from '../sim/types.ts'
 import { lerp } from '../sim/vec.ts'
+import {
+  CLASS_COLORS,
+  DANGER_COLORS,
+  REWARD_COLORS,
+} from './palette.ts'
 
 const MAX_HEALTH_BARS = 32
 const MAX_TARGET_RINGS = 8
 const MAX_CHARGE_DISTANCE =
   BOSS_CHARGE_SPEED * (BOSS_RECOVER_AT - BOSS_CHARGE_AT)
 
-const RANGED_TARGET = new THREE.Color(0x62d9f7)
-const MELEE_TARGET = new THREE.Color(0xff6578)
-const ELITE_TARGET = new THREE.Color(0xe8bd61)
-const BOSS_TARGET = new THREE.Color(0xf25a8c)
+const RANGED_TARGET = new THREE.Color(CLASS_COLORS.ranged)
+const MELEE_TARGET = new THREE.Color(CLASS_COLORS.melee)
+const ELITE_TARGET = new THREE.Color(REWARD_COLORS.elite)
+const BOSS_TARGET = new THREE.Color(DANGER_COLORS.boss)
 const NORMAL_HEALTH = new THREE.Color(0xe9edf2)
-const BRUTE_HEALTH = new THREE.Color(0xff9a61)
-const SURGE_WARNING_COLORS = [0xff7548, 0xffad43, 0xb76cff] as const
+const BRUTE_HEALTH = new THREE.Color(DANGER_COLORS.brute)
+const SURGE_WARNING_COLORS = DANGER_COLORS.surge
 
 const BAR_VERTEX = /* glsl */ `
 attribute float aHp;
@@ -86,6 +91,8 @@ uniform float uTime;
 uniform float uProgress;
 uniform float uCharging;
 uniform float uMotion;
+uniform vec3 uDangerDeep;
+uniform vec3 uDangerHot;
 
 varying vec2 vUv;
 
@@ -103,7 +110,7 @@ void main() {
     (1.0 - smoothstep(0.5, 0.88, lateral)) *
     (0.16 + uCharging * 0.12);
   float alpha = fade * (rails * 0.68 + core + swept * 0.09 + chevrons);
-  vec3 color = mix(vec3(0.56, 0.035, 0.075), vec3(1.0, 0.36, 0.14), rails + chevrons);
+  vec3 color = mix(uDangerDeep, uDangerHot, rails + chevrons);
   gl_FragColor = vec4(color, min(0.68, alpha));
   #include <tonemapping_fragment>
   #include <colorspace_fragment>
@@ -130,6 +137,8 @@ export class CombatReadabilityFx {
     uProgress: { value: number }
     uCharging: { value: number }
     uMotion: { value: number }
+    uDangerDeep: { value: THREE.Color }
+    uDangerHot: { value: THREE.Color }
   }
 
   private readonly matrix = new THREE.Matrix4()
@@ -206,6 +215,8 @@ export class CombatReadabilityFx {
       uMotion: {
         value: window.matchMedia('(prefers-reduced-motion: reduce)').matches ? 0 : 1,
       },
+      uDangerDeep: { value: new THREE.Color(DANGER_COLORS.chargeLaneDeep) },
+      uDangerHot: { value: new THREE.Color(DANGER_COLORS.chargeLaneHot) },
     }
     this.chargeMesh = new THREE.Mesh(
       chargeGeometry,

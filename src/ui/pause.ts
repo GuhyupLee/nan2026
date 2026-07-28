@@ -109,7 +109,7 @@ export function showSettings(
     const heading = document.createElement('header')
     heading.className = 'menu-heading'
     heading.innerHTML =
-      '<div class="menu-eyebrow">SETTINGS</div>' +
+      '<div class="menu-eyebrow">게임 설정</div>' +
       '<h2 id="settings-title">설정</h2>' +
       '<p>전투 소리와 스킬 시전 방식을 바로 조절할 수 있습니다.</p>'
     panel.appendChild(heading)
@@ -323,7 +323,7 @@ export function showPause(
     const heading = document.createElement('header')
     heading.className = 'menu-heading'
     heading.innerHTML =
-      '<div class="menu-eyebrow">PAUSED</div>' +
+      '<div class="menu-eyebrow">게임 일시정지</div>' +
       '<h2 id="pause-title">일시정지</h2>' +
       '<p>전장은 멈춰 있습니다.</p>'
     panel.appendChild(heading)
@@ -333,12 +333,38 @@ export function showPause(
     panel.appendChild(actions)
 
     const resume = makeButton('menu-button primary', '계속하기', 'ESC')
-    const settings = makeButton('menu-button', '설정', '오디오')
-    const menu = makeButton('menu-button danger', '메인 메뉴', '현재 전투 종료')
+    const settings = makeButton('menu-button', '설정', '오디오와 조작')
+    const menu = makeButton('menu-button danger', '메인 메뉴', '확인 후 전투 종료')
     actions.append(resume, settings, menu)
+
+    const confirmation = document.createElement('section')
+    confirmation.className = 'pause-confirmation menu-heading'
+    confirmation.hidden = true
+    confirmation.setAttribute('aria-labelledby', 'pause-confirm-title')
+    confirmation.innerHTML =
+      '<div class="menu-eyebrow">전투 종료 확인</div>' +
+      '<h2 id="pause-confirm-title">메인 메뉴로 나갈까요?</h2>' +
+      '<p>진행 중인 전투는 종료됩니다. 이번 전투의 점수와 보상은 저장되지 않습니다.</p>'
+
+    const confirmActions = document.createElement('div')
+    confirmActions.className = 'pause-actions pause-confirm-actions'
+    const cancelExit = makeButton(
+      'menu-button primary pause-confirm-cancel',
+      '취소',
+      '일시정지 메뉴로 돌아가기',
+    )
+    const confirmExit = makeButton(
+      'menu-button danger pause-confirm-exit',
+      '전투 종료',
+      '메인 메뉴로 이동',
+    )
+    confirmActions.append(cancelExit, confirmExit)
+    confirmation.appendChild(confirmActions)
+    panel.appendChild(confirmation)
 
     let done = false
     let settingsOpen = false
+    let confirmingExit = false
     let releaseFocusTrap = (): void => {}
 
     const finish = (action: PauseAction): void => {
@@ -350,9 +376,28 @@ export function showPause(
       resolve(action)
     }
 
+    const setConfirmingExit = (confirming: boolean): void => {
+      if (done || settingsOpen) return
+      confirmingExit = confirming
+      root.dataset.confirmingExit = String(confirming)
+      heading.hidden = confirming
+      actions.hidden = confirming
+      confirmation.hidden = !confirming
+      root.setAttribute(
+        'aria-labelledby',
+        confirming ? 'pause-confirm-title' : 'pause-title',
+      )
+      if (confirming) cancelExit.focus()
+      else menu.focus()
+    }
+
     const onKey = (event: KeyboardEvent): void => {
       if (event.repeat || event.key !== 'Escape' || settingsOpen) return
       event.preventDefault()
+      if (confirmingExit) {
+        setConfirmingExit(false)
+        return
+      }
       finish('resume')
     }
 
@@ -377,7 +422,9 @@ export function showPause(
 
     resume.addEventListener('click', () => finish('resume'))
     settings.addEventListener('click', () => void openSettings())
-    menu.addEventListener('click', () => finish('menu'))
+    menu.addEventListener('click', () => setConfirmingExit(true))
+    cancelExit.addEventListener('click', () => setConfirmingExit(false))
+    confirmExit.addEventListener('click', () => finish('menu'))
     window.addEventListener('keydown', onKey)
     parent.appendChild(root)
     releaseFocusTrap = trapFocus(root)

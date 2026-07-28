@@ -4,8 +4,68 @@ import * as THREE from 'three'
  * 정적 아레나 환경.
  *
  * 바닥 셰이더 1콜 + 병합된 건축 지오메트리 1콜만 사용한다. 텍스처, 난수,
- * 프레임별 갱신이 없어서 모바일에서도 비용이 고정되고 리플레이도 결정적이다.
+ * 난수를 쓰지 않아 모바일에서도 비용이 고정되고 리플레이도 결정적이다.
+ * 5분 아크는 기존 머티리얼의 색 유니폼만 갱신하므로 드로우콜은 그대로다.
  */
+
+export interface ArenaArc {
+  /** 1분 이후 차가운 청색이 빠지는 첫 환경 전환. */
+  dusk: number
+  /** 보스 등장 전까지 월식의 자홍색이 스며드는 정도. */
+  eclipse: number
+  /** 보스 등장 뒤 전장이 적대색으로 잠기는 정도. */
+  boss: number
+  /** 보스 2페이즈의 최종 환경 강도. */
+  phaseTwo: number
+  /** 등장 직후에만 남는 짧은 환경 피크. */
+  arrival: number
+}
+
+export interface ArenaVisual {
+  readonly group: THREE.Group
+  applyArc(arc: Readonly<ArenaArc>): void
+  dispose(): void
+}
+
+function smooth01(value: number): number {
+  const t = THREE.MathUtils.clamp(value, 0, 1)
+  return t * t * (3 - 2 * t)
+}
+
+/**
+ * 시뮬레이션 시각만 읽어 렌더용 환경 단계를 만든다.
+ *
+ * 별도 타이머나 난수를 만들지 않아 일시정지·리플레이에서도 같은 프레임은 같은
+ * 색을 낸다. reduced-motion에서는 빠른 등장 피크만 줄이고, 시간 경과를 알리는
+ * 정적인 색 변화는 보존한다.
+ */
+export function sampleArenaArc(
+  time: number,
+  bossSpawned: boolean,
+  bossSpawnedAt: number,
+  phaseTwoAt: number,
+  reducedMotion: boolean,
+  out: ArenaArc,
+): ArenaArc {
+  const safeTime = Number.isFinite(time) ? Math.max(0, time) : 0
+  out.dusk = smooth01((safeTime - 55) / 95)
+  out.eclipse = smooth01((safeTime - 145) / 65)
+
+  const safeSpawnedAt = Number.isFinite(bossSpawnedAt)
+    ? bossSpawnedAt
+    : safeTime
+  const sinceBoss = safeTime - safeSpawnedAt
+  out.boss = bossSpawned ? smooth01(sinceBoss / 1.35) : 0
+  out.arrival =
+    bossSpawned && sinceBoss >= 0
+      ? (1 - smooth01(sinceBoss / 1.6)) * (reducedMotion ? 0.3 : 1)
+      : 0
+
+  const sincePhaseTwo = phaseTwoAt >= 0 ? safeTime - phaseTwoAt : -1
+  out.phaseTwo =
+    sincePhaseTwo >= 0 ? smooth01(sincePhaseTwo / 1.2) : 0
+  return out
+}
 
 const FLOOR_VERTEX_SHADER = /* glsl */ `
   varying vec3 vWorld;
@@ -426,27 +486,86 @@ function createArchitecture(radius: number): THREE.BufferGeometry {
   return geometry
 }
 
-export function createArena(radius: number): THREE.Group {
+const FLOOR_PALETTE = {
+  base: [
+    new THREE.Color(0x151f29),
+    new THREE.Color(0x151c28),
+    new THREE.Color(0x171722),
+    new THREE.Color(0x19131c),
+    new THREE.Color(0x1d1018),
+  ],
+  lane: [
+    new THREE.Color(0x1b2d36),
+    new THREE.Color(0x202b38),
+    new THREE.Color(0x282432),
+    new THREE.Color(0x301d29),
+    new THREE.Color(0x381721),
+  ],
+  mortar: [
+    new THREE.Color(0x080e15),
+    new THREE.Color(0x090d16),
+    new THREE.Color(0x0d0912),
+    new THREE.Color(0x10070d),
+    new THREE.Color(0x140509),
+  ],
+  accent: [
+    new THREE.Color(0x327f91),
+    new THREE.Color(0x427b9b),
+    new THREE.Color(0x76577f),
+    new THREE.Color(0xa44769),
+    new THREE.Color(0xd04468),
+  ],
+  fog: [
+    new THREE.Color(0x05070d),
+    new THREE.Color(0x060711),
+    new THREE.Color(0x08060d),
+    new THREE.Color(0x0b050a),
+    new THREE.Color(0x100407),
+  ],
+  arrivalAccent: new THREE.Color(0xe66a8b),
+} as const
+
+function applyArcColor(
+  target: THREE.Color,
+  palette: readonly [
+    THREE.Color,
+    THREE.Color,
+    THREE.Color,
+    THREE.Color,
+    THREE.Color,
+  ],
+  arc: Readonly<ArenaArc>,
+): void {
+  target
+    .copy(palette[0])
+    .lerp(palette[1], arc.dusk)
+    .lerp(palette[2], arc.eclipse)
+    .lerp(palette[3], arc.boss)
+    .lerp(palette[4], arc.phaseTwo)
+}
+
+export function createArena(radius: number): ArenaVisual {
   const group = new THREE.Group()
   group.name = 'arena'
 
   const floorGeometry = new THREE.CircleGeometry(radius, 128)
   floorGeometry.name = 'arena-floor'
+  const floorMaterial = new THREE.ShaderMaterial({
+    name: 'arena-floor-procedural',
+    vertexShader: FLOOR_VERTEX_SHADER,
+    fragmentShader: FLOOR_FRAGMENT_SHADER,
+    uniforms: {
+      uRadius: { value: radius },
+      uBase: { value: FLOOR_PALETTE.base[0].clone() },
+      uLane: { value: FLOOR_PALETTE.lane[0].clone() },
+      uMortar: { value: FLOOR_PALETTE.mortar[0].clone() },
+      uAccent: { value: FLOOR_PALETTE.accent[0].clone() },
+      uFogColor: { value: FLOOR_PALETTE.fog[0].clone() },
+    },
+  })
   const floor = new THREE.Mesh(
     floorGeometry,
-    new THREE.ShaderMaterial({
-      name: 'arena-floor-procedural',
-      vertexShader: FLOOR_VERTEX_SHADER,
-      fragmentShader: FLOOR_FRAGMENT_SHADER,
-      uniforms: {
-        uRadius: { value: radius },
-        uBase: { value: new THREE.Color(0x151f29) },
-        uLane: { value: new THREE.Color(0x1b2d36) },
-        uMortar: { value: new THREE.Color(0x080e15) },
-        uAccent: { value: new THREE.Color(0x327f91) },
-        uFogColor: { value: new THREE.Color(0x05070d) },
-      },
-    }),
+    floorMaterial,
   )
   floor.name = 'arena-floor'
   floor.rotation.x = -Math.PI / 2
@@ -455,21 +574,23 @@ export function createArena(radius: number): THREE.Group {
   floor.updateMatrix()
   group.add(floor)
 
+  const architectureGeometry = createArchitecture(radius)
+  const architectureMaterial = new THREE.MeshStandardMaterial({
+    name: 'arena-architecture-stone',
+    vertexColors: true,
+    color: 0xffffff,
+    roughness: 0.82,
+    metalness: 0.12,
+    emissive: 0x050b10,
+    emissiveIntensity: 0.24,
+    side: THREE.DoubleSide,
+    polygonOffset: true,
+    polygonOffsetFactor: 1,
+    polygonOffsetUnits: 1,
+  })
   const architecture = new THREE.Mesh(
-    createArchitecture(radius),
-    new THREE.MeshStandardMaterial({
-      name: 'arena-architecture-stone',
-      vertexColors: true,
-      color: 0xffffff,
-      roughness: 0.82,
-      metalness: 0.12,
-      emissive: 0x050b10,
-      emissiveIntensity: 0.24,
-      side: THREE.DoubleSide,
-      polygonOffset: true,
-      polygonOffsetFactor: 1,
-      polygonOffsetUnits: 1,
-    }),
+    architectureGeometry,
+    architectureMaterial,
   )
   architecture.name = 'arena-boundary-and-landmarks'
   architecture.receiveShadow = true
@@ -485,5 +606,51 @@ export function createArena(radius: number): THREE.Group {
     architecture.geometry.getAttribute('position').count / 3
   group.matrixAutoUpdate = false
   group.updateMatrix()
-  return group
+  return {
+    group,
+    applyArc(arc: Readonly<ArenaArc>): void {
+      applyArcColor(
+        floorMaterial.uniforms.uBase.value as THREE.Color,
+        FLOOR_PALETTE.base,
+        arc,
+      )
+      applyArcColor(
+        floorMaterial.uniforms.uLane.value as THREE.Color,
+        FLOOR_PALETTE.lane,
+        arc,
+      )
+      applyArcColor(
+        floorMaterial.uniforms.uMortar.value as THREE.Color,
+        FLOOR_PALETTE.mortar,
+        arc,
+      )
+      const accent = floorMaterial.uniforms.uAccent.value as THREE.Color
+      applyArcColor(accent, FLOOR_PALETTE.accent, arc)
+      accent.lerp(FLOOR_PALETTE.arrivalAccent, arc.arrival * 0.42)
+      applyArcColor(
+        floorMaterial.uniforms.uFogColor.value as THREE.Color,
+        FLOOR_PALETTE.fog,
+        arc,
+      )
+
+      architectureMaterial.emissive
+        .copy(FLOOR_PALETTE.fog[0])
+        .lerp(FLOOR_PALETTE.accent[2], arc.eclipse * 0.24)
+        .lerp(FLOOR_PALETTE.accent[3], arc.boss * 0.32)
+        .lerp(FLOOR_PALETTE.accent[4], arc.phaseTwo * 0.38)
+        .lerp(FLOOR_PALETTE.arrivalAccent, arc.arrival * 0.18)
+      architectureMaterial.emissiveIntensity =
+        0.24 +
+        arc.eclipse * 0.08 +
+        arc.boss * 0.1 +
+        arc.phaseTwo * 0.08 +
+        arc.arrival * 0.12
+    },
+    dispose(): void {
+      floorGeometry.dispose()
+      floorMaterial.dispose()
+      architectureGeometry.dispose()
+      architectureMaterial.dispose()
+    },
+  }
 }

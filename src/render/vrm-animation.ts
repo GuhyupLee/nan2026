@@ -30,6 +30,25 @@ const BASIC_ATTACK_RECOVERY_START: Readonly<
   empowered: 0.74,
 }
 
+/**
+ * 이동 중 전투 동작이 남겨야 하는 locomotion 층의 최소 비율.
+ *
+ * VRMA one-shot은 전신 트랙이라 가중치 1에서 다리까지 완전히 덮는다. 특히
+ * 원거리 평타는 0.28초마다 반복돼 보행이 거의 영구히 꺼지고, 캐릭터가 굳은
+ * 다리로 미끄러졌다. 전투 동작의 실루엣은 유지하되 실제 이동 중에는
+ * idle/walk 층을 이 비율만큼 예약한다. 평타는 상체 중심이라 가장 많이,
+ * 궁극기는 전신 실루엣이 중요해 가장 적게 남긴다.
+ */
+const ACTION_LOCOMOTION_FLOOR: Readonly<Record<CharacterAction, number>> = {
+  attack: 0.5,
+  empowered: 0.46,
+  q: 0.38,
+  w: 0.36,
+  e: 0.34,
+  r: 0.22,
+  ult: 0.24,
+}
+
 /** 새 동작의 짧은 예비 자세가 걷기 블렌드에 묻히지 않는 최대 진입 시간. */
 const ACTION_FADE_IN = 0.018
 /** 이전 one-shot만 빠르게 걷어내는 교차 페이드. */
@@ -305,15 +324,18 @@ export class VrmAnimationController {
       }
     }
 
-    // 평타는 이동 중 거의 끊임없이 재생된다. 전신 one-shot이 걷기 가중치를
-    // 0으로 만들면 하체가 굳은 채 미끄러지므로, 평타에만 보행층을 남긴다.
-    const activeKeepsWalk =
-      active?.kind === 'attack' || active?.kind === 'empowered'
-    const outgoingKeepsWalk =
-      this.outgoing?.kind === 'attack' || this.outgoing?.kind === 'empowered'
+    // one-shot은 전신 트랙이므로 평타뿐 아니라 이동 중 QWER도 걷기를 통째로
+    // 덮을 수 있다. 실제 보행량을 다시 walkBlend로 곱하기 전에 locomotion
+    // 층 자체를 예약해야, 중간 속도에서도 다리가 의미 있게 움직인다.
+    const activeLocomotionFloor = active
+      ? ACTION_LOCOMOTION_FLOOR[active.kind]
+      : 0
+    const outgoingLocomotionFloor = this.outgoing
+      ? ACTION_LOCOMOTION_FLOOR[this.outgoing.kind]
+      : 0
     const locomotionFloor =
-      this.walkBlend > 0.08 && (activeKeepsWalk || outgoingKeepsWalk)
-        ? Math.min(0.34, this.walkBlend * 0.34)
+      this.walkBlend > 0.08
+        ? Math.max(activeLocomotionFloor, outgoingLocomotionFloor)
         : 0
 
     // 빠른 스킬 캔슬에서는 나가는 모션과 새 모션의 페이드 곡선이 잠깐

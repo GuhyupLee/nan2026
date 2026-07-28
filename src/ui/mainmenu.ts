@@ -66,7 +66,7 @@ export function showMainMenu(
     const rule = document.createElement('div')
     rule.className = 'mainmenu-rule'
     rule.setAttribute('aria-hidden', 'true')
-    rule.innerHTML = '<span>FIVE MINUTES</span><i></i>'
+    rule.innerHTML = '<span>5분 생존 · 보스 격파</span><i></i>'
     content.appendChild(rule)
 
     let selectedDifficulty: RunDifficulty = 'normal'
@@ -79,12 +79,12 @@ export function showMainMenu(
       difficulty.dataset.mode = hard ? 'hard' : 'normal'
       difficulty.setAttribute('aria-pressed', String(hard))
       difficulty.innerHTML =
-        `<span><small>DIFFICULTY</small><b>${hard ? '하드' : '일반'}</b></span>` +
+        `<span><small>난이도</small><b>${hard ? '월식' : '일반'}</b></span>` +
         `<em>${
           hardModeUnlocked
             ? hard
               ? '적 속도 +10% · 접촉 피해 +25% · 점수 ×1.5'
-              : '안정적인 5분 보스전'
+              : '기본 난이도의 5분 보스전'
             : '보스 최초 격파 후 해금'
         }</em><i aria-hidden="true">${hardModeUnlocked ? '↔' : '잠김'}</i>`
     }

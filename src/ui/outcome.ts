@@ -23,19 +23,19 @@ interface OutcomeCopy {
 
 const COPY: Record<GameOutcome, OutcomeCopy> = {
   dead: {
-    eyebrow: 'RUN OVER',
+    eyebrow: '전투 종료',
     title: '쓰러졌습니다',
-    description: '호흡을 고르고, 같은 전장에 다시 도전하세요.',
+    description: '이번 전투가 끝났습니다. 바로 재도전하거나 기록을 확인할 수 있습니다.',
   },
   timeout: {
-    eyebrow: 'TIME OVER',
+    eyebrow: '시간 초과',
     title: '시간이 다 됐습니다',
-    description: '5분 안에 보스를 쓰러뜨리지 못했습니다. 같은 전장에 다시 도전하세요.',
+    description: '5분 안에 보스를 쓰러뜨리지 못했습니다. 바로 재도전하거나 기록을 확인할 수 있습니다.',
   },
   victory: {
-    eyebrow: 'VICTORY',
+    eyebrow: '승리',
     title: '승리했습니다',
-    description: '전장을 지배했습니다. 같은 조건으로 다시 도전할 수 있습니다.',
+    description: '보스를 쓰러뜨렸습니다. 계속 싸우거나 보상을 챙기고 돌아갈 수 있습니다.',
   },
 }
 
@@ -85,7 +85,7 @@ function buildManifest(
 ): string {
   const skills = view.skills
     .map((skill) => {
-      const state = skill.unlocked ? `RANK ${skill.rank}` : 'LOCKED'
+      const state = skill.unlocked ? `${skill.rank}단계` : '잠김'
       const path = skill.unlocked ? skill.branchName ?? '기본식' : '미해금'
       return (
         `<div class="build-skill" data-evolution="${skill.evolution}">` +
@@ -103,8 +103,8 @@ function buildManifest(
   return (
     `<section class="build-manifest" aria-labelledby="build-manifest-title">` +
     `<header><div>` +
-    `<span>BUILD MANIFEST</span>` +
-    `<h3 id="build-manifest-title">최종 전투 설계</h3>` +
+    `<span>전투 빌드</span>` +
+    `<h3 id="build-manifest-title">이번 전투의 최종 강화</h3>` +
     `</div><code>#${view.battlefieldCode}</code></header>` +
     `<div class="build-skills">${skills}</div>` +
     `<div class="build-counters">` +
@@ -113,8 +113,8 @@ function buildManifest(
     `<div data-kind="seals"><span>월식 인장</span><strong>${build.seals}</strong></div>` +
     `</div>` +
     `<div class="build-evolutions">` +
-    evolutionList('AWAKENING', view.awakeningNames, 'awakening') +
-    evolutionList('FUSION', view.fusionNames, 'fusion') +
+    evolutionList('각성', view.awakeningNames, 'awakening') +
+    evolutionList('융합', view.fusionNames, 'fusion') +
     `</div>` +
     `</section>`
   )
@@ -137,7 +137,13 @@ function recordsTable(records: RunRecord[], currentAt: number): string {
       )
     })
     .join('')
-  return `<div class="records"><h3>최고 기록</h3><table><tbody>${rows}</tbody></table></div>`
+  return (
+    `<div class="records"><h3>최고 기록</h3>` +
+    `<table aria-label="최고 기록 순위">` +
+    `<thead><tr><th scope="col">순위</th><th scope="col">점수</th>` +
+    `<th scope="col">결과</th><th scope="col">시간</th><th scope="col">처치</th></tr></thead>` +
+    `<tbody>${rows}</tbody></table></div>`
+  )
 }
 
 export function showOutcome(
@@ -162,8 +168,9 @@ export function showOutcome(
       `<p>${copy.description}</p>`
     root.appendChild(panel)
 
-    // --- 점수와 기록 ---
+    // --- 한눈에 보는 결과와, 필요할 때 펼치는 상세 기록 ---
     let retryBattlefieldCode: string | null = null
+    let outcomeDetails: HTMLDetailsElement | null = null
     if (world) {
       const s = computeScore(world)
       const targetMoonlight = Math.floor(s.total / 100)
@@ -208,31 +215,44 @@ export function showOutcome(
         return unlock ? [unlock.name] : []
       })
       score.innerHTML =
-        `<div class="run-report">` +
-        `<section class="score-summary" aria-label="전투 성과">` +
+        `<section class="score-summary outcome-core-summary" aria-label="이번 전투 핵심 결과">` +
         `<div class="total${isBest ? ' best' : ''}">` +
         `<span class="label">${isBest ? '최고 기록 갱신' : '점수'}</span>` +
         `<strong>${s.total.toLocaleString('ko-KR')}</strong>` +
         `</div>` +
+        `<div class="rows outcome-core-metrics">` +
+        `<div class="row" data-metric="kills"><span>처치</span><b>${world.kills.toLocaleString('ko-KR')}킬</b></div>` +
+        `<div class="row" data-metric="time"><span>전투 시간</span><b>${formatTime(world.time)}</b></div>` +
+        `</div>` +
+        `</section>`
+
+      outcomeDetails = document.createElement('details')
+      outcomeDetails.className = 'outcome-details'
+      outcomeDetails.innerHTML =
+        `<summary>상세 점수·기록·빌드 보기</summary>` +
+        `<div class="run-report outcome-details-content">` +
+        `<section class="score-summary" aria-label="상세 점수와 기록">` +
+        `<h3 class="outcome-detail-title">점수 계산</h3>` +
         `<div class="rows">` +
-        scoreRow(`처치 ${world.kills}`, s.kills) +
-        scoreRow(`레벨 ${world.progression.level}`, s.level) +
-        scoreRow('보스 처치', s.victory, true) +
-        scoreRow(`남은 시간 ${formatTime(Math.max(0, 300 - world.time))}`, s.speed, true) +
-        scoreRow('생존 연장', s.survival, true) +
+        scoreRow(`처치 점수 (${world.kills}킬)`, s.kills) +
+        scoreRow(`레벨 점수 (${world.progression.level}레벨)`, s.level) +
+        scoreRow('보스 처치 점수', s.victory, true) +
+        scoreRow(`남은 시간 점수 (${formatTime(Math.max(0, 300 - world.time))})`, s.speed, true) +
+        scoreRow('추가 생존 점수', s.survival, true) +
         (s.difficultyMultiplier > 1
-          ? `<div class="row hard"><span>하드 모드</span><b>×${s.difficultyMultiplier.toFixed(1)}</b></div>`
+          ? `<div class="row hard"><span>월식 난이도 배율</span><b>×${s.difficultyMultiplier.toFixed(1)}</b></div>`
           : '') +
         `</div>` +
         recordsTable(records, at) +
         `</section>` +
         buildManifest(build, buildView) +
         `</div>`
+
       const legacy = document.createElement('section')
       legacy.className = 'meta-run-reward'
       legacy.setAttribute('aria-label', '월광 전승 보상')
       legacy.innerHTML =
-        `<div><span>MOONLIGHT</span><strong>+${moonlightEarned.toLocaleString('ko-KR')}</strong></div>` +
+        `<div><span>획득 월광</span><strong>+${moonlightEarned.toLocaleString('ko-KR')}</strong></div>` +
         `<p>보유 월광 ${metaAward.progress.moonlight.toLocaleString('ko-KR')}` +
         (unlockedNames.length > 0
           ? ` · 신규 해금 ${unlockedNames.join(' · ')}`
@@ -244,10 +264,11 @@ export function showOutcome(
       // world 없이 부르는 경로가 남아 있어도 결과 화면 자체는 떠야 한다.
       const records = loadRecords('ranged')
       if (records.length > 0) {
-        const box = document.createElement('div')
-        box.className = 'scoreboard'
-        box.innerHTML = recordsTable(records, -1)
-        panel.appendChild(box)
+        outcomeDetails = document.createElement('details')
+        outcomeDetails.className = 'outcome-details'
+        outcomeDetails.innerHTML =
+          `<summary>최고 기록 보기</summary>` +
+          `<div class="scoreboard">${recordsTable(records, -1)}</div>`
       }
     }
 
@@ -260,9 +281,10 @@ export function showOutcome(
       endless = document.createElement('button')
       endless.className = 'endless'
       endless.type = 'button'
+      endless.dataset.primaryAction = 'true'
       endless.innerHTML =
         `<span>계속 싸운다</span>` +
-        `<small>ENDLESS · 40초마다 정예</small>`
+        `<small>끝없는 전투 · 40초마다 정예 출현</small>`
       actions.appendChild(endless)
     }
 
@@ -272,7 +294,7 @@ export function showOutcome(
     if (retryBattlefieldCode) {
       restart.innerHTML =
         `<span>같은 전장 재도전</span>` +
-        `<small>SAME SEED · #${retryBattlefieldCode}</small>`
+        `<small>전장 코드 #${retryBattlefieldCode}</small>`
     } else {
       restart.innerHTML =
         `<span>같은 캐릭터로 재시작</span>` +
@@ -292,8 +314,9 @@ export function showOutcome(
     note.className = 'note'
     note.textContent = world
       ? '같은 캐릭터와 전장 코드로 적 배치와 보상 순서를 다시 재현합니다.'
-      : '재시작은 같은 캐릭터 · 같은 시드'
+      : '재시작하면 같은 캐릭터와 같은 전장 배치를 사용합니다.'
     panel.appendChild(note)
+    if (outcomeDetails) panel.appendChild(outcomeDetails)
 
     let done = false
     let releaseFocusTrap = (): void => {}
@@ -320,6 +343,6 @@ export function showOutcome(
     window.addEventListener('keydown', onKey)
     parent.appendChild(root)
     releaseFocusTrap = trapFocus(root)
-    restart.focus()
+    ;(endless ?? restart).focus()
   })
 }

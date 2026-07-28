@@ -7,6 +7,7 @@ import {
 } from '@pixiv/three-vrm-animation'
 import { playerActionDuration } from '../sim/action-timing.ts'
 import type { PlayerClass } from '../sim/types.ts'
+import { CLASS_COLORS } from './palette.ts'
 import { CHARACTER_HEIGHT, type CharacterAction, type CharacterRig } from './rig.ts'
 import {
   VrmAnimationController,
@@ -85,11 +86,6 @@ const vrmModelsEnabled =
 /** 현재 기기에서 VRM 모델을 사용해도 되는지 알려준다. */
 export function shouldUseVrmModels(): boolean {
   return vrmModelsEnabled
-}
-
-const ACCENT: Record<PlayerClass, number> = {
-  melee: 0xff5a6e,
-  ranged: 0x4dd0ff,
 }
 
 /** T포즈에서 자연스러운 대기 자세로 내리는 기본 오프셋. */
@@ -638,7 +634,7 @@ function bladeAnchors(g: THREE.Group, baseY: number, tipY: number): {
 
 function buildWeapon(cls: PlayerClass): Weapon {
   const g = new THREE.Group()
-  const accent = glow(ACCENT[cls])
+  const accent = glow(CLASS_COLORS[cls])
 
   if (cls === 'melee') {
     // 카타나는 신장 1.75 기준 전장 1.0m 안팎이어야 손에 맞는다.

@@ -103,7 +103,7 @@ export function showRecords(parent: HTMLElement): Promise<void> {
     const heading = document.createElement('header')
     heading.className = 'menu-heading'
     heading.innerHTML =
-      '<div class="menu-eyebrow">RUN ARCHIVE</div>' +
+      '<div class="menu-eyebrow">전투 기록</div>' +
       '<h2 id="records-title">점수 기록</h2>' +
       '<p>이 기기에 저장된 캐릭터별 최고 기록입니다.</p>'
     heading.tabIndex = 0

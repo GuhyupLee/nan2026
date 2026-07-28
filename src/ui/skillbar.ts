@@ -74,6 +74,7 @@ interface PassiveView {
 }
 
 interface PassivePresentation {
+  metric: 'count' | 'gauge'
   name: string
   tag: string
   description: string
@@ -92,6 +93,7 @@ interface PassivePresentation {
 interface SlotFace {
   icon: HTMLImageElement
   fallback: HTMLSpanElement
+  key: HTMLDivElement
   cd: HTMLDivElement
   cdText: HTMLDivElement
 }
@@ -144,15 +146,23 @@ export class SkillBar {
     const passiveRoot = document.createElement('div')
     passiveRoot.className = 'slot passive-slot'
     passiveRoot.dataset.kind = 'passive'
-    passiveRoot.dataset.state = 'cooling'
-    passiveRoot.setAttribute('role', 'meter')
-    passiveRoot.setAttribute('aria-valuemin', '0')
-    passiveRoot.setAttribute('aria-valuemax', '100')
-    passiveRoot.setAttribute('aria-valuenow', '0')
-    passiveRoot.setAttribute('aria-valuetext', '패시브 대기')
+    passiveRoot.dataset.state = 'inactive'
+    passiveRoot.dataset.activation = 'automatic'
+    passiveRoot.dataset.metric = 'count'
+    // 자동 상태지만 live region은 아니다. 표식 수가 빠르게 바뀌는 전투에서
+    // 스크린리더가 다른 경고를 계속 덮지 않게, 포커스했을 때만 읽힌다.
+    passiveRoot.setAttribute('role', 'img')
     passiveRoot.setAttribute('aria-label', 'P 패시브, 전투 시작 후 상태가 표시됩니다.')
     passiveRoot.tabIndex = 0
     const passiveFace = appendSlotFace(passiveRoot, 'P', 'P')
+    passiveFace.key.textContent = ''
+    const passiveKey = document.createElement('span')
+    passiveKey.className = 'passive-key-label'
+    passiveKey.textContent = 'P'
+    const passiveMode = document.createElement('span')
+    passiveMode.className = 'passive-mode-badge'
+    passiveMode.textContent = '자동'
+    passiveFace.key.append(passiveKey, passiveMode)
     passiveFace.icon.src = `${import.meta.env.BASE_URL}art/myeongwol-mark.webp`
     passiveFace.icon.hidden = false
     passiveFace.fallback.hidden = true
@@ -273,8 +283,10 @@ export class SkillBar {
       slot.className = 'slot'
       slot.type = 'button'
       slot.dataset.kind = m.kind
+      slot.dataset.skill = m.id
       slot.dataset.state = 'locked'
       slot.setAttribute('aria-disabled', 'true')
+      slot.setAttribute('aria-keyshortcuts', m.key)
 
       const face = appendSlotFace(slot, m.key, m.glyph)
 
@@ -565,6 +577,7 @@ export class SkillBar {
     const signature = [
       world.playerClass,
       presentation.name,
+      presentation.metric,
       presentation.detail,
       presentation.actual,
       presentation.status,
@@ -578,17 +591,28 @@ export class SkillBar {
 
     if (signature !== this.passiveRenderSignature) {
       this.passiveRenderSignature = signature
-      this.passive.root.dataset.state = presentation.ready ? 'ready' : 'cooling'
+      this.passive.root.dataset.state = presentation.ready ? 'active' : 'inactive'
+      this.passive.root.dataset.metric = presentation.metric
       this.passive.cd.style.setProperty('--p', String(1 - presentation.progress))
       this.passive.cdText.textContent = presentation.displayValue
-      this.passive.root.setAttribute('aria-valuemax', String(presentation.meterMax))
-      this.passive.root.setAttribute('aria-valuenow', String(presentation.meterNow))
-      this.passive.root.setAttribute('aria-valuetext', presentation.meterText)
+      if (presentation.metric === 'gauge') {
+        this.passive.root.setAttribute('role', 'meter')
+        this.passive.root.setAttribute('aria-valuemin', '0')
+        this.passive.root.setAttribute('aria-valuemax', String(presentation.meterMax))
+        this.passive.root.setAttribute('aria-valuenow', String(presentation.meterNow))
+        this.passive.root.setAttribute('aria-valuetext', presentation.meterText)
+      } else {
+        this.passive.root.setAttribute('role', 'img')
+        this.passive.root.removeAttribute('aria-valuemin')
+        this.passive.root.removeAttribute('aria-valuemax')
+        this.passive.root.removeAttribute('aria-valuenow')
+        this.passive.root.removeAttribute('aria-valuetext')
+      }
       this.passive.root.setAttribute(
         'aria-label',
         `P 패시브 ${presentation.name}. ${presentation.detail}. ${presentation.status}`,
       )
-      this.passive.root.title = `${presentation.name} — ${presentation.detail}`
+      this.passive.root.removeAttribute('title')
     }
 
     if (presentation.ready && !this.passive.wasReady) this.flash(this.passive)
@@ -775,10 +799,11 @@ export class SkillBar {
   }
 
   private flash(view: TooltipView): void {
-    view.root.classList.remove('flash')
+    const className = 'meta' in view ? 'flash' : 'status-flash'
+    view.root.classList.remove(className)
     // 클래스를 다시 붙이기 전에 리플로우를 강제해야 애니메이션이 재생된다.
     void view.root.offsetWidth
-    view.root.classList.add('flash')
+    view.root.classList.add(className)
   }
 
   setVisible(visible: boolean): void {
@@ -832,7 +857,7 @@ function appendSlotFace(
   cdText.className = 'cdtext'
   root.appendChild(cdText)
 
-  return { icon, fallback, cd, cdText }
+  return { icon, fallback, key, cd, cdText }
 }
 
 function passivePresentation(world: World, markedEnemies: number): PassivePresentation {
@@ -841,6 +866,7 @@ function passivePresentation(world: World, markedEnemies: number): PassivePresen
     const marked = Math.max(0, markedEnemies)
     const litDamage = effectiveAtkDamage(stats) + stats.markBonus
     return {
+      metric: 'count',
       name: '점등',
       tag: '원거리 패시브',
       description: '스킬 적중으로 적을 표식하고, 표식 대상을 향한 평타를 점등합니다.',
@@ -853,9 +879,11 @@ function passivePresentation(world: World, markedEnemies: number): PassivePresen
       enhancement: '상시 효과 · 재사용 대기시간 없음',
       displayValue: marked > 0 ? String(marked) : '',
       ready: marked > 0,
-      progress: Math.min(1, marked / 8),
-      meterNow: Math.min(8, marked),
-      meterMax: 8,
+      // 표식은 한 체만 있어도 점등이 준비된다. 8칸 충전처럼 보이던 임의
+      // 분모를 없애고, 링은 준비 여부만 표시하며 중앙 숫자는 대상 수를 맡는다.
+      progress: marked > 0 ? 1 : 0,
+      meterNow: marked,
+      meterMax: Math.max(1, marked),
       meterText: `${marked}체 표식`,
     }
   }
@@ -864,6 +892,7 @@ function passivePresentation(world: World, markedEnemies: number): PassivePresen
   const empowered = world.player.empowered
   const swipeDamage = effectiveAtkDamage(stats) * 1.45
   return {
+    metric: 'gauge',
     name: empowered ? '월참' : '참흔',
     tag: '근거리 패시브',
     description: '근처 적을 베어 참흔을 축적하고, 가득 차면 다음 평타를 월참으로 강화합니다.',

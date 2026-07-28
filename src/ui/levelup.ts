@@ -58,6 +58,20 @@ export interface LevelUpCard {
   trait?: string
   badges?: readonly string[]
   familyLabel?: string
+  /** 카드에서 가장 먼저 읽는 강화 경로 또는 스킬 이름. */
+  pathName?: string
+  /** 같은 경로 안에서 이번 선택으로 얻는 단계 이름. */
+  stepName?: string
+  /** 이번 선택이 직접 바꾸는 구체적인 대상. */
+  target?: string
+  /** 현재 빌드와 이번 선택의 관계. */
+  context?: string
+  /** 정예 전리품처럼 본 효과와 분리해야 하는 추가 적용 정보. */
+  detail?: string
+  /** 아직 완성하지 않은 경로의 3단계 규칙 변화. */
+  preview?: string
+  /** 융합 카드가 요구하는 완성된 두 경로. */
+  fusionIngredients?: readonly string[]
   rankProgress?: {
     /** Segments already owned before this choice. */
     current: number
@@ -68,6 +82,61 @@ export interface LevelUpCard {
 }
 
 const ROMAN_RANK = ['', 'I', 'II', 'III'] as const
+
+/**
+ * 강화의 세계관 이름과 별개로, 실제로 무엇이 바뀌는지 명시한다.
+ * 설명 문자열을 정규식으로 분류하면 "체력 18% 이하 적 처형"이 생존으로
+ * 오인되는 식의 조용한 회귀가 생기므로 id·rank에 고정된 UI 계약으로 둔다.
+ */
+const UPGRADE_TARGETS: Readonly<Record<string, readonly string[]>> = {
+  'focused-lens': ['기본 공격', '모든 공격', '기본 공격'],
+  'diffraction-prism': ['기본 공격 속도', '기본 공격 속도', '기본 공격'],
+  'telescopic-aperture': ['기본 공격 사거리', '기본 공격 사거리', '원거리 기본 공격'],
+  'photon-core': ['체력과 공격', '받는 피해', '생존'],
+  'orbit-lens': ['Q · 낙광', 'Q · 낙광', 'Q · 낙광'],
+  'gravity-prism': ['W · 굴절', 'W · 굴절', 'W · 굴절'],
+  'phase-aperture': ['E · 분광', 'E · 분광', 'E · 분광'],
+  'heliostat-core': ['R · 일현', 'R · 일현', 'R · 일현'],
+  'crescent-honing': ['모든 공격', '모든 공격', '패시브 · 월참'],
+  'flowing-footwork': ['이동 속도', '기본 공격 속도', '점멸과 돌진'],
+  'ironwall-breath': ['받는 피해', '최대 체력', '생존'],
+  'bloodflow-breath': ['D · 회복', 'D · 회복', '초과 회복'],
+  'iai-scroll': ['Q · 원월참', 'Q · 원월참', 'Q · 원월참'],
+  'watermoon-sheath': ['W · 이합참', 'W · 이합참', 'W · 이합참'],
+  'mirror-guard': ['E · 월륜', 'E · 월륜', 'E · 월륜'],
+  'fullmoon-form': ['R · 만월난무', 'R · 만월난무', 'R · 만월난무'],
+  'interference-filament': ['기본 공격 관통', '기본 공격 관통', '기본 공격 관통'],
+  'dual-focus': ['기본 공격', '보조 광선', '보조 광선'],
+  'collector-array': ['아이템 획득', '아이템 획득', 'XP 보석'],
+  'afterglow-battery': ['D · 회복', 'F · 점멸', 'D와 F'],
+  'decapitating-flash': ['기본 공격', '기본 공격', '기본 공격 처형'],
+  'moon-drain-breath': ['처치 회복', '처치 회복', '초과 회복'],
+  'moonshadow-double': ['기본 공격', '후방 베기', '패시브 · 참흔'],
+  'blood-feast-step': ['아이템 획득', '회복 구슬', 'XP 보석'],
+  'supernova-specimen': ['기본 공격 각성', '기본 공격 각성', '기본 공격 각성'],
+  'eclipse-execution-array': ['처형 각성', '처형 각성', '처형 각성'],
+  'singularity-interferometer': ['Q와 W 융합', 'Q와 W 융합', 'Q와 W 융합'],
+  'eclipse-sword-codex': ['Q와 R 융합', 'Q와 R 융합', 'Q와 R 융합'],
+  'revival-seal': ['생존', '생존', '생존'],
+}
+
+export function getUpgradeChoiceTarget(id: string, rank: number): string {
+  const targets = UPGRADE_TARGETS[id]
+  if (!targets || targets.length === 0) return '전투 능력'
+  const index = Math.max(0, Math.min(targets.length - 1, Math.floor(rank) - 1))
+  return targets[index] ?? targets[0] ?? '전투 능력'
+}
+
+function plainEffect(copy: string): string {
+  return copy
+    .replace(/ \(평타·QWER\)$/u, '')
+    .replaceAll('평타', '기본 공격')
+    .replaceAll('획득 반경', '아이템 획득 범위')
+    .replaceAll('처치 회복 상한', '연속 처치 시 회복 가능한 체력')
+    .replaceAll('처치 회복 속도', '처치 회복 충전 속도')
+    .replace(/ \+(\d+(?:\.\d+)?%?)/gu, ' $1 증가')
+    .replace(/ -(\d+(?:\.\d+)?%?)/gu, ' $1 감소')
+}
 
 function upgradeCandidates(world: World, relic = false): UpgradeCandidate[] {
   return UPGRADES.map((upgrade) => {
@@ -100,6 +169,10 @@ function skillCard(world: World, id: SkillId): LevelUpCard | null {
     tag: def.tag,
     name: def.name,
     desc: def.oneLiner,
+    pathName: def.name,
+    stepName: def.tag,
+    target: `신규 ${def.key} 스킬`,
+    context: '새 스킬 해금',
   }
 }
 
@@ -136,9 +209,11 @@ function rankCards(world: World): LevelUpCard[] {
       slotLabel: def.key,
       tag: `스킬 강화 · Lv${next}`,
       name: `${def.name} +1`,
-      desc: world.endless
-        ? `피해 +20%, 재사용 대기시간 −5% (무한 연마 Lv${next})`
-        : `피해 +20%, 재사용 대기시간 −5% (Lv${next}/${MAX_SKILL_RANK})`,
+    desc: '피해 20% 증가 · 재사용 대기시간 5% 감소',
+      pathName: def.name,
+      stepName: `Lv${world.skills[id].rank} → Lv${next}`,
+      target: `${def.key} · ${def.name}`,
+      context: '보유 스킬 강화',
     })
   }
   return out
@@ -180,19 +255,40 @@ function buildUpgradeCards(world: World, relic = false): LevelUpCard[] {
             ? '#ff5a6e'
             : '#4dd0ff'
     const rankProgress = upgrade.fusion
-      ? {
-          // A fusion card is the capstone after two completed ingredients.
-          // Treat those ingredients as the owned segments and the fusion as
-          // the offered third segment instead of misleadingly showing 1/3.
-          current: 2,
-          target: 3,
-          label: 'FUSION' as const,
-        }
+      ? undefined
       : {
           current: presentation.currentRank,
           target: targetRank,
           label: 'RANK' as const,
         }
+    const detail = relic
+      ? `${relicBurst}단계를 한 번에 강화합니다.${
+          relicFusion
+            ? ` 선택 즉시 「${relicFusion.name}」도 함께 완성됩니다.`
+            : ' 조합 재료가 완성되면 융합이 자동으로 열립니다.'
+        }`
+      : undefined
+    const context = upgrade.fusion
+      ? '융합 완성'
+      : reachesAwakening
+        ? '각성 완성'
+        : relic
+          ? `${relicBurst}단 연속 강화`
+          : presentation.currentRank > 0
+            ? '기존 경로 이어가기'
+            : '새 강화 경로'
+    const finalRank =
+      !upgrade.fusion && upgrade.ranks.length >= 3 ? upgrade.ranks[2] : undefined
+    const preview =
+      finalRank && targetRank < 3
+        ? `3단계 각성 · ${plainEffect(finalRank.oneLiner)}`
+        : reachesAwakening
+          ? '이번 선택으로 3단계 각성이 완성됩니다.'
+          : undefined
+    const fusionIngredients = upgrade.fusion
+      ? upgrade.fusion.requires.map((id) => getUpgrade(id)?.name ?? id)
+      : undefined
+
     out.push({
       id: upgrade.id,
       kind: relic ? 'relic-upgrade' : 'upgrade',
@@ -207,17 +303,20 @@ function buildUpgradeCards(world: World, relic = false): LevelUpCard[] {
           : `${presentation.familyLabel} · ${presentation.rankLabel}`,
       name: upgrade.fusion ? upgrade.name : `${upgrade.name} · ${targetDef.displayName}`,
       desc: relic
-        ? `${targetDef.oneLiner} · 최대 ${relicBurst}랭크를 연속 각인합니다.${
-            relicFusion
-              ? ` · ${relicFusion.name} 동시 발동: ${relicFusion.ranks[0]!.oneLiner}`
-              : ''
-          }`
-        : presentation.oneLiner,
+        ? plainEffect(targetDef.oneLiner)
+        : plainEffect(presentation.oneLiner),
       rarity,
       family: presentation.family,
       familyLabel: presentation.familyLabel,
       rank: relic ? targetRank : choice.rank ?? presentation.nextRank,
-      rankProgress,
+      ...(rankProgress ? { rankProgress } : {}),
+      pathName: upgrade.name,
+      stepName: targetDef.displayName,
+      target: getUpgradeChoiceTarget(upgrade.id, targetRank),
+      context,
+      ...(detail ? { detail } : {}),
+      ...(preview ? { preview } : {}),
+      ...(fusionIngredients ? { fusionIngredients } : {}),
       ...(targetDef.trait ? { trait: targetDef.trait } : {}),
       badges: relic
         ? [
@@ -315,7 +414,11 @@ function rankProgressMarkup(card: LevelUpCard): string {
 
   return (
     `<div class="rank-progress" role="img" aria-label="${accessibleLabel}">` +
-    `<span class="rank-progress-label" aria-hidden="true">${card.rankProgress.label}</span>` +
+    `<span class="rank-progress-copy" aria-hidden="true">` +
+    `<span class="rank-progress-label">${
+      card.rankProgress.label === 'FUSION' ? '융합 진행' : '경로 진행'
+    }</span>` +
+    `<strong>${current} → ${target} / 3</strong></span>` +
     `<span class="rank-pips">${pips}</span>` +
     `</div>`
   )
@@ -325,7 +428,11 @@ function rankProgressMarkup(card: LevelUpCard): string {
  * 카드 화면을 띄우고 고를 때까지 기다린다.
  * 선택 효과는 여기서 적용하고, 호출부가 resolveLevelUp을 부른다.
  */
-export function showLevelUp(parent: HTMLElement, world: World): Promise<void> {
+export function showLevelUp(
+  parent: HTMLElement,
+  world: World,
+  onSelect?: () => void,
+): Promise<void> {
   const cards = buildLevelUpCards(world)
 
   // 낼 카드가 하나도 없으면 화면을 띄우지 않고 조용히 넘어간다.
@@ -343,32 +450,42 @@ export function showLevelUp(parent: HTMLElement, world: World): Promise<void> {
     const root = document.createElement('div')
     root.className = 'levelup'
     if (isRelic) root.classList.add('relic-reward')
+    root.dataset.cardCount = String(cards.length)
+    root.dataset.mode = isRelic ? 'relic' : isUnlock ? 'unlock' : isRank ? 'skill-rank' : 'upgrade'
     // 프로젝트의 다른 모달(결과·일시정지·메인메뉴·캐릭터선택)은 전부
     // 다이얼로그 시맨틱과 포커스 트랩을 갖는데 여기만 빠져 있었다.
     // 트랩이 없으면 Tab이 뒤에 깔린 스킬바 버튼으로 새어 나간다.
     root.setAttribute('role', 'dialog')
     root.setAttribute('aria-modal', 'true')
     root.setAttribute('aria-labelledby', 'levelup-title')
+    root.setAttribute('aria-describedby', 'levelup-guide')
 
     const banner = document.createElement('div')
     banner.className = 'banner'
+    const coarsePointer = window.matchMedia('(pointer: coarse)').matches
+    const title = isRelic
+      ? '큰 보상 하나를 고르세요'
+      : isUnlock
+        ? single
+          ? '새 스킬을 확인하세요'
+          : '새 스킬 하나를 고르세요'
+        : isRank
+          ? '주력 스킬 하나를 키우세요'
+          : '이번에 키울 능력을 고르세요'
+    const guide = single
+      ? '확인하면 즉시 적용되고 전투가 계속됩니다.'
+      : '각 카드의 선택 효과를 비교하세요. 고른 효과는 즉시 적용됩니다.'
     banner.innerHTML =
-      `<div class="lv">${
+      `<div class="banner-copy"><div class="lv">${
         isRelic
-          ? `ELITE TROVE · MOON SEAL ${world.relicsClaimed}/${ELITE_SPAWN_TIMES.length}`
-          : `LEVEL ${world.progression.level}`
+          ? `정예 전리품 · 인장 ${world.relicsClaimed}/${ELITE_SPAWN_TIMES.length}`
+          : `레벨 ${world.progression.level} · 전투 일시정지`
       }</div>` +
-      `<h2 id="levelup-title">${
-        isRelic
-          ? '월식 전리품을 각인하세요'
-          : isUnlock
-          ? single
-            ? '새로운 힘을 얻었다'
-            : '스킬을 해금하세요'
-          : isRank
-            ? '스킬을 강화하세요'
-            : '강화를 선택하세요'
-      }</h2>`
+      `<h2 id="levelup-title">${title}</h2>` +
+      `<p id="levelup-guide">${guide}</p></div>` +
+      `<div class="levelup-controls">${
+        coarsePointer ? '카드를 눌러 선택' : '1·2·3 빠른 선택 · ← → 이동 · Enter 확정'
+      }</div>`
     root.appendChild(banner)
 
     const list = document.createElement('div')
@@ -390,6 +507,8 @@ export function showLevelUp(parent: HTMLElement, world: World): Promise<void> {
         candidate.classList.toggle('selected', candidate === selected)
         candidate.classList.toggle('rejected', candidate !== selected)
       }
+      // 선택 피드백은 확인 연출이 끝날 때가 아니라 누른 순간 나와야 한다.
+      onSelect?.()
       applyLevelUpCard(world, card)
       window.setTimeout(() => {
         root.remove()
@@ -408,25 +527,26 @@ export function showLevelUp(parent: HTMLElement, world: World): Promise<void> {
       if (card.trait) el.dataset.trait = card.trait
       el.style.setProperty('--accent', card.accent)
 
-      const badges =
-        card.badges && card.badges.length > 0
-          ? `<div class="card-badges">${card.badges
-              .map(
-                (badge) => {
-                  const badgeClass =
-                    badge === card.familyLabel
-                      ? 'card-badge family-badge'
-                      : badge.startsWith('RANK') || badge === '합성' || badge === '융합'
-                        ? 'rank-badge'
-                        : 'card-badge'
-                  return `<span class="${badgeClass}">${badge}</span>`
-                },
-              )
-              .join('')}</div>`
-          : ''
       const rankProgress = rankProgressMarkup(card)
+      const fusionProgress = card.fusionIngredients
+        ? `<div class="fusion-progress" aria-label="융합 재료 완성">` +
+          card.fusionIngredients
+            .map((ingredient) => `<span>${ingredient} 3단계 <b>완성</b></span>`)
+            .join('<i aria-hidden="true">＋</i>') +
+          `<strong>융합 완성</strong></div>`
+        : ''
+      const pathName = card.pathName ?? card.familyLabel ?? card.name
+      const stepName = card.stepName
+      const target = card.target ?? '전투 능력'
+      const context = card.context ?? '즉시 적용'
+      const actionHint = coarsePointer ? '눌러서 선택' : `${i + 1} 키 또는 클릭`
+      el.setAttribute(
+        'aria-label',
+        `${i + 1}번. ${target}. ${pathName}. ${stepName ?? ''}. ` +
+          `선택 효과: ${card.desc}. ${context}.`,
+      )
       el.innerHTML =
-        `<div class="hotkey">${i + 1}</div>` +
+        `<div class="hotkey"><small>빠른 선택</small><b>${i + 1}</b></div>` +
         `<div class="top">` +
         `<div class="icon">${
           card.icon
@@ -434,12 +554,18 @@ export function showLevelUp(parent: HTMLElement, world: World): Promise<void> {
             : card.glyph
         }</div>` +
         (card.slotLabel ? `<span class="slot-label">${card.slotLabel}</span>` : '') +
-        `<span class="tag">${card.tag}</span>` +
+        `<div class="choice-meta"><span class="target">${target}</span>` +
+        `<span class="context">${context}</span></div>` +
         `</div>` +
+        `<div class="choice-heading"><h3>${pathName}</h3>` +
+        (stepName ? `<span>${stepName}</span>` : '') +
+        `</div>` +
+        `<div class="choice-effect"><small>선택 효과</small><strong>${card.desc}</strong></div>` +
+        (card.detail ? `<p class="choice-detail">${card.detail}</p>` : '') +
+        (card.preview ? `<p class="choice-preview">${card.preview}</p>` : '') +
         rankProgress +
-        badges +
-        `<h3>${card.name}</h3>` +
-        `<p>${card.desc}</p>`
+        fusionProgress +
+        `<div class="choice-action"><span>${actionHint}</span><strong>이 강화 선택</strong></div>`
 
       el.addEventListener('click', () => pick(card, el))
       cardElements.push(el)

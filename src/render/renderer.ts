@@ -14,7 +14,12 @@ import type { PlayerClass, World } from '../sim/types.ts'
 import type { Vec2 } from '../sim/vec.ts'
 import { length, lerp, lerpAngle } from '../sim/vec.ts'
 import { AdaptiveQualityPolicy } from './adaptive-quality.ts'
-import { createArena } from './arena.ts'
+import {
+  type ArenaArc,
+  type ArenaVisual,
+  createArena,
+  sampleArenaArc,
+} from './arena.ts'
 import { BattlefieldPickupRenderer } from './battlefield-pickups.ts'
 import { CombatReadabilityFx } from './combat-readability.ts'
 import {
@@ -24,6 +29,7 @@ import {
 import { EnemyRenderer } from './enemies.ts'
 import { ImpactParticles } from './impact-particles.ts'
 import { ImpactFx } from './impact.ts'
+import { CLASS_COLORS, REWARD_COLORS } from './palette.ts'
 import { PostFx } from './post.ts'
 import { SkillFx } from './skillfx.ts'
 import { WeaponTrail } from './trails.ts'
@@ -52,19 +58,86 @@ const CAM_REFERENCE_ASPECT = 16 / 9
 const CAM_FOLLOW = 14
 
 const BG_COLOR = 0x05070d
-const TARGET_CYAN = 0x56c7e8
-const TARGET_CRIMSON = 0xe25063
-const TARGET_GREEN = 0x67bd78
 
-/** 궤적 리본 색. 클래스 정체색을 그대로 쓴다. */
-const TRAIL_COLOR: Readonly<Record<PlayerClass, number>> = {
-  ranged: 0x4dd0ff,
-  melee: 0xff5a6e,
+const ENVIRONMENT_PALETTE = {
+  sky: [
+    new THREE.Color(0x7093c8),
+    new THREE.Color(0x7585b3),
+    new THREE.Color(0x826b98),
+    new THREE.Color(0xa65a78),
+    new THREE.Color(0xc94f6d),
+  ],
+  ground: [
+    new THREE.Color(0x0a0e18),
+    new THREE.Color(0x0d0d19),
+    new THREE.Color(0x110a15),
+    new THREE.Color(0x17070f),
+    new THREE.Color(0x1d050c),
+  ],
+  sun: [
+    new THREE.Color(0xffffff),
+    new THREE.Color(0xf8f5ff),
+    new THREE.Color(0xf3e3f3),
+    new THREE.Color(0xffcbdc),
+    new THREE.Color(0xffb5ca),
+  ],
+  background: [
+    new THREE.Color(BG_COLOR),
+    new THREE.Color(0x060711),
+    new THREE.Color(0x08060d),
+    new THREE.Color(0x0b050a),
+    new THREE.Color(0x100407),
+  ],
+  arrival: new THREE.Color(0xe76b8c),
+} as const
+
+function applyEnvironmentColor(
+  target: THREE.Color,
+  palette: readonly [
+    THREE.Color,
+    THREE.Color,
+    THREE.Color,
+    THREE.Color,
+    THREE.Color,
+  ],
+  arc: Readonly<ArenaArc>,
+  arrivalMix = 0,
+): void {
+  target
+    .copy(palette[0])
+    .lerp(palette[1], arc.dusk)
+    .lerp(palette[2], arc.eclipse)
+    .lerp(palette[3], arc.boss)
+    .lerp(palette[4], arc.phaseTwo)
+  if (arrivalMix > 0) {
+    target.lerp(
+      ENVIRONMENT_PALETTE.arrival,
+      arc.arrival * arrivalMix,
+    )
+  }
 }
 
 const TARGET_RANGES: Readonly<Record<PlayerClass, Readonly<Record<'q' | 'w' | 'e' | 'r', number>>>> = {
   ranged: { q: 16, w: 8, e: 14, r: 30 },
   melee: { q: 5, w: 7, e: 9, r: 13 },
+}
+
+const PLAYER_HIT_REACTION_DURATION = 0.22
+const OUTCOME_POSE_DURATION = 0.78
+const REDUCED_MOTION_OUTCOME_POSE_DURATION = 0.24
+
+function clamp01(value: number): number {
+  return value < 0 ? 0 : value > 1 ? 1 : value
+}
+
+function smoothstep01(value: number): number {
+  const t = clamp01(value)
+  return t * t * (3 - 2 * t)
+}
+
+function easeOutCubic(value: number): number {
+  const t = 1 - clamp01(value)
+  return 1 - t * t * t
 }
 
 /**
@@ -78,6 +151,10 @@ export class Renderer {
   readonly camera: THREE.PerspectiveCamera
 
   private readonly gl: THREE.WebGLRenderer
+  private readonly arena: ArenaVisual
+  private readonly backgroundColor = new THREE.Color(BG_COLOR)
+  private readonly fog: THREE.Fog
+  private readonly hemisphere: THREE.HemisphereLight
   private readonly lightRig: THREE.Group
   private readonly sun: THREE.DirectionalLight
   private readonly enemyRenderer: EnemyRenderer
@@ -133,6 +210,13 @@ export class Renderer {
    */
   private lastPlayerHp = -1
   private lastTick = -1
+  /** 큰 피해 묶음마다 한 번만 재생하는 전신 피격 반응의 벽시계 시작점. */
+  private playerHitReactionAt = -Infinity
+  private playerHitReactionStrength = 0
+  private playerHitReactionSide = 1
+  /** 결말 유예 구간에서 VRM·절차식 리그 모두에 적용하는 공통 루트 포즈. */
+  private presentedOutcome: World['outcome'] = 'alive'
+  private outcomePresentationAt = -Infinity
   /** Renderer는 판 사이에 살아남으므로 새 World를 만나면 잔상 풀을 먼저 비운다. */
   private renderedWorld: World | null = null
   /** 접촉 피해는 틱마다 소수점으로 들어와 그대로 반올림하면 항상 0이다. 모았다 띄운다. */
@@ -149,12 +233,21 @@ export class Renderer {
   /** 새 월드 첫 프레임을 정예 등장으로 오인하지 않기 위한 직전 비트 인덱스. */
   private lastEliteBeatIndex = -1
   private lastSurgeBeatIndex = -1
+  private lastProgressionLevel = 1
+  private lastBossActive = false
   private lastBossPhaseTwoAt = -1
   private lastBossHazardDetonations = -1
   /** Persistent simulation counters need renderer-side baselines for one-shot feedback. */
   private lastHealPickupActivations = -1
   private lastMagnetPickupActivations = -1
   private lastBombPickupActivations = -1
+  private readonly arenaArc: ArenaArc = {
+    dusk: 0,
+    eclipse: 0,
+    boss: 0,
+    phaseTwo: 0,
+    arrival: 0,
+  }
 
   constructor(container: HTMLElement, arenaRadius: number) {
     this.container = container
@@ -175,14 +268,16 @@ export class Renderer {
     container.appendChild(this.gl.domElement)
 
     this.scene = new THREE.Scene()
-    this.scene.background = new THREE.Color(BG_COLOR)
+    this.scene.background = this.backgroundColor
     // 카메라가 가까워진 만큼 안개도 당긴다. 아레나 가장자리가 어둠에
     // 잠겨야 좁은 시야가 답답함이 아니라 분위기로 읽힌다.
-    this.scene.fog = new THREE.Fog(BG_COLOR, 20, 58)
+    this.fog = new THREE.Fog(BG_COLOR, 20, 58)
+    this.scene.fog = this.fog
 
     this.camera = new THREE.PerspectiveCamera(CAM_FOV, 1, 0.5, 240)
 
-    this.scene.add(createArena(arenaRadius))
+    this.arena = createArena(arenaRadius)
+    this.scene.add(this.arena.group)
 
     this.charRig = createCharacterRig(this.charClass)
     this.scene.add(this.charRig.group)
@@ -200,7 +295,7 @@ export class Renderer {
         this.impactParticles.burst(x, z, angle, color),
       onShake: (strength) => this.impact.shake(strength, 0.26),
     })
-    this.weaponTrail = new WeaponTrail(this.scene, { color: TRAIL_COLOR[this.charClass] })
+    this.weaponTrail = new WeaponTrail(this.scene, { color: CLASS_COLORS[this.charClass] })
     this.attachTrail()
 
     // 타기팅 프리뷰는 단위 지오메트리를 scale만 바꿔 재사용한다.
@@ -213,7 +308,7 @@ export class Renderer {
 
     const targetingMaterial = (opacity: number): THREE.MeshBasicMaterial =>
       new THREE.MeshBasicMaterial({
-        color: TARGET_CYAN,
+        color: CLASS_COLORS.ranged,
         transparent: true,
         opacity,
         depthWrite: false,
@@ -234,7 +329,8 @@ export class Renderer {
     this.scene.add(this.targetingGroup)
 
     // --- 조명 ---
-    this.scene.add(new THREE.HemisphereLight(0x7093c8, 0x0a0e18, 0.85))
+    this.hemisphere = new THREE.HemisphereLight(0x7093c8, 0x0a0e18, 0.85)
+    this.scene.add(this.hemisphere)
 
     this.sun = new THREE.DirectionalLight(0xffffff, 2.1)
     this.sun.position.set(14, 26, 10)
@@ -321,12 +417,12 @@ export class Renderer {
     const facing = lerpAngle(player.prevFacing, player.facing, alpha)
     const color =
       skill === 'd'
-        ? TARGET_GREEN
+        ? REWARD_COLORS.health
         : skill === 'f'
-          ? TARGET_CYAN
+          ? CLASS_COLORS.ranged
           : playerClass === 'ranged'
-            ? TARGET_CYAN
-            : TARGET_CRIMSON
+            ? CLASS_COLORS.ranged
+            : CLASS_COLORS.melee
     let range: number
     if (skill === 'd') range = 3.2
     else if (skill === 'f') range = world.stats.flashRange
@@ -447,6 +543,10 @@ export class Renderer {
       this.post.setBloomBoost(1)
       this.lastEliteBeatIndex = world.eliteBeatIndex
       this.lastSurgeBeatIndex = world.surgeBeatIndex
+      this.lastProgressionLevel = world.progression.level
+      // DEV 보스 장면처럼 새 월드가 이미 등장 상태여도 첫 프레임에 피드백을
+      // 한 번 보여준다. 일반 새 판은 false라 아무 일도 일어나지 않는다.
+      this.lastBossActive = false
       this.lastBossPhaseTwoAt = world.boss.phaseTwoAt
       this.lastBossHazardDetonations = world.boss.hazardDetonations
       this.lastHealPickupActivations =
@@ -456,6 +556,11 @@ export class Renderer {
       this.lastBombPickupActivations =
         world.battlefieldPickups.bombActivations
       this.actionFacingUntil = -Infinity
+      this.playerHitReactionAt = -Infinity
+      this.playerHitReactionStrength = 0
+      this.playerHitReactionSide = 1
+      this.presentedOutcome = 'alive'
+      this.outcomePresentationAt = now
     }
 
     // VRM 다운로드가 스킬 도중 끝나 절차 리그를 교체한 경우, 시작 이벤트는
@@ -478,10 +583,14 @@ export class Renderer {
     // sim의 facing(+X 기준, XZ 평면)을 three의 Y축 회전으로 옮기면 부호가 뒤집힌다.
     const displayFacing =
       visualTime < this.actionFacingUntil ? this.actionFacing : facing
-    this.charRig.group.rotation.y = -displayFacing
+    // 지난 프레임의 피격·결말 루트 포즈를 먼저 지운다. CharacterRig 구현은
+    // 이 공통 Group 아래에서만 움직여 VRM과 절차식 모델에 같은 방식으로 먹힌다.
+    this.charRig.group.rotation.set(0, -displayFacing, 0)
+    this.charRig.group.scale.setScalar(1)
     // VRMA와 판정은 같은 시뮬레이션 시계를 쓴다. 히트스톱·저프레임에서도
     // 타격 자세와 실제 impactAt이 서로 앞서거나 뒤처지지 않는다.
     this.charRig.update(visualTime, length(p.vel))
+    this.applyCharacterPresentation(world, now)
     this.consumeWeaponTrailBursts(world)
     // 리그가 본을 갱신한 **뒤**에 샘플해야 한 프레임 늦지 않는다.
     this.weaponTrail.update(now, dt)
@@ -500,10 +609,11 @@ export class Renderer {
     // 히트스톱으로 스케일한 dt를 주면 안 된다 — 화면이 멈춘 동안 흔들림과
     // 숫자까지 멈춰서 타격감이 아니라 프레임 드랍으로 읽힌다.
     this.impact.update(now, dt)
-    this.consumeFeedback(world, px, pz)
+    this.consumeFeedback(world, px, pz, now)
     this.feedbackBloom +=
       (1 - this.feedbackBloom) * (1 - Math.exp(-7.5 * dt))
     this.post.setBloomBoost(this.feedbackBloom)
+    this.updateEnvironment(world, visualTime)
 
     this.lightRig.position.set(px, 0, pz)
 
@@ -522,12 +632,108 @@ export class Renderer {
   }
 
   /**
+   * VRMA 클립 수를 늘리지 않고 공통 리그 루트에 얹는 짧은 상태 피드백.
+   *
+   * 전투 클립은 시뮬레이션 시계에 고정돼 있지만 결과가 확정되면 시뮬이
+   * 멈춘다. 이 루트 포즈만 벽시계를 써야 0.9초 결과 유예 동안 사망·승리
+   * 동작이 실제로 진행된다. 매 프레임 기본 transform에서 다시 계산하므로
+   * 누적 오차가 없고 무한 모드로 돌아가도 즉시 중립 자세가 복구된다.
+   */
+  private applyCharacterPresentation(world: World, now: number): void {
+    if (world.outcome !== this.presentedOutcome) {
+      this.presentedOutcome = world.outcome
+      this.outcomePresentationAt = now
+    }
+
+    const group = this.charRig.group
+    if (world.outcome === 'alive') {
+      const elapsed = now - this.playerHitReactionAt
+      if (elapsed < 0 || elapsed >= PLAYER_HIT_REACTION_DURATION) return
+
+      const progress = elapsed / PLAYER_HIT_REACTION_DURATION
+      const pulse =
+        Math.sin(progress * Math.PI) *
+        (1 - progress * 0.28) *
+        this.playerHitReactionStrength
+      const motionScale = this.reducedMotion.matches ? 0.42 : 1
+      group.rotation.x -= pulse * 0.09 * motionScale
+      group.rotation.z +=
+        pulse * 0.065 * this.playerHitReactionSide * motionScale
+      group.position.y -= pulse * 0.025 * motionScale
+      group.scale.set(
+        1 + pulse * 0.025 * motionScale,
+        1 - pulse * 0.045 * motionScale,
+        1 + pulse * 0.025 * motionScale,
+      )
+      return
+    }
+
+    const reducedMotion = this.reducedMotion.matches
+    const duration = reducedMotion
+      ? REDUCED_MOTION_OUTCOME_POSE_DURATION
+      : OUTCOME_POSE_DURATION
+    const progress = clamp01((now - this.outcomePresentationAt) / duration)
+    const motionScale = reducedMotion ? 0.55 : 1
+    const side = world.playerClass === 'melee' ? -1 : 1
+
+    if (world.outcome === 'victory') {
+      // 짧게 몸을 낮춘 뒤 위로 열고, 결과창이 뜰 때는 작은 영웅 포즈를
+      // 유지한다. 루트만 건드려도 무기와 머리카락이 함께 따라와 두 리그에서
+      // 같은 실루엣으로 읽힌다.
+      const anticipation =
+        Math.sin(clamp01(progress / 0.28) * Math.PI) *
+        (1 - smoothstep01((progress - 0.2) / 0.2))
+      const burst = Math.sin(clamp01((progress - 0.12) / 0.78) * Math.PI)
+      const hold = smoothstep01((progress - 0.42) / 0.42)
+      group.position.y +=
+        (-anticipation * 0.045 + burst * 0.15 + hold * 0.055) *
+        motionScale
+      group.rotation.x -= hold * 0.055 * motionScale
+      group.rotation.z +=
+        side * (burst * 0.09 + hold * 0.035) * motionScale
+      group.scale.set(
+        1 + burst * 0.025 * motionScale,
+        1 + (burst * 0.055 + hold * 0.02) * motionScale,
+        1 + burst * 0.025 * motionScale,
+      )
+      return
+    }
+
+    const fall = easeOutCubic(progress)
+    if (world.outcome === 'dead') {
+      // 발밑 원점을 축으로 옆으로 무너뜨려 단순 축소보다 즉시 "사망"으로
+      // 읽힌다. 결과 오버레이 전 0.9초 안에 끝나도록 한 번만 진행한다.
+      group.rotation.x += fall * 0.16 * motionScale
+      group.rotation.z += side * fall * 1.02 * motionScale
+      group.position.y -= fall * 0.34 * motionScale
+      group.scale.set(
+        1 + fall * 0.045 * motionScale,
+        1 - fall * 0.11 * motionScale,
+        1 + fall * 0.045 * motionScale,
+      )
+      return
+    }
+
+    // 제한 시간 종료는 피격 사망과 구분해 완전히 쓰러뜨리지 않고 지친
+    // 자세로 남긴다. 결과 종류를 텍스트보다 먼저 실루엣으로 전달한다.
+    group.rotation.x += fall * 0.34 * motionScale
+    group.rotation.z += side * fall * 0.14 * motionScale
+    group.position.y -= fall * 0.1 * motionScale
+    group.scale.set(1.02, 1 - fall * 0.055 * motionScale, 1.02)
+  }
+
+  /**
    * 타격 피드백 배선.
    *
    * sim 이벤트 배열은 **읽기만** 한다. 비우면 안 된다 — 오디오가 렌더 뒤,
    * drainEvents 앞에 같은 배열을 읽는다.
    */
-  private consumeFeedback(world: World, px: number, pz: number): void {
+  private consumeFeedback(
+    world: World,
+    px: number,
+    pz: number,
+    now: number,
+  ): void {
     // 판이 바뀌면 기준값을 다시 잡는다. 그 프레임은 숫자를 띄우지 않는다.
     if (world.tick < this.lastTick || this.lastTick < 0) {
       this.lastPlayerHp = world.player.hp
@@ -543,6 +749,26 @@ export class Renderer {
 
     const bombPickupTriggered =
       this.consumeBattlefieldPickupFeedback(world, px, pz)
+
+    if (world.progression.level > this.lastProgressionLevel) {
+      const color =
+        world.playerClass === 'melee'
+          ? CLASS_COLORS.melee
+          : CLASS_COLORS.ranged
+      // 레벨업 UI가 뜨기 직전 세계도 반응하게 한다. 새 메시나 파티클 패스를
+      // 만들지 않고 기존 화면 틴트·블룸·진동만 짧게 겹친다.
+      this.post.flash(color, 0.16, 0.34)
+      this.pulseBloom(1.58)
+      this.impact.shake(0.2, 0.28, 8)
+    }
+    this.lastProgressionLevel = world.progression.level
+
+    if (world.boss.active && !this.lastBossActive) {
+      this.post.flash(0xd85b82, 0.3, 0.62)
+      this.pulseBloom(2.08)
+      this.impact.shake(0.78, 0.86, 10)
+    }
+    this.lastBossActive = world.boss.active
 
     for (let i = 0; i < world.deaths.length; i++) {
       const d = world.deaths[i]!
@@ -598,7 +824,7 @@ export class Renderer {
     for (let i = 0; i < world.casts.length; i++) {
       if (world.casts[i]!.slot !== 'r') continue
       this.impact.shake(0.5, 0.5, 15)
-      this.post.flash(world.playerClass === 'melee' ? 0xff5a6e : 0x4dd0ff, 0.22, 0.35)
+      this.post.flash(CLASS_COLORS[world.playerClass], 0.22, 0.35)
       this.pulseBloom(1.9)
     }
 
@@ -618,6 +844,11 @@ export class Renderer {
         this.pendingDamage = 0
         this.impact.popNumber(px, pz, dmg, 'normal')
         this.impact.shake(Math.min(0.4, dmg * 0.012), 0.24)
+        if (world.outcome === 'alive') {
+          this.playerHitReactionAt = now
+          this.playerHitReactionStrength = Math.min(1, 0.58 + dmg / 34)
+          this.playerHitReactionSide *= -1
+        }
       }
     } else if (hp > this.lastPlayerHp) {
       this.impact.popNumber(px, pz, Math.round(hp - this.lastPlayerHp), 'heal')
@@ -693,6 +924,97 @@ export class Renderer {
     const motionScale = this.reducedMotion.matches ? 0.35 : this.constrained ? 0.78 : 1
     const accessibleBoost = 1 + (boost - 1) * motionScale
     this.feedbackBloom = Math.max(this.feedbackBloom, accessibleBoost)
+  }
+
+  /**
+   * 5분 진행과 보스 상태를 기존 아레나·조명·안개·grade 유니폼에 투영한다.
+   * 렌더 전용 보간이라 시뮬 상태와 밸런스에는 손대지 않는다.
+   */
+  private updateEnvironment(world: World, visualTime: number): void {
+    const arc = sampleArenaArc(
+      visualTime,
+      world.boss.spawned,
+      world.boss.spawnedAt,
+      world.boss.phaseTwoAt,
+      this.reducedMotion.matches,
+      this.arenaArc,
+    )
+    this.arena.applyArc(arc)
+
+    applyEnvironmentColor(
+      this.backgroundColor,
+      ENVIRONMENT_PALETTE.background,
+      arc,
+      0.14,
+    )
+    this.fog.color.copy(this.backgroundColor)
+    applyEnvironmentColor(
+      this.hemisphere.color,
+      ENVIRONMENT_PALETTE.sky,
+      arc,
+      0.18,
+    )
+    applyEnvironmentColor(
+      this.hemisphere.groundColor,
+      ENVIRONMENT_PALETTE.ground,
+      arc,
+      0.12,
+    )
+    applyEnvironmentColor(
+      this.sun.color,
+      ENVIRONMENT_PALETTE.sun,
+      arc,
+      0.16,
+    )
+
+    this.hemisphere.intensity =
+      0.85 -
+      arc.dusk * 0.035 -
+      arc.eclipse * 0.035 +
+      arc.boss * 0.055 +
+      arc.phaseTwo * 0.04 +
+      arc.arrival * 0.035
+    this.sun.intensity =
+      2.1 -
+      arc.dusk * 0.06 -
+      arc.eclipse * 0.08 +
+      arc.boss * 0.12 +
+      arc.phaseTwo * 0.1 +
+      arc.arrival * 0.14
+
+    this.fog.near =
+      20 -
+      arc.dusk * 1.5 -
+      arc.eclipse * 2 -
+      arc.boss * 2.2 -
+      arc.phaseTwo * 1.2 -
+      arc.arrival * 0.8
+    this.fog.far =
+      58 -
+      arc.dusk * 2 -
+      arc.eclipse * 4 -
+      arc.boss * 5 -
+      arc.phaseTwo * 2 -
+      arc.arrival * 1.5
+
+    this.gl.toneMappingExposure =
+      1.05 -
+      arc.dusk * 0.02 -
+      arc.eclipse * 0.025 -
+      arc.boss * 0.015 +
+      arc.arrival * 0.035
+    this.post.setAtmosphere(
+      0.42 +
+        arc.dusk * 0.015 +
+        arc.eclipse * 0.025 +
+        arc.boss * 0.025 +
+        arc.phaseTwo * 0.02 +
+        arc.arrival * 0.018,
+      1.12 +
+        arc.eclipse * 0.025 +
+        arc.boss * 0.025 +
+        arc.phaseTwo * 0.02,
+    )
   }
 
   /**
@@ -789,7 +1111,7 @@ export class Renderer {
     this.charRig = createCharacterRig(cls)
     this.actionFacingUntil = -Infinity
     this.scene.add(this.charRig.group)
-    this.weaponTrail.setColor(TRAIL_COLOR[cls])
+    this.weaponTrail.setColor(CLASS_COLORS[cls])
     this.attachTrail()
   }
 
@@ -871,6 +1193,7 @@ export class Renderer {
     this.impactParticles.dispose()
     this.impact.dispose()
     this.post.dispose()
+    this.arena.dispose()
     this.sun.shadow.map?.dispose()
     this.gl.dispose()
     this.gl.domElement.remove()

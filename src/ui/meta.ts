@@ -33,17 +33,23 @@ function statCard(
 ): string {
   const cost = metaStatCost(id, rank)
   const affordable = cost !== null && progress.moonlight >= cost
+  const shortage =
+    cost === null ? 0 : Math.max(0, cost - progress.moonlight)
   const buttonLabel =
-    cost === null ? '완료' : `강화 · 월광 ${formatMoonlight(cost)}`
+    cost === null
+      ? '최대 강화 완료'
+      : affordable
+        ? `월광 ${formatMoonlight(cost)}로 강화`
+        : `월광 ${formatMoonlight(shortage)} 부족`
   return (
-    `<article class="meta-stat-card">` +
+    `<article class="meta-stat-card" data-purchase-state="${cost === null ? 'complete' : affordable ? 'affordable' : 'shortage'}">` +
     `<header><span>영구 보정</span><strong>${name}</strong></header>` +
     `<p>${description}</p>` +
     `<div class="meta-rank" role="img" aria-label="${name} ${rank}/${META_STAT_RANK_MAX}">` +
     progressPips(rank) +
     `</div>` +
     `<button type="button" data-meta-buy="${id}" ` +
-    `data-affordable="${affordable}" ${cost === null ? 'disabled' : ''}>` +
+    `data-affordable="${affordable}" data-shortage="${shortage}" ${affordable ? '' : 'disabled'}>` +
     `${buttonLabel}</button>` +
     `</article>`
   )
@@ -53,19 +59,58 @@ function unlockCard(progress: MetaProgress, index: number): string {
   const unlock = META_UNLOCKS[index]!
   const active = isMetaUnlockActive(progress, unlock.id)
   const affordable = !active && progress.moonlight >= unlock.cost
+  const shortage = active
+    ? 0
+    : Math.max(0, unlock.cost - progress.moonlight)
   const label = active
     ? '해금 완료'
-    : `즉시 해금 · 월광 ${formatMoonlight(unlock.cost)}`
+    : affordable
+      ? `월광 ${formatMoonlight(unlock.cost)}로 해금`
+      : `월광 ${formatMoonlight(shortage)} 부족`
   return (
-    `<article class="meta-unlock-card" data-active="${active}">` +
+    `<article class="meta-unlock-card" data-active="${active}" ` +
+    `data-purchase-state="${active ? 'complete' : affordable ? 'affordable' : 'shortage'}">` +
     `<header><span>${String(index + 1).padStart(2, '0')}</span>` +
     `<strong>${unlock.name}</strong></header>` +
     `<p>${unlock.description}</p>` +
     `<small>${active ? '카드 풀 적용 중' : unlock.conditionLabel}</small>` +
     `<button type="button" data-meta-buy="${unlock.id}" ` +
-    `data-affordable="${affordable}" ${active ? 'disabled' : ''}>${label}</button>` +
+    `data-affordable="${affordable}" data-shortage="${shortage}" ` +
+    `${affordable ? '' : 'disabled'}>${label}</button>` +
     `</article>`
   )
+}
+
+function purchaseName(id: MetaPurchaseId): string {
+  if (id === 'vitality') return '월맥 강화'
+  if (id === 'stride') return '월보 강화'
+  return META_UNLOCKS.find((unlock) => unlock.id === id)?.name ?? '선택 항목'
+}
+
+function purchaseFailureMessage(
+  id: MetaPurchaseId,
+  progress: MetaProgress,
+): string {
+  const name = purchaseName(id)
+  if (id === 'vitality' || id === 'stride') {
+    const rank =
+      id === 'vitality' ? progress.vitalityRank : progress.strideRank
+    const cost = metaStatCost(id, rank)
+    if (cost === null) return `${name}은 이미 최대 단계입니다.`
+    const shortage = Math.max(0, cost - progress.moonlight)
+    return shortage > 0
+      ? `${name}: 월광 ${formatMoonlight(shortage)}이 부족합니다.`
+      : `${name}을 지금 강화할 수 없습니다.`
+  }
+
+  const unlock = META_UNLOCKS.find((candidate) => candidate.id === id)
+  if (!unlock || isMetaUnlockActive(progress, id)) {
+    return `${name}은 이미 해금되었습니다.`
+  }
+  const shortage = Math.max(0, unlock.cost - progress.moonlight)
+  return shortage > 0
+    ? `${name}: 월광 ${formatMoonlight(shortage)}이 부족합니다.`
+    : `${name}을 지금 해금할 수 없습니다.`
 }
 
 /**
@@ -84,14 +129,25 @@ export function showMetaProgress(parent: HTMLElement): Promise<MetaProgress> {
     panel.className = 'meta-panel'
     root.appendChild(panel)
 
+    const feedback = document.createElement('p')
+    feedback.className = 'meta-feedback'
+    feedback.setAttribute('role', 'status')
+    feedback.setAttribute('aria-live', 'polite')
+    feedback.setAttribute('aria-atomic', 'true')
+    panel.appendChild(feedback)
+
+    const content = document.createElement('div')
+    content.className = 'meta-content'
+    panel.appendChild(content)
+
     let progress = loadMetaProgress()
     let releaseFocusTrap = (): void => {}
     let done = false
 
     const render = (): void => {
-      panel.innerHTML =
+      content.innerHTML =
         `<header class="meta-heading">` +
-        `<div><span>LUNAR LEGACY</span><h2 id="meta-title">월광 전승</h2>` +
+        `<div><span>전승 관리</span><h2 id="meta-title">월광 전승</h2>` +
         `<p>한 판의 성과를 다음 전장의 선택지로 바꿉니다.</p></div>` +
         `<div class="meta-currency"><small>보유 월광</small>` +
         `<strong>${formatMoonlight(progress.moonlight)}</strong></div>` +
@@ -102,7 +158,7 @@ export function showMetaProgress(parent: HTMLElement): Promise<MetaProgress> {
         `<span><small>월식 난이도</small><b>${isHardModeUnlocked(progress) ? '해금' : '잠김'}</b></span>` +
         `</div>` +
         `<section class="meta-section" aria-labelledby="meta-stats-title">` +
-        `<header><span>PERMANENT EDGE</span><h3 id="meta-stats-title">작은 영구 보정</h3></header>` +
+        `<header><span>영구 강화</span><h3 id="meta-stats-title">능력치 강화</h3></header>` +
         `<div class="meta-stat-grid">` +
         statCard(
           'vitality',
@@ -120,29 +176,41 @@ export function showMetaProgress(parent: HTMLElement): Promise<MetaProgress> {
         ) +
         `</div></section>` +
         `<section class="meta-section" aria-labelledby="meta-unlocks-title">` +
-        `<header><span>ARSENAL UNLOCKS</span><h3 id="meta-unlocks-title">새 전투 설계</h3></header>` +
+        `<header><span>전투 해금</span><h3 id="meta-unlocks-title">새로운 강화 선택지</h3></header>` +
         `<div class="meta-unlock-grid">${META_UNLOCKS.map((_, index) =>
           unlockCard(progress, index),
         ).join('')}</div></section>` +
         `<button class="menu-button primary meta-back" type="button">` +
-        `<span>전장으로 돌아가기</span><small>ESC</small></button>`
+        `<span>메인 메뉴로 돌아가기</span><small>ESC</small></button>`
 
-      for (const button of panel.querySelectorAll<HTMLButtonElement>(
+      for (const button of content.querySelectorAll<HTMLButtonElement>(
         '[data-meta-buy]',
       )) {
         button.addEventListener('click', () => {
           const id = button.dataset.metaBuy as MetaPurchaseId | undefined
-          if (!id) return
+          if (!id || button.disabled) return
           const result = purchaseMetaItem(id)
           progress = result.progress
           render()
-          const next = panel.querySelector<HTMLButtonElement>(
+          feedback.dataset.state = result.purchased ? 'success' : 'error'
+          feedback.textContent = result.purchased
+            ? `${purchaseName(id)} 적용 완료. 월광 ${formatMoonlight(progress.moonlight)}이 남았습니다.`
+            : purchaseFailureMessage(id, progress)
+          const next = content.querySelector<HTMLButtonElement>(
             `[data-meta-buy="${id}"]`,
           )
-          ;(next ?? panel.querySelector<HTMLButtonElement>('.meta-back'))?.focus()
+          if (next && !next.disabled) {
+            next.focus()
+          } else {
+            ;(
+              content.querySelector<HTMLButtonElement>(
+                '[data-meta-buy]:not(:disabled)',
+              ) ?? content.querySelector<HTMLButtonElement>('.meta-back')
+            )?.focus()
+          }
         })
       }
-      panel
+      content
         .querySelector<HTMLButtonElement>('.meta-back')
         ?.addEventListener('click', close)
     }
@@ -165,6 +233,6 @@ export function showMetaProgress(parent: HTMLElement): Promise<MetaProgress> {
     window.addEventListener('keydown', onKey)
     parent.appendChild(root)
     releaseFocusTrap = trapFocus(root)
-    panel.querySelector<HTMLButtonElement>('.meta-back')?.focus()
+    content.querySelector<HTMLButtonElement>('.meta-back')?.focus()
   })
 }

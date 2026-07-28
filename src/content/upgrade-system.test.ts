@@ -20,7 +20,7 @@ import { createRng } from '../sim/rng.ts'
 import type { SkillId } from '../sim/skills.ts'
 import type { World } from '../sim/types.ts'
 import { createWorld } from '../sim/world.ts'
-import { buildLevelUpCards } from '../ui/levelup.ts'
+import { buildLevelUpCards, getUpgradeChoiceTarget } from '../ui/levelup.ts'
 
 function assert(condition: unknown, message: string): asserts condition {
   if (!condition) throw new Error(message)
@@ -80,6 +80,17 @@ function candidatePool(world: World): UpgradeCandidate[] {
     attackWorld.upgradesTaken.has(upgradeTraitToken('pierce-amplification')),
     '일반 카드 III trait 토큰이 기록되지 않음',
   )
+}
+
+// Every authored rank must name its concrete player-facing target. Falling
+// back to "전투 능력" would make the choice screen a generic data card again.
+for (const upgrade of UPGRADES) {
+  for (const rank of upgrade.ranks) {
+    assert(
+      getUpgradeChoiceTarget(upgrade.id, rank.rank) !== '전투 능력',
+      `${upgrade.id} ${rank.rank}랭크의 선택 대상 문구가 없음`,
+    )
+  }
 }
 
 // 같은 강화의 I·II·III와 하나의 합성을 공유하는 각 스킬 슬롯이 서로 다른 경로명으로 읽혀야 한다.

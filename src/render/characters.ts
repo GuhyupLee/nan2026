@@ -15,6 +15,7 @@ import {
   preserveProceduralMesh,
   solid,
 } from './body.ts'
+import { CLASS_COLORS } from './palette.ts'
 import { createVrmRig } from './vrm-rig.ts'
 import { canStartVrmAction } from './vrm-animation.ts'
 
@@ -42,7 +43,7 @@ const PALETTE: Record<PlayerClass, BodyPalette> = {
   ranged: {
     cloth: 0xf6faff,
     cloth2: 0xcfdff2,
-    accent: 0x4dd0ff,
+    accent: CLASS_COLORS.ranged,
     metal: 0xe0bc6a,
     hair: 0xdcebfa,
     boot: 0xbcd2e8,
@@ -50,7 +51,7 @@ const PALETTE: Record<PlayerClass, BodyPalette> = {
   melee: {
     cloth: 0x39414f,
     cloth2: 0x5d6a80,
-    accent: 0xff5a6e,
+    accent: CLASS_COLORS.melee,
     metal: 0xdbe3ec,
     hair: 0x1b1f28,
     boot: 0x39404f,

@@ -280,16 +280,6 @@ http://scripts.sil.org/OFL
   unicode-range: U+e8,U+2da,U+2160,U+2194,U+3054,U+3058,U+306d,U+3086,U+308d,U+30ac,U+30bb,U+30c4,U+30cd-30ce,U+30e2,U+3132,U+3146,U+3149,U+339d,U+4e3b,U+4f0a,U+4fdd,U+4fe1,U+5409,U+540c,U+5834,U+592a-592b,U+5b9a,U+5dde,U+5e0c,U+5e73,U+5f0f,U+60f3,U+653f,U+661f,U+662f,U+667a,U+683c,U+6b4c,U+6c11,U+767c,U+76ee,U+76f4,U+77f3,U+79d1,U+7a7a,U+7b2c,U+7d22,U+8207,U+8a00,U+8a71,U+9280,U+9580,U+958b,U+96c6,U+9762,U+98df,U+9ed1,U+ac2d,U+adc8,U+add3,U+af48,U+b014,U+b134-b135,U+b158,U+b2aa,U+b35f,U+b6a4,U+b9cf,U+bb63,U+bd23,U+be91,U+c29b,U+c3f4,U+c42c,U+c55c,U+c573,U+c58f,U+c78c,U+c7dd,U+c8f5,U+cad1,U+cc48,U+cf10,U+cf20,U+d03c,U+d07d,U+d2a0,U+d30e,U+d38d,U+d3a8,U+d3c8,U+d5e5,U+d5f9,U+d6e4,U+f90a,U+ff02,U+ff1c;
 }
 
-/* noto-serif-kr-[102]-wght-normal */
-@font-face {
-  font-family: 'Noto Serif KR Variable';
-  font-style: normal;
-  font-display: swap;
-  font-weight: 200 900;
-  src: url(../../node_modules/@fontsource-variable/noto-serif-kr/files/noto-serif-kr-102-wght-normal.woff2) format('woff2-variations');
-  unicode-range: U+131,U+2032,U+2465,U+2642,U+3048,U+3051,U+3083-3084,U+308f,U+30c0,U+30d1,U+30d3,U+30d6,U+30df,U+30e7,U+3153,U+4e16,U+4e8b,U+4ee5,U+5206,U+52a0,U+52d5,U+53e4,U+53ef,U+54c1,U+57ce,U+597d,U+5b8c,U+5ea6,U+5f8c,U+5f97,U+6210,U+6240,U+624b,U+6728,U+6bd4,U+7236,U+7269,U+7279,U+738b,U+7528,U+7530,U+767e,U+798f,U+8005,U+8a18,U+90fd,U+91cc,U+9577,U+9593,U+98a8,U+ac20,U+acf6,U+ad90,U+af5d,U+af80,U+afcd,U+aff0,U+b0a1,U+b0b5,U+b1fd,U+b2fc,U+b380,U+b51b,U+b584,U+b5b3,U+b8fd,U+b93c,U+b9f4,U+bb44,U+bc08,U+bc27,U+bc49,U+be55,U+be64,U+bfb0,U+bfc5,U+c178,U+c21f,U+c314,U+c4f1,U+c58d,U+c664,U+c698,U+c6a7,U+c6c1,U+c9ed,U+cac0,U+cacc,U+cad9,U+ccb5,U+cdcc,U+d0e4,U+d143,U+d320,U+d330,U+d54d,U+ff06,U+ff1f,U+ff5e;
-}
-
 /* noto-serif-kr-[108]-wght-normal */
 @font-face {
   font-family: 'Noto Serif KR Variable';

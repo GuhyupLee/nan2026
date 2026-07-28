@@ -259,6 +259,25 @@ export class PostFx {
       (this.quality === 'low' ? BLOOM.strength * 0.75 : BLOOM.strength) * this.bloomBoost
   }
 
+  /**
+   * 전투 시간대에 따른 기본 색조.
+   *
+   * 기존 grade 패스의 유니폼만 바꾼다. 보스용 풀스크린 패스를 하나 더 쌓지
+   * 않으므로 품질 단계와 관계없이 드로우콜·후처리 패스 수는 그대로다.
+   */
+  setAtmosphere(vignette: number, saturation: number): void {
+    this.grade.uniforms.uVignette.value = THREE.MathUtils.clamp(
+      vignette,
+      0,
+      0.62,
+    )
+    this.grade.uniforms.uSaturation.value = THREE.MathUtils.clamp(
+      saturation,
+      0.82,
+      1.28,
+    )
+  }
+
   render(dt: number): void {
     this.gl.info.reset()
     if (this.tintLeft > 0) {

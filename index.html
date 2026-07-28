@@ -123,13 +123,13 @@
       }
       #boot p {
         color: var(--dim);
-        font-size: 0.64rem;
+        font-size: max(11px, 0.64rem);
         font-weight: 650;
         letter-spacing: 0.22em;
       }
       .bar {
         width: min(18rem, 64vw);
-        height: max(2px, 0.12rem);
+        height: max(4px, 0.2rem);
         background: #242932;
         overflow: hidden;
       }
@@ -192,7 +192,7 @@
 
       @media (max-width: 560px) {
         :root {
-          --ui-scale: clamp(11px, 3.076923vw, 13px);
+          --ui-scale: clamp(12px, 3.076923vw, 14px);
         }
         #stats { display: none; }
       }

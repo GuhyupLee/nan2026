@@ -104,9 +104,12 @@ export class Hud {
     this.surgeAlert.className = 'surge-alert'
     this.surgeAlert.hidden = true
     this.surgeAlert.setAttribute('role', 'status')
-    this.surgeAlert.setAttribute('aria-live', 'assertive')
+    // 매초 바뀌는 카운트다운이 다른 안내를 계속 끊지 않게 polite로 알린다.
+    // 시각 경고와 전장 예고 링은 그대로 즉시 나타난다.
+    this.surgeAlert.setAttribute('aria-live', 'polite')
+    this.surgeAlert.setAttribute('aria-atomic', 'true')
     this.surgeAlert.innerHTML =
-      `<span>WAVE SURGE</span>` +
+      `<span>급습 경고</span>` +
       `<strong data-surge-title></strong>` +
       `<b data-surge-countdown></b>` +
       `<small data-surge-instruction></small>`
@@ -288,7 +291,7 @@ export class Hud {
     const ss = wholeSeconds % 60
     this.clock.textContent =
       `${world.endless ? '∞ ' : ''}${mm}:${String(ss).padStart(2, '0')}` +
-      `${world.runConfig.difficulty === 'hard' ? ' · 하드' : ''}`
+      `${world.runConfig.difficulty === 'hard' ? ' · 월식' : ''}`
     this.clock.dataset.mode = world.endless
       ? 'endless'
       : world.runConfig.difficulty
@@ -298,7 +301,9 @@ export class Hud {
       'aria-label',
       world.endless
         ? `무한전 생존 시간 ${mm}분 ${ss}초`
-        : `남은 시간 ${mm}분 ${ss}초`,
+        : `남은 시간 ${mm}분 ${ss}초${
+            world.runConfig.difficulty === 'hard' ? ', 월식 난이도' : ''
+          }`,
     )
 
     // --- 웨이브 서지 ---

@@ -56,12 +56,46 @@ const hint = document.getElementById('hint')!
 const statsEl = document.getElementById('stats')!
 const coarsePointer = window.matchMedia('(pointer: coarse)').matches
 const useVrmModels = shouldUseVrmModels()
+const CONTROL_HINT_SKILL_CODES = new Set([
+  'KeyQ',
+  'KeyW',
+  'KeyE',
+  'KeyR',
+  'KeyD',
+  'KeyF',
+])
+let controlHintMoved = false
+let controlHintCast = false
+
+hint.setAttribute('role', 'status')
+hint.setAttribute('aria-live', 'polite')
+hint.setAttribute('aria-atomic', 'true')
 
 // 성능 계측은 개발 빌드에서만 보인다. 상용 HUD와 같은 좌상단을 차지하지 않는다.
 statsEl.hidden = !import.meta.env.DEV
 
-if (coarsePointer) {
-  hint.textContent = '전장을 밀어 이동 · 스킬 버튼 터치'
+function updateControlHint(): void {
+  if (!controlHintMoved) {
+    hint.textContent = coarsePointer
+      ? '빈 전장을 밀어 이동하세요'
+      : '마우스를 누른 채 이동하세요'
+    hint.classList.remove('hidden')
+    return
+  }
+  if (!controlHintCast) {
+    hint.textContent = coarsePointer
+      ? '스킬 버튼을 터치하세요 · 길게 누르면 설명'
+      : 'Q W E R 스킬 · D / F 보조 스킬'
+    hint.classList.remove('hidden')
+    return
+  }
+  hint.classList.add('hidden')
+}
+
+function noteControlHintCast(): void {
+  if (controlHintCast) return
+  controlHintCast = true
+  updateControlHint()
 }
 
 /**
@@ -105,11 +139,29 @@ if (import.meta.env.DEV) assertSlotsCoverAllSkills(DEFAULT_SLOTS)
 // 스킬바는 body에 붙인다. 캔버스 컨테이너 밖이어야 슬롯 클릭이
 // 이동 입력으로 새어 들어가지 않는다.
 const skillBar = new SkillBar(document.body, DEFAULT_SLOTS, {
-  start: (id) => input.startSkill(id),
+  start: (id) => {
+    noteControlHintCast()
+    input.startSkill(id)
+  },
   release: (id) => input.releaseSkill(id),
   cancel: (id) => input.cancelSkill(id),
 })
 skillBar.setVisible(false)
+
+// 키보드 시전은 InputState가 직접 받으므로, 버튼 핸들러와 별도로 학습 단계를
+// 진행시킨다. 실제 시전 키만 보며 메뉴 단축키나 숫자 선택은 건드리지 않는다.
+window.addEventListener('keydown', (event) => {
+  if (
+    event.repeat ||
+    !CONTROL_HINT_SKILL_CODES.has(event.code) ||
+    !activeRun ||
+    !running ||
+    pauseOpen ||
+    choiceOpen ||
+    outcomeOpen
+  ) return
+  noteControlHintCast()
+})
 
 function releaseGameplayInput(): void {
   input.releaseMovement()
@@ -334,6 +386,13 @@ function frame(now: number): void {
       // 조준점(월드 좌표)을 먼저 구해야 포인터 이동 방향을 계산할 수 있다.
       renderer.screenToGround(input.pointerX, input.pointerY, simInput.aim)
       applyPointerMove(input, simInput, world.player.pos)
+      if (
+        !controlHintMoved &&
+        (Math.abs(simInput.move.x) > 0.001 || Math.abs(simInput.move.y) > 0.001)
+      ) {
+        controlHintMoved = true
+        updateControlHint()
+      }
       stepWorld(world, simInput)
       accumulator -= DT
       ticks += 1
@@ -385,8 +444,7 @@ function frame(now: number): void {
     choiceOpen = true
     releaseGameplayInput()
     const target = world
-    void showLevelUp(document.body, target).then(() => {
-      audio.ui('select')
+    void showLevelUp(document.body, target, () => audio.ui('select')).then(() => {
       releaseGameplayInput()
       resolveRewardChoice(target)
       choiceOpen = false
@@ -415,7 +473,6 @@ function frame(now: number): void {
       `${renderer.drawCalls} draws  ·  seed ${world.seed}`
   }
 
-  if (input.hasActed) hint.classList.add('hidden')
 }
 
 /** 진행 중인 판을 멈추고 일시정지 메뉴를 연다. */
@@ -485,6 +542,8 @@ function beginRun(
   // 직전 판의 포인터·1틱 입력·안내 상태가 새 판으로 넘어가지 않게 한다.
   releaseGameplayInput()
   input.hasActed = false
+  controlHintMoved = false
+  controlHintCast = false
   simInput.move.x = 0
   simInput.move.y = 0
   simInput.aim.x = 1
@@ -499,7 +558,7 @@ function beginRun(
   hud.setVisible(true)
   bossBar.setVisible(true)
   pauseButton.setVisible(true)
-  hint.classList.remove('hidden')
+  updateControlHint()
 
   // 결과 화면에 머문 시간이 새 판의 첫 프레임과 FPS 통계에 섞이지 않게 한다.
   lastTime = performance.now()

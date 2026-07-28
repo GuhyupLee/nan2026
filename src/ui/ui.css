@@ -36,8 +36,9 @@ button {
   z-index: 5;
   width: 112px;
   height: 112px;
-  display: none;
-  transform: translate(-50%, -50%);
+  display: block;
+  visibility: hidden;
+  transform: translate(-50%, -50%) scale(0.92);
   border: var(--ui-hairline) solid rgba(182, 195, 210, 0.35);
   border-radius: 50%;
   background:
@@ -47,12 +48,18 @@ button {
   box-shadow: inset 0 0 0 0.42rem rgba(5, 7, 10, 0.16);
   opacity: 0;
   pointer-events: none;
-  transition: opacity 0.1s ease;
+  will-change: opacity, transform;
+  transition:
+    opacity 0.1s ease,
+    transform 0.1s ease,
+    visibility 0s linear 0.1s;
 }
 
 .touchstick[data-active='true'] {
-  display: block;
+  visibility: visible;
+  transform: translate(-50%, -50%) scale(1);
   opacity: 1;
+  transition-delay: 0s;
 }
 
 .touchstick-knob {
@@ -3850,6 +3857,515 @@ body.pickup-buff-active #hint:not(.hidden) {
 }
 
 /* --------------------------------------------------------------------------
+   Decision-first choice UI
+
+   The upgrade screen is a comparison surface, not a content database. The
+   concrete target and immediate result lead; lore names and long-term path
+   information support that decision without repeating it.
+   -------------------------------------------------------------------------- */
+
+.levelup {
+  gap: 1rem;
+  background:
+    radial-gradient(circle at 50% 48%, rgba(34, 49, 66, 0.18), transparent 36rem),
+    rgba(4, 6, 9, 0.94);
+}
+
+.levelup .banner {
+  position: relative;
+  width: min(82rem, calc(100vw - var(--ui-safe-left) - var(--ui-safe-right) - 2rem));
+  padding: 0 0 0 1rem;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: end;
+  gap: 1.25rem;
+  border: 0;
+}
+
+.levelup .banner::before {
+  content: '';
+  position: absolute;
+  inset: 0 auto 0 0;
+  width: 3px;
+  background: var(--ui-cyan);
+  box-shadow: 0 0 1rem color-mix(in srgb, var(--ui-cyan) 30%, transparent);
+}
+
+.levelup.relic-reward .banner::before {
+  background: #e4bd70;
+  box-shadow: 0 0 1rem rgba(228, 189, 112, 0.3);
+}
+
+.levelup .banner-copy {
+  min-width: 0;
+}
+
+.levelup .banner .lv {
+  color: var(--ui-cyan);
+  font-size: max(11px, 0.65rem);
+  letter-spacing: 0.13em;
+}
+
+.levelup .banner h2 {
+  margin-top: 0.22rem;
+  font-size: clamp(1.55rem, 2.45vw, 2.2rem);
+  letter-spacing: -0.035em;
+}
+
+.levelup .banner p {
+  margin-top: 0.36rem;
+  color: #9ca8b5;
+  font-size: max(12px, 0.7rem);
+  line-height: 1.45;
+  word-break: keep-all;
+}
+
+.levelup-controls {
+  padding: 0.48rem 0.62rem;
+  border: 1px solid #343e49;
+  color: #98a5b3;
+  background: rgba(8, 12, 18, 0.76);
+  font-size: max(10px, 0.56rem);
+  font-weight: 680;
+  letter-spacing: 0.035em;
+  white-space: nowrap;
+}
+
+.levelup .cards {
+  width: min(82rem, calc(100vw - var(--ui-safe-left) - var(--ui-safe-right) - 2rem));
+  max-width: none;
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  align-items: stretch;
+  gap: 0.8rem;
+}
+
+.levelup[data-card-count='1'] .cards {
+  width: min(28rem, calc(100vw - var(--ui-safe-left) - var(--ui-safe-right) - 2rem));
+  grid-template-columns: minmax(0, 1fr);
+}
+
+.levelup[data-card-count='2'] .cards {
+  width: min(56rem, calc(100vw - var(--ui-safe-left) - var(--ui-safe-right) - 2rem));
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+}
+
+.lvcard {
+  width: auto;
+  min-width: 0;
+  min-height: 21rem;
+  padding: 1.08rem 1rem 0.86rem;
+  gap: 0.66rem;
+  border-color: #414b57;
+  background:
+    linear-gradient(150deg, color-mix(in srgb, var(--accent) 4%, transparent), transparent 48%),
+    #10151c;
+  box-shadow:
+    0 0.7rem 1.8rem rgba(0, 0, 0, 0.34),
+    inset 0 1px rgba(255, 255, 255, 0.025);
+}
+
+.lvcard:hover,
+.lvcard:focus-visible {
+  transform: translateY(-0.2rem);
+  border-color: color-mix(in srgb, var(--accent) 62%, #626d79);
+  background:
+    linear-gradient(150deg, color-mix(in srgb, var(--accent) 8%, transparent), transparent 50%),
+    #151b23;
+}
+
+.lvcard .hotkey {
+  top: 0.72rem;
+  right: 0.72rem;
+  width: auto;
+  height: auto;
+  min-height: 1.7rem;
+  padding: 0.18rem 0.38rem 0.18rem 0.46rem;
+  display: flex;
+  align-items: center;
+  gap: 0.36rem;
+  border-color: #52606d;
+  color: #dce3ea;
+  background: #080c11;
+}
+
+.lvcard .hotkey small {
+  color: #7f8c9a;
+  font-size: max(9px, 0.44rem);
+  font-weight: 650;
+}
+
+.lvcard .hotkey b {
+  font-size: max(12px, 0.68rem);
+  font-variant-numeric: tabular-nums;
+}
+
+.lvcard .top {
+  position: relative;
+  min-height: 3.2rem;
+  padding-right: 5.3rem;
+  gap: 0.68rem;
+}
+
+.lvcard .icon {
+  width: 3rem;
+  height: 3rem;
+  font-size: 1.35rem;
+}
+
+.lvcard .slot-label {
+  position: absolute;
+  top: 0.22rem;
+  left: 0.22rem;
+  z-index: 2;
+  padding: 0.12rem 0.24rem 0.1rem;
+  background: rgba(4, 7, 11, 0.9);
+  box-shadow: 0 1px 0 rgba(0, 0, 0, 0.45);
+}
+
+.choice-meta {
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 0.24rem;
+}
+
+.choice-meta .target {
+  color: #edf2f7;
+  font-size: max(13px, 0.78rem);
+  font-weight: 820;
+  line-height: 1.2;
+  word-break: keep-all;
+}
+
+.choice-meta .context {
+  color: color-mix(in srgb, var(--accent) 66%, #9ca7b2);
+  font-size: max(10px, 0.54rem);
+  font-weight: 720;
+  line-height: 1.25;
+}
+
+.choice-heading {
+  min-height: 2.7rem;
+  display: flex;
+  flex-direction: column;
+  justify-content: flex-end;
+  gap: 0.12rem;
+}
+
+.choice-heading h3 {
+  color: #d9e0e7;
+  font-size: max(14px, 0.86rem);
+  font-weight: 760;
+  line-height: 1.24;
+  word-break: keep-all;
+}
+
+.choice-heading > span {
+  color: #7f8b98;
+  font-size: max(10px, 0.55rem);
+  font-weight: 650;
+  line-height: 1.3;
+}
+
+.choice-effect {
+  min-height: 5.15rem;
+  padding: 0.68rem 0.72rem 0.72rem;
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  gap: 0.25rem;
+  border: 1px solid color-mix(in srgb, var(--accent) 28%, #303945);
+  border-left: 3px solid var(--accent);
+  background:
+    linear-gradient(100deg, color-mix(in srgb, var(--accent) 11%, #0b1016), #0b1016 76%);
+}
+
+.choice-effect small {
+  color: color-mix(in srgb, var(--accent) 68%, #a8b2bd);
+  font-size: max(10px, 0.5rem);
+  font-weight: 760;
+  letter-spacing: 0.08em;
+}
+
+.choice-effect strong {
+  color: #f2f5f7;
+  font-size: max(17px, 1.08rem);
+  font-weight: 820;
+  line-height: 1.38;
+  letter-spacing: -0.018em;
+  word-break: keep-all;
+}
+
+.lvcard .choice-detail,
+.lvcard .choice-preview {
+  margin: 0;
+  display: block;
+  color: #8e9aa7;
+  font-size: max(11px, 0.61rem);
+  line-height: 1.46;
+  word-break: keep-all;
+}
+
+.lvcard .choice-preview {
+  min-height: 2.8rem;
+  padding: 0.48rem 0.56rem;
+  border: 1px solid #303946;
+  color: #aab5c0;
+  background: rgba(7, 11, 16, 0.58);
+}
+
+.lvcard[data-rarity='awakening'] .choice-preview,
+.lvcard[data-rarity='fusion'] .choice-preview {
+  border-color: color-mix(in srgb, var(--accent) 42%, #423b2c);
+  color: #ebd5a2;
+}
+
+.rank-progress {
+  min-height: 2.5rem;
+  margin-top: auto;
+  padding: 0.42rem 0.52rem;
+  display: grid;
+  grid-template-columns: minmax(5rem, auto) minmax(7rem, 1fr);
+  align-items: center;
+  gap: 0.8rem;
+}
+
+.rank-progress-copy {
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 0.18rem;
+}
+
+.rank-progress-label {
+  font-size: max(9px, 0.47rem);
+  letter-spacing: 0.08em;
+}
+
+.rank-progress-copy strong {
+  color: #dce3e9;
+  font-size: max(11px, 0.62rem);
+  font-variant-numeric: tabular-nums;
+}
+
+.rank-pips {
+  width: 100%;
+}
+
+.fusion-progress {
+  margin-top: auto;
+  padding: 0.56rem;
+  display: grid;
+  grid-template-columns: 1fr auto 1fr;
+  align-items: center;
+  gap: 0.38rem;
+  border: 1px solid rgba(228, 189, 112, 0.42);
+  background: rgba(34, 27, 14, 0.58);
+  text-align: center;
+}
+
+.fusion-progress span {
+  color: #d9c494;
+  font-size: max(10px, 0.54rem);
+  line-height: 1.35;
+  word-break: keep-all;
+}
+
+.fusion-progress span b {
+  color: #8dd5a0;
+}
+
+.fusion-progress i {
+  color: #9d8050;
+  font-style: normal;
+}
+
+.fusion-progress > strong {
+  grid-column: 1 / -1;
+  padding-top: 0.4rem;
+  border-top: 1px solid rgba(228, 189, 112, 0.22);
+  color: #f0d89d;
+  font-size: max(12px, 0.7rem);
+}
+
+.choice-action {
+  min-height: 2.2rem;
+  margin-top: 0.08rem;
+  padding-top: 0.55rem;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.5rem;
+  border-top: 1px solid #2d3641;
+}
+
+.choice-action span {
+  color: #7f8b97;
+  font-size: max(9px, 0.5rem);
+}
+
+.choice-action strong {
+  color: color-mix(in srgb, var(--accent) 72%, white);
+  font-size: max(11px, 0.62rem);
+}
+
+.lvcard:hover .choice-action strong,
+.lvcard:focus-visible .choice-action strong {
+  color: #fff;
+}
+
+@media (max-width: 820px), (max-aspect-ratio: 3 / 4) {
+  .levelup {
+    justify-content: flex-start;
+    gap: 0.72rem;
+    overflow-y: auto;
+  }
+
+  .levelup .banner,
+  .levelup .cards,
+  .levelup[data-card-count='1'] .cards,
+  .levelup[data-card-count='2'] .cards {
+    width: min(35rem, calc(100vw - var(--ui-safe-left) - var(--ui-safe-right) - 1.2rem));
+  }
+
+  .levelup .banner {
+    grid-template-columns: 1fr;
+    gap: 0.5rem;
+  }
+
+  .levelup-controls {
+    justify-self: start;
+  }
+
+  .levelup .cards,
+  .levelup[data-card-count='2'] .cards {
+    grid-template-columns: 1fr;
+    padding-bottom: max(var(--ui-safe-bottom), 0.7rem);
+  }
+
+  .lvcard {
+    min-height: 0;
+    padding: 0.78rem 0.82rem 0.7rem;
+    gap: 0.48rem;
+  }
+
+  .lvcard .top {
+    min-height: 2.7rem;
+  }
+
+  .lvcard .icon {
+    width: 2.6rem;
+    height: 2.6rem;
+  }
+
+  .choice-heading {
+    min-height: 0;
+  }
+
+  .choice-effect {
+    min-height: 0;
+  }
+
+  .lvcard .choice-preview {
+    min-height: 0;
+    display: -webkit-box;
+    overflow: hidden;
+    -webkit-box-orient: vertical;
+    -webkit-line-clamp: 2;
+  }
+}
+
+@media (pointer: coarse) {
+  .levelup .hotkey {
+    display: none;
+  }
+
+  .lvcard .top {
+    padding-right: 0;
+  }
+
+  .lvcard {
+    min-height: 96px;
+  }
+}
+
+@media (max-height: 560px) and (orientation: landscape) {
+  .levelup {
+    justify-content: center;
+    overflow-y: auto;
+  }
+
+  .levelup .banner {
+    width: min(82rem, 94vw);
+  }
+
+  .levelup .banner p {
+    display: none;
+  }
+
+  .levelup .cards,
+  .levelup[data-card-count='2'] .cards {
+    width: min(82rem, 94vw);
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+  }
+
+  .levelup[data-card-count='1'] .cards {
+    width: min(28rem, 94vw);
+    grid-template-columns: 1fr;
+  }
+
+  .levelup[data-card-count='2'] .cards {
+    width: min(56rem, 94vw);
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .lvcard {
+    min-height: 0;
+    padding: 0.62rem 0.68rem 0.55rem;
+    gap: 0.34rem;
+  }
+
+  .lvcard .top {
+    min-height: 2.15rem;
+  }
+
+  .lvcard .icon {
+    width: 2.1rem;
+    height: 2.1rem;
+  }
+
+  .choice-heading {
+    min-height: 0;
+  }
+
+  .choice-effect {
+    min-height: 3.55rem;
+    padding: 0.42rem 0.5rem;
+  }
+
+  .choice-effect strong {
+    font-size: max(13px, 0.82rem);
+  }
+
+  .lvcard .choice-detail,
+  .lvcard .choice-preview {
+    display: none;
+  }
+
+  .rank-progress {
+    min-height: 2rem;
+    padding-block: 0.3rem;
+  }
+
+  .choice-action {
+    min-height: 1.65rem;
+    padding-top: 0.35rem;
+  }
+}
+
+/* --------------------------------------------------------------------------
    Myeongwol editorial surfaces v2
 
    메인 키아트와 인물 초상이 화면의 대부분을 차지하고, UI는 월식 포스터의
@@ -5838,19 +6354,19 @@ body.pickup-buff-active #hint:not(.hidden) {
 
 .build-manifest > header span,
 .build-skill small {
-  font-size: max(9px, 0.52rem);
+  font-size: max(10px, 0.52rem);
 }
 
 .build-counters span {
-  font-size: max(9px, 0.5rem);
+  font-size: max(10px, 0.5rem);
 }
 
 .build-evolution span {
-  font-size: max(9px, 0.46rem);
+  font-size: max(10px, 0.46rem);
 }
 
 .build-skill-heading span {
-  font-size: max(9px, 0.42rem);
+  font-size: max(10px, 0.42rem);
 }
 
 .build-manifest > header code {
@@ -5880,7 +6396,7 @@ body.pickup-buff-active #hint:not(.hidden) {
 }
 
 .mainmenu-vertical {
-  font-size: max(9px, 0.55rem);
+  font-size: max(10px, 0.55rem);
 }
 
 .charcard .select-label span {
@@ -5948,5 +6464,747 @@ body.pickup-buff-active #hint:not(.hidden) {
 
   .levelup.resolving .lvcard.selected::before {
     display: none;
+  }
+}
+
+/* --------------------------------------------------------------------------
+   Player-first interface cascade lock
+
+   아래 규칙은 각 화면의 최종 상호작용 계약이다. 장식용 레거시 규칙보다 뒤에
+   두어, 실제 선택 대상·현재 상태·다음 행동이 언제나 가장 먼저 읽히게 한다.
+   -------------------------------------------------------------------------- */
+
+/* 강화 선택: 경로명보다 이번 효과가 크고, 세 칸 진행은 한 줄로 읽힌다. */
+.levelup .lvcard {
+  min-height: 21rem;
+}
+
+.levelup .choice-heading h3 {
+  margin: 0;
+  color: #d9e0e7;
+  font-size: max(14px, 0.86rem);
+  font-weight: 760;
+  line-height: 1.24;
+  letter-spacing: -0.012em;
+}
+
+.levelup .rank-progress {
+  min-height: 2.5rem;
+  margin-top: auto;
+  padding: 0.42rem 0.52rem;
+  display: grid;
+  grid-template-columns: minmax(5rem, auto) minmax(7rem, 1fr);
+  align-items: center;
+  justify-content: initial;
+  gap: 0.8rem;
+}
+
+.levelup .rank-progress-copy {
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 0.18rem;
+}
+
+.levelup .rank-pips {
+  width: 100%;
+}
+
+/* 캐릭터 선택: 첫 클릭은 비교, 명시적인 시작 버튼이 최종 확정이다. */
+.character-choice {
+  isolation: isolate;
+}
+
+.character-choice-copy {
+  width: 100%;
+  padding-bottom: clamp(4.6rem, 6vw, 5.4rem);
+}
+
+.character-summary {
+  width: min(31rem, 100%);
+  margin-top: 0.72rem;
+  padding-top: 0.62rem;
+  display: grid;
+  gap: 0.4rem;
+  border-top: 1px solid rgba(228, 222, 210, 0.18);
+}
+
+.playstyle-summary,
+.strengths-summary,
+.passive-summary {
+  min-width: 0;
+  display: grid;
+  grid-template-columns: 4.4rem minmax(0, 1fr);
+  align-items: baseline;
+  gap: 0.48rem;
+}
+
+.summary-label {
+  color: color-mix(in srgb, var(--accent) 76%, #a49d91);
+  font-size: max(10px, 0.48rem);
+  font-weight: 720;
+  letter-spacing: 0.08em;
+  white-space: nowrap;
+}
+
+.playstyle-summary p,
+.passive-summary p {
+  min-width: 0;
+  margin: 0;
+  color: rgba(228, 222, 210, 0.72);
+  font-size: max(11px, 0.62rem);
+  line-height: 1.46;
+  word-break: keep-all;
+}
+
+.strengths-summary .strengths-list {
+  margin: 0;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0;
+}
+
+.passive-summary {
+  grid-template-columns: 4.4rem auto minmax(0, 1fr);
+}
+
+.passive-summary strong {
+  color: #ece7dc;
+  font-size: max(11px, 0.62rem);
+  font-weight: 760;
+  white-space: nowrap;
+}
+
+.character-choice.is-selected {
+  border-color: var(--accent);
+  box-shadow:
+    inset 0 0 0 2px color-mix(in srgb, var(--accent) 70%, transparent),
+    0 0 1.3rem color-mix(in srgb, var(--accent) 16%, transparent);
+}
+
+.character-choice.is-selected::after {
+  opacity: 1;
+  transform: scaleY(1);
+}
+
+.character-choice.is-selected .portrait {
+  filter: saturate(0.98) contrast(1.07) brightness(1);
+}
+
+.charselect.has-pending-selection .character-choice:not(.is-selected) .portrait {
+  filter: saturate(0.45) contrast(1.03) brightness(0.68);
+}
+
+.charselect.has-pending-selection .character-choice:not(.is-selected)::before {
+  background: rgba(4, 5, 6, 0.28);
+}
+
+.character-choice.is-selected .select-label {
+  opacity: 0;
+}
+
+.character-confirm {
+  position: absolute;
+  right: clamp(1rem, 2.2vw, 1.9rem);
+  bottom: clamp(1rem, 2.1vw, 1.55rem);
+  z-index: 7;
+  width: min(15rem, calc(100% - 2rem));
+  min-height: 44px;
+  padding: 0.58rem 0.8rem;
+  border: 1px solid var(--accent);
+  border-radius: 0;
+  color: #090b0d;
+  background: color-mix(in srgb, var(--accent) 88%, white);
+  box-shadow: 0 0.35rem 0 rgba(0, 0, 0, 0.34);
+  font: inherit;
+  font-size: max(12px, 0.68rem);
+  font-weight: 820;
+  letter-spacing: 0.025em;
+  cursor: pointer;
+  opacity: 0;
+  visibility: hidden;
+  pointer-events: none;
+  transform: translateY(0.35rem);
+  transition:
+    opacity 0.14s ease,
+    transform 0.14s ease,
+    background-color 0.12s ease;
+}
+
+.character-choice.is-selected .character-confirm:not(:disabled) {
+  opacity: 1;
+  visibility: visible;
+  pointer-events: auto;
+  transform: none;
+}
+
+.character-confirm:hover,
+.character-confirm:focus-visible {
+  color: #fff;
+  background: color-mix(in srgb, var(--accent) 66%, #19212a);
+  outline: 2px solid #fff;
+  outline-offset: 2px;
+}
+
+.character-confirm:active {
+  transform: translateY(2px);
+}
+
+/* 패시브는 같은 슬롯 문법을 쓰되, 누르는 스킬이 아니라 자동 상태임을 명시한다. */
+.skillbar .passive-slot[data-activation='automatic'] {
+  cursor: help;
+  transform: none;
+}
+
+.skillbar .passive-slot[data-activation='automatic']:active {
+  transform: none;
+}
+
+.skillbar .passive-slot .key {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.18rem;
+  padding: 0.1rem 0.18rem;
+}
+
+.passive-key-label {
+  color: #f0f3f6;
+  font-weight: 850;
+}
+
+.passive-mode-badge {
+  color: #96a4b2;
+  font-size: max(10px, 0.38rem);
+  font-weight: 700;
+  letter-spacing: 0;
+}
+
+.skillbar .passive-slot[data-metric='count'] .cd {
+  display: none;
+}
+
+.skillbar .passive-slot[data-metric='count'] .cdtext {
+  inset: auto 0.24rem 0.2rem auto;
+  width: 1.3rem;
+  height: 1.3rem;
+  border: 1px solid rgba(230, 239, 247, 0.52);
+  border-radius: 50%;
+  color: #e9f4fb;
+  background: rgba(5, 8, 12, 0.88);
+  font-size: max(11px, 0.62rem);
+}
+
+.skillbar .passive-slot[data-metric='count'] .cdtext:empty {
+  display: none;
+}
+
+.skillbar .passive-slot[data-metric='gauge'] .cd {
+  display: block;
+}
+
+.skillbar .passive-slot[data-state='inactive'] {
+  border-color: #3a434e;
+  background: #0f141a;
+}
+
+.skillbar .passive-slot[data-state='inactive'] .glyph {
+  filter: saturate(0.45) brightness(0.58);
+}
+
+.skillbar .passive-slot[data-state='active'] {
+  border-color: color-mix(in srgb, var(--ui-cyan) 72%, #66737f);
+  background: #17212a;
+  box-shadow:
+    inset 0 0 0 1px rgba(145, 225, 245, 0.12),
+    0 0 0.7rem rgba(77, 208, 255, 0.2);
+}
+
+.skillbar[data-class='melee'] .passive-slot[data-state='active'] {
+  border-color: color-mix(in srgb, var(--ui-crimson) 72%, #77636a);
+  background: #24181d;
+  box-shadow:
+    inset 0 0 0 1px rgba(255, 128, 153, 0.12),
+    0 0 0.7rem rgba(255, 90, 110, 0.2);
+}
+
+.skillbar .passive-slot[data-state='active'] .glyph {
+  filter: saturate(1.1) brightness(1.12);
+}
+
+@keyframes passive-status-flash {
+  0% {
+    filter: brightness(1.65);
+    box-shadow: 0 0 1.1rem rgba(116, 225, 255, 0.62);
+  }
+  100% {
+    filter: brightness(1);
+  }
+}
+
+.skillbar .passive-slot.status-flash {
+  animation: passive-status-flash 0.38s ease-out;
+}
+
+/* 보스 바: 체력 색은 고정하고, 위험도는 중앙 행동 문구와 테두리로만 바뀐다. */
+.bossbar .boss-track {
+  height: 1.42rem;
+}
+
+.bossbar .boss-phase {
+  inset: 2px 0.52rem;
+  z-index: 2;
+  display: grid;
+  grid-template-columns: minmax(3.6rem, 1fr) minmax(10rem, 2fr) minmax(4.8rem, 1fr);
+  align-items: center;
+  gap: 0.45rem;
+  color: #f4d7dc;
+  font-size: max(10px, 0.54rem);
+  line-height: 1;
+  letter-spacing: 0.025em;
+  text-shadow: 0 1px 3px #000;
+}
+
+.boss-stage {
+  justify-self: start;
+  font-weight: 760;
+}
+
+.boss-action {
+  justify-self: center;
+  color: #f5ebee;
+  font-weight: 850;
+  letter-spacing: 0.035em;
+  text-align: center;
+}
+
+.boss-percent {
+  justify-self: end;
+  font-weight: 760;
+  font-variant-numeric: tabular-nums;
+}
+
+.bossbar[data-stage='1'] .boss-fill,
+.bossbar[data-stage='1'][data-phase='windup'] .boss-fill,
+.bossbar[data-stage='1'][data-phase='charge'] .boss-fill {
+  background: var(--ui-crimson);
+}
+
+.bossbar[data-stage='2'] .boss-fill,
+.bossbar[data-stage='2'][data-phase='windup'] .boss-fill,
+.bossbar[data-stage='2'][data-phase='charge'] .boss-fill {
+  background: linear-gradient(90deg, #b33773, #e66577 62%, #f3a064);
+}
+
+.bossbar[data-action='warning'] .boss-action {
+  color: #ffe0a8;
+}
+
+.bossbar[data-action='warning'] .boss-track {
+  border-color: #d69d54;
+}
+
+.bossbar[data-action='danger'] .boss-action {
+  color: #ffc0ae;
+}
+
+.bossbar[data-action='danger'] .boss-track {
+  border-color: #d57355;
+}
+
+.bossbar[data-action='opening'] .boss-track {
+  border-color: #5eaa82;
+  box-shadow:
+    0 3px 0 rgba(0, 0, 0, 0.42),
+    0 0 0.7rem rgba(88, 211, 139, 0.2);
+}
+
+.bossbar[data-action='opening'] .boss-action {
+  color: #91e4b3;
+}
+
+/* 결과: 핵심 성과와 다음 행동은 즉시, 세부 기록은 요청할 때만 펼친다. */
+.scoreboard .outcome-core-summary {
+  display: grid;
+  grid-template-columns: minmax(0, 1.15fr) minmax(12rem, 0.85fr);
+  align-items: stretch;
+  gap: 0.58rem;
+}
+
+.scoreboard .outcome-core-summary .total {
+  margin: 0;
+}
+
+.scoreboard .outcome-core-metrics {
+  margin: 0;
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 1px;
+  border: 1px solid var(--ui-line);
+  background: var(--ui-line);
+}
+
+.scoreboard .outcome-core-metrics .row {
+  padding: 0.52rem 0.62rem;
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  gap: 0.18rem;
+  background: #0b1118;
+}
+
+.scoreboard .outcome-core-metrics .row span {
+  color: #77879a;
+  font-size: max(10px, 0.52rem);
+}
+
+.scoreboard .outcome-core-metrics .row b {
+  color: #ecf3f9;
+  font-size: max(14px, 0.8rem);
+}
+
+.outcome-details {
+  margin-top: 0.82rem;
+  border: 1px solid #343e49;
+  background: #0b1016;
+}
+
+.outcome-details > summary {
+  min-height: 48px;
+  padding: 0.68rem 2.6rem 0.65rem 0.82rem;
+  display: flex;
+  align-items: center;
+  position: relative;
+  color: #c5ced8;
+  background: #111821;
+  font-size: max(12px, 0.68rem);
+  font-weight: 740;
+  cursor: pointer;
+  list-style: none;
+}
+
+.outcome-details > summary::-webkit-details-marker {
+  display: none;
+}
+
+.outcome-details > summary::after {
+  content: '＋';
+  position: absolute;
+  right: 0.86rem;
+  color: var(--accent);
+  font-size: 1rem;
+  line-height: 1;
+}
+
+.outcome-details[open] > summary {
+  border-bottom: 1px solid #343e49;
+  color: #eef3f7;
+}
+
+.outcome-details[open] > summary::after {
+  content: '−';
+}
+
+.outcome-details > summary:hover,
+.outcome-details > summary:focus-visible {
+  color: #fff;
+  background: #18212b;
+  outline: 2px solid var(--accent);
+  outline-offset: -2px;
+}
+
+.outcome-details-content {
+  padding: 0.86rem;
+  display: grid;
+  grid-template-columns: minmax(0, 0.82fr) minmax(0, 1.18fr);
+  gap: 0.8rem;
+}
+
+.outcome-detail-title {
+  margin: 0 0 0.55rem;
+  color: #dce5ee;
+  font-size: max(13px, 0.72rem);
+  font-weight: 760;
+}
+
+.outcome-details .rows {
+  display: grid;
+  gap: 0.24rem;
+}
+
+.outcome-details .row {
+  padding-block: 0.12rem;
+  display: flex;
+  justify-content: space-between;
+  gap: 0.7rem;
+  color: #91a0b0;
+  font-size: max(11px, 0.64rem);
+  font-variant-numeric: tabular-nums;
+}
+
+.outcome-details .row b {
+  color: #dbe7f2;
+}
+
+.outcome-details .records {
+  margin-top: 0.82rem;
+  overflow-x: auto;
+}
+
+.outcome-details .records h3 {
+  margin-bottom: 0.35rem;
+  color: #8393a4;
+  font-size: max(11px, 0.62rem);
+}
+
+.outcome-details .records table {
+  width: 100%;
+  min-width: 25rem;
+  border-collapse: collapse;
+  color: #9cabb9;
+  font-size: max(10px, 0.58rem);
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+
+.outcome-details .records th,
+.outcome-details .records td {
+  padding: 0.3rem 0.34rem;
+  border-top: 1px solid #202a35;
+  text-align: left;
+}
+
+.outcome-details .records th {
+  color: #748393;
+  font-weight: 680;
+}
+
+.outcome-details .records tr.current td {
+  color: #e6f2ff;
+  background: rgba(77, 208, 255, 0.09);
+}
+
+.outcome [data-primary-action='true'] {
+  flex: 1.55;
+  border-color: var(--ui-gold);
+  color: #fff3cb;
+  background:
+    linear-gradient(135deg, rgba(218, 171, 90, 0.28), transparent 72%),
+    #211a10;
+  box-shadow: inset 0 0 0 1px rgba(255, 225, 156, 0.08);
+}
+
+/* 일시정지 이탈은 되돌릴 수 없는 행동이므로 한 번 더 명확히 확인한다. */
+.pause-overlay[data-confirming-exit='true'] .pause-panel {
+  border-left-color: var(--ui-crimson-bright);
+}
+
+.pause-overlay .pause-actions[hidden],
+.pause-overlay .pause-confirmation[hidden],
+.pause-overlay .menu-heading[hidden] {
+  display: none;
+}
+
+.pause-confirmation {
+  padding-right: 0;
+}
+
+.pause-confirmation .menu-eyebrow {
+  color: var(--ui-crimson-bright);
+}
+
+.pause-confirmation p {
+  max-width: 24rem;
+}
+
+.pause-confirm-actions {
+  grid-template-columns: 1fr 1fr;
+}
+
+.pause-confirm-exit {
+  border-color: rgba(255, 90, 110, 0.72);
+  color: #ffd9df;
+  background: rgba(68, 18, 29, 0.72);
+}
+
+.pause-confirm-exit:hover,
+.pause-confirm-exit:focus-visible {
+  border-color: #ff7183;
+  color: #fff;
+  background: #5b1d2b;
+  outline-color: #ff7183;
+}
+
+/* 전승 구매: 부족·완료·구매 가능 상태를 카드 전체에서 구분한다. */
+.meta-content {
+  min-width: 0;
+}
+
+.meta-feedback {
+  position: sticky;
+  top: 0;
+  z-index: 5;
+  margin: 0 0 0.72rem;
+  padding: 0.62rem 0.72rem;
+  border: 1px solid #42505d;
+  color: #d7e1e9;
+  background: rgba(13, 20, 27, 0.96);
+  box-shadow: 0 0.38rem 0.9rem rgba(0, 0, 0, 0.28);
+  font-size: max(11px, 0.64rem);
+  line-height: 1.45;
+}
+
+.meta-feedback:empty {
+  display: none;
+}
+
+.meta-feedback[data-state='success'] {
+  border-color: rgba(104, 211, 148, 0.62);
+  color: #c9f1d9;
+}
+
+.meta-feedback[data-state='error'] {
+  border-color: rgba(255, 90, 110, 0.62);
+  color: #ffd5dc;
+}
+
+.meta-stat-card[data-purchase-state='shortage'],
+.meta-unlock-card[data-purchase-state='shortage'] {
+  border-color: rgba(177, 194, 211, 0.1);
+  background:
+    linear-gradient(145deg, rgba(18, 23, 30, 0.82), rgba(7, 10, 14, 0.98));
+}
+
+.meta-stat-card[data-purchase-state='shortage'] button:disabled,
+.meta-unlock-card[data-purchase-state='shortage'] button:disabled {
+  border-color: rgba(190, 164, 112, 0.28);
+  color: #b9aa8b;
+  background: rgba(24, 21, 16, 0.72);
+  cursor: not-allowed;
+}
+
+.meta-stat-card[data-purchase-state='complete'],
+.meta-unlock-card[data-purchase-state='complete'] {
+  border-color: rgba(104, 211, 148, 0.26);
+}
+
+.meta-stat-card[data-purchase-state='complete'] button:disabled,
+.meta-unlock-card[data-purchase-state='complete'] button:disabled {
+  color: #91b7a0;
+  background: rgba(12, 29, 20, 0.5);
+}
+
+@media (max-width: 820px), (max-aspect-ratio: 3 / 4) {
+  .levelup .lvcard {
+    min-height: 0;
+  }
+
+  .levelup .rank-progress {
+    min-height: 2.2rem;
+    padding-block: 0.32rem;
+  }
+
+  .character-choice-copy {
+    padding: 0.8rem 0.72rem 4.35rem;
+  }
+
+  .character-summary {
+    margin-top: 0.52rem;
+    padding-top: 0.48rem;
+  }
+
+  .playstyle-summary,
+  .strengths-summary {
+    grid-template-columns: 3.8rem minmax(0, 1fr);
+  }
+
+  .passive-summary {
+    grid-template-columns: 3.8rem auto minmax(0, 1fr);
+  }
+
+  .character-confirm {
+    right: 0.72rem;
+    bottom: 0.72rem;
+    width: calc(100% - 1.44rem);
+  }
+
+  .outcome-details-content {
+    grid-template-columns: 1fr;
+  }
+}
+
+@media (max-width: 520px) {
+  .character-summary {
+    gap: 0.3rem;
+  }
+
+  .playstyle-summary,
+  .strengths-summary,
+  .passive-summary {
+    display: block;
+  }
+
+  .summary-label {
+    display: block;
+    margin-bottom: 0.14rem;
+  }
+
+  .playstyle-summary p {
+    display: -webkit-box;
+    overflow: hidden;
+    -webkit-box-orient: vertical;
+    -webkit-line-clamp: 2;
+  }
+
+  .strengths-summary .strengths-list {
+    display: flex;
+  }
+
+  .passive-summary p {
+    display: none;
+  }
+
+  .character-confirm {
+    font-size: max(11px, 0.58rem);
+  }
+
+  .scoreboard .outcome-core-summary {
+    grid-template-columns: 1fr;
+  }
+
+  .pause-confirm-actions {
+    grid-template-columns: 1fr;
+  }
+}
+
+@media (max-height: 560px) and (orientation: landscape) {
+  .character-choice-copy {
+    padding: 0.62rem 0.72rem 3.65rem;
+  }
+
+  .character-summary {
+    margin-top: 0.34rem;
+    padding-top: 0.32rem;
+    gap: 0.2rem;
+  }
+
+  .playstyle-summary,
+  .passive-summary p {
+    display: none;
+  }
+
+  .character-confirm {
+    right: 0.72rem;
+    bottom: 0.55rem;
+    width: min(13rem, calc(100% - 1.44rem));
+    min-height: 44px;
+    padding-block: 0.4rem;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .character-confirm,
+  .skillbar .passive-slot.status-flash {
+    animation: none;
+    transition: none;
   }
 }

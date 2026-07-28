@@ -2,6 +2,11 @@ import * as THREE from 'three'
 
 import type { CastEvent, World } from '../sim/types.ts'
 import { lerp } from '../sim/vec.ts'
+import {
+  CLASS_COLORS,
+  DANGER_COLORS,
+  REWARD_COLORS,
+} from './palette.ts'
 
 /**
  * 스킬 비주얼 — 빔 / 참격 / 장판 / 텔레그래프 / 충격파 / 그을음.
@@ -58,12 +63,12 @@ const GAIN_GOLD = 1.15
 const GAIN_CRIMSON = 1.7
 const GAIN_WHITE = 1.05
 
-const HEX_CYAN = 0x4dd0ff
-const HEX_GOLD = 0xffd978
-const HEX_CRIMSON = 0xff5a6e
-const HEX_SILVER = 0xeaf2ff
-const HEX_JADE = 0x7df0a0
-const HEX_VIOLET = 0x8f6cff
+const HEX_CYAN = CLASS_COLORS.ranged
+const HEX_GOLD = REWARD_COLORS.gold
+const HEX_CRIMSON = CLASS_COLORS.melee
+const HEX_SILVER = REWARD_COLORS.silver
+const HEX_JADE = REWARD_COLORS.health
+const HEX_VIOLET = REWARD_COLORS.arcane
 
 /** RingEvent.kind 순서: 0=점멸 1=회복 2=폭발/궁 3=참격 4=서지 5=균열 6=돌진 폭발. */
 const RING_HEX = [
@@ -72,8 +77,8 @@ const RING_HEX = [
   0xffe6a3,
   HEX_CRIMSON,
   0xff7a35,
-  0xff4f86,
-  0xffa146,
+  DANGER_COLORS.bossZone,
+  DANGER_COLORS.bossCharge,
 ] as const
 const RING_GAIN = [
   GAIN_CYAN,
@@ -88,7 +93,12 @@ const RING_GAIN = [
 /** Zone.kind 순서: 0=빛기둥(시안) 1=둔화장판(보라). */
 const ZONE_HEX = [HEX_CYAN, HEX_VIOLET] as const
 /** 0=플레이어 폭발 1=참격 2=보스 예측 균열 3=보스 돌진 종점. */
-const BLAST_HEX = [HEX_CYAN, HEX_CRIMSON, 0xff4f86, 0xffa146] as const
+const BLAST_HEX = [
+  CLASS_COLORS.ranged,
+  CLASS_COLORS.melee,
+  DANGER_COLORS.bossZone,
+  DANGER_COLORS.bossCharge,
+] as const
 
 const COLOR = new THREE.Color()
 
@@ -724,12 +734,13 @@ const ZONE_FRAG = /* glsl */ `
 
 const TELE_VERT = /* glsl */ `
   attribute vec3 aCenter;
-  attribute vec4 aParam; // x=반경 y=차오름 0..1 z=예비 w=시드
+  attribute vec4 aParam; // x=반경 y=차오름 0..1 z=적대 여부(0/1) w=시드
   attribute vec3 aColor;
 
   varying vec2  vP;
   varying float vProg;
   varying float vRadius;
+  varying float vHostile;
   varying float vSeed;
   varying vec3  vColor;
 
@@ -741,6 +752,7 @@ const TELE_VERT = /* glsl */ `
     vP = p;
     vProg = aParam.y;
     vRadius = aParam.x;
+    vHostile = aParam.z;
     vSeed = aParam.w;
     vColor = aColor;
     gl_Position = projectionMatrix * viewMatrix * vec4(world, 1.0);
@@ -754,6 +766,7 @@ const TELE_FRAG = /* glsl */ `
   varying vec2  vP;
   varying float vProg;
   varying float vRadius;
+  varying float vHostile;
   varying float vSeed;
   varying vec3  vColor;
 
@@ -778,15 +791,19 @@ const TELE_FRAG = /* glsl */ `
     // 안쪽이 중심에서 바깥으로 차오른다. 차오르는 게 보여야 회피가 가능하다.
     float fill = 1.0 - smoothstep(prog - fillW, prog + fillW, r);
     float lead = expSq((r - prog) / (0.13 / max(vRadius, 0.5)));
-    // 평평한 원반이 아니라 "위험 구역"으로 읽히게 방사 해칭을 깐다.
+    // 해칭은 장식이 아니라 적 소유권 신호다. 아래 hostile 분기에서만 노출한다.
     float hatch = 0.62 + 0.38 * sin(r * vRadius * 6.0 + ang * 3.0 + vSeed * 6.283);
 
     // 터지기 직전 급가속 점멸. 0.3초 예고 중 마지막 0.08초에 몰린다.
     float imminent = smoothstep(0.72, 1.0, prog);
     float blink = 1.0 + imminent * (0.6 + 0.6 * sin(uTime * 44.0));
 
+    float hostile = step(0.5, vHostile);
+    vec3 fillColor = mix(vColor, uDanger, hostile);
+    float fillPattern = mix(1.0, hatch, hostile);
+    float fillStrength = mix(0.10 + prog * 0.22, 0.14 + prog * 0.34, hostile);
     vec3 col = vColor * ((outline * (0.85 + imminent * 0.9) + lead * 1.15) * blink)
-             + uDanger * (fill * hatch * (0.14 + prog * 0.34) * blink);
+             + fillColor * (fill * fillPattern * fillStrength * blink);
 
     gl_FragColor = vec4(col, 1.0);
     #include <tonemapping_fragment>
@@ -1138,7 +1155,7 @@ export class SkillFx {
         fragmentShader: TELE_FRAG,
         uniforms: {
           uTime: this.uTime,
-          uDanger: { value: new THREE.Color(0xff4a2e) },
+          uDanger: { value: new THREE.Color(DANGER_COLORS.telegraph) },
         },
         ...ground,
       }),
@@ -1169,7 +1186,7 @@ export class SkillFx {
         fragmentShader: DECAL_FRAG,
         uniforms: {
           uAsh: { value: new THREE.Color(0x241512) },
-          uEmber: { value: new THREE.Color(0xff6a2a) },
+          uEmber: { value: new THREE.Color(DANGER_COLORS.ember) },
         },
         ...ground,
       }),
@@ -2000,8 +2017,9 @@ export class SkillFx {
     let n = 0
     for (let i = 0; i < world.blasts.length && n < CAP_TELEGRAPHS; i++) {
       const b = world.blasts[i]!
-      const hex = BLAST_HEX[b.kind] ?? BLAST_HEX[0]!
-      COLOR.set(hex).multiplyScalar(b.kind === 1 ? GAIN_CRIMSON : GAIN_CYAN)
+      const hex = CLASS_COLORS[world.playerClass]
+      const gain = world.playerClass === 'melee' ? GAIN_CRIMSON : GAIN_CYAN
+      COLOR.set(hex).multiplyScalar(gain)
 
       const o3 = n * 3
       const o4 = n * 4
@@ -2012,7 +2030,8 @@ export class SkillFx {
       this.teleParam[o4 + 1] = THREE.MathUtils.clamp(
         1 - (b.fireAt - world.time) / BLAST_WARNING, 0, 1,
       )
-      this.teleParam[o4 + 2] = b.kind
+      // world.blasts는 플레이어 소유다. 내부는 클래스색 단색으로 채운다.
+      this.teleParam[o4 + 2] = 0
       this.teleParam[o4 + 3] = seedFrom(b.x, b.y)
       this.teleColor[o3] = COLOR.r
       this.teleColor[o3 + 1] = COLOR.g
@@ -2045,7 +2064,8 @@ export class SkillFx {
         0,
         1,
       )
-      this.teleParam[o4 + 2] = kind
+      // hostileHazards만 셰이더의 적 위험색 해칭을 사용한다.
+      this.teleParam[o4 + 2] = 1
       this.teleParam[o4 + 3] = seedFrom(
         hazard.x + hazard.volley * 0.013,
         hazard.y - hazard.volley * 0.017,

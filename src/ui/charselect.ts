@@ -1,5 +1,4 @@
 import type { PlayerClass } from '../sim/types.ts'
-import { getClassSkills, getSkillDef } from '../content/skills.ts'
 
 /**
  * 캐릭터 선택 화면.
@@ -63,91 +62,63 @@ export const CLASS_OPTIONS: ClassOption[] = [
 ]
 
 const PASSIVE_PREVIEW: Readonly<
-  Record<PlayerClass, { name: string; label: string; description: string }>
+  Record<PlayerClass, { name: string; description: string }>
 > = {
   ranged: {
     name: '점등',
-    label: 'PASSIVE · LIGHT MARK',
-    description: '스킬로 점등한 적에게 평타가 추가 피해를 주고, 처치하면 빛을 회수해 회복합니다.',
+    description: '스킬로 새긴 점등을 평타로 터뜨리고, 처치하면 회복합니다.',
   },
   melee: {
     name: '참흔 · 월참',
-    label: 'PASSIVE · MOON SCAR',
-    description: '근처의 적을 베며 참흔을 채웁니다. 100이 되면 다음 평타가 광역 월참으로 승격됩니다.',
+    description: '베어서 참흔을 채우면 다음 평타가 광역 월참이 됩니다.',
   },
 }
 
-function createSkillChip(
-  playerClass: PlayerClass,
-  id: 'q' | 'w' | 'e' | 'r' | 'd' | 'f',
-): HTMLElement | null {
-  const def = getSkillDef(playerClass, id)
-  if (!def) return null
+function createDecisionSummary(option: ClassOption): HTMLElement {
+  const summary = document.createElement('div')
+  summary.className = 'character-summary'
 
-  const chip = document.createElement('span')
-  chip.className = 'kit-skill'
-  chip.setAttribute('role', 'listitem')
-  chip.setAttribute('aria-label', `${def.key} ${def.name}: ${def.oneLiner}`)
-  chip.title = `${def.key} · ${def.name}\n${def.oneLiner}`
+  const playstyle = document.createElement('div')
+  playstyle.className = 'playstyle-summary'
+  const playstyleLabel = document.createElement('span')
+  playstyleLabel.className = 'summary-label'
+  playstyleLabel.textContent = '플레이 스타일'
+  const playstyleCopy = document.createElement('p')
+  playstyleCopy.textContent = option.tagline
+  playstyle.append(playstyleLabel, playstyleCopy)
+  summary.appendChild(playstyle)
 
-  const icon = document.createElement('img')
-  icon.src = `${import.meta.env.BASE_URL}${def.icon}`
-  icon.alt = ''
-  icon.decoding = 'async'
-
-  const copy = document.createElement('span')
-  const key = document.createElement('b')
-  key.textContent = def.key
-  const name = document.createElement('small')
-  name.textContent = def.name
-  copy.append(key, name)
-
-  chip.append(icon, copy)
-  return chip
-}
-
-function createKitPreview(playerClass: PlayerClass): HTMLElement {
-  const preview = document.createElement('div')
-  preview.className = 'kit-preview'
-
-  const label = document.createElement('span')
-  label.className = 'kit-label'
-  label.textContent = 'LOADOUT'
-  preview.appendChild(label)
-
-  const core = document.createElement('div')
-  core.className = 'kit-row kit-core'
-  core.setAttribute('role', 'list')
-  core.setAttribute('aria-label', 'Q W E R 스킬')
-  for (const def of getClassSkills(playerClass)) {
-    const chip = createSkillChip(playerClass, def.id as 'q' | 'w' | 'e' | 'r')
-    if (chip) core.appendChild(chip)
+  const strengths = document.createElement('div')
+  strengths.className = 'strengths-summary'
+  const strengthsLabel = document.createElement('span')
+  strengthsLabel.className = 'summary-label'
+  strengthsLabel.textContent = '강점'
+  const strengthsList = document.createElement('div')
+  strengthsList.className = 'traits strengths-list'
+  strengthsList.setAttribute('role', 'list')
+  for (const strength of option.traits.slice(0, 2)) {
+    const item = document.createElement('span')
+    item.setAttribute('role', 'listitem')
+    item.textContent = strength
+    strengthsList.appendChild(item)
   }
-  preview.appendChild(core)
+  strengths.append(strengthsLabel, strengthsList)
+  summary.appendChild(strengths)
 
-  const utility = document.createElement('div')
-  utility.className = 'kit-row kit-utility'
-  utility.setAttribute('role', 'list')
-  utility.setAttribute('aria-label', '소환사 주문 D F')
-  for (const id of ['d', 'f'] as const) {
-    const chip = createSkillChip(playerClass, id)
-    if (chip) utility.appendChild(chip)
-  }
-  preview.appendChild(utility)
-
-  const passiveDef = PASSIVE_PREVIEW[playerClass]
+  const passiveDef = PASSIVE_PREVIEW[option.id]
   const passive = document.createElement('div')
-  passive.className = 'passive-preview'
+  passive.className = 'passive-preview passive-summary'
   const passiveLabel = document.createElement('span')
-  passiveLabel.textContent = passiveDef.label
+  passiveLabel.className = 'summary-label'
+  passiveLabel.textContent = '패시브'
   const passiveName = document.createElement('strong')
   passiveName.textContent = passiveDef.name
   const passiveCopy = document.createElement('p')
   passiveCopy.textContent = passiveDef.description
   passive.append(passiveLabel, passiveName, passiveCopy)
-  preview.appendChild(passive)
+  summary.appendChild(passive)
 
-  return preview
+  return summary
 }
 
 /**
@@ -162,7 +133,8 @@ export function showCharacterSelect(
 ): Promise<PlayerClass> {
   return new Promise((resolve) => {
     const root = document.createElement('div')
-    root.className = 'charselect'
+    root.className = 'charselect charselect-guided'
+    root.dataset.selectionMode = 'confirm'
     root.setAttribute('role', 'dialog')
     root.setAttribute('aria-modal', 'true')
     root.setAttribute('aria-labelledby', 'charselect-title')
@@ -173,9 +145,9 @@ export function showCharacterSelect(
     const titleCopy = document.createElement('div')
     titleCopy.className = 'title-copy'
     titleCopy.innerHTML =
-      `<span class="charselect-kicker">CHARACTER SELECT</span>` +
+      `<span class="charselect-kicker">전투 준비</span>` +
       `<h2 id="charselect-title">캐릭터 선택</h2>` +
-      `<p>5분 안에 보스를 쓰러뜨리면 승리.</p>`
+      `<p>플레이 스타일을 비교한 뒤 시작할 캐릭터를 고르세요.</p>`
     title.appendChild(titleCopy)
 
     let done = false
@@ -230,14 +202,15 @@ export function showCharacterSelect(
     root.appendChild(title)
 
     const cards = document.createElement('div')
-    cards.className = 'cards'
+    cards.className = 'cards character-choice-list'
+    cards.setAttribute('role', 'list')
     root.appendChild(cards)
 
     const foot = document.createElement('div')
     foot.className = 'footnote'
     foot.textContent = window.matchMedia('(pointer: coarse)').matches
-      ? '전장을 밀어 이동 · 아래 스킬 버튼 터치 · D 회복 · F 점멸'
-      : '마우스를 누른 채 이동 · Q W E R 스킬 · D 회복 · F 점멸'
+      ? '카드를 눌러 고른 뒤 시작 버튼으로 확정'
+      : '카드를 선택한 뒤 시작 버튼으로 확정 · 숫자 1 / 2 빠른 선택'
     root.appendChild(foot)
 
     const choose = (id: PlayerClass): void => {
@@ -256,24 +229,54 @@ export function showCharacterSelect(
       resolve(id)
     }
 
+    const cardControls = new Map<
+      PlayerClass,
+      { card: HTMLElement; confirm: HTMLButtonElement; selectLabel: HTMLElement }
+    >()
+    let pendingSelection: PlayerClass | null = null
+
+    const selectForConfirmation = (id: PlayerClass, focusConfirm = false): void => {
+      if (done || settingsOpen) return
+      const next = cardControls.get(id)
+      if (!next) return
+
+      const changed = pendingSelection !== id
+      pendingSelection = id
+      root.classList.add('has-pending-selection')
+      root.dataset.selectedClass = id
+
+      for (const [optionId, control] of cardControls) {
+        const selected = optionId === id
+        control.card.classList.toggle('is-selected', selected)
+        control.card.dataset.selected = selected ? 'true' : 'false'
+        control.confirm.disabled = !selected
+        control.selectLabel.textContent = selected ? '선택됨' : '선택'
+        if (selected) control.card.setAttribute('aria-current', 'true')
+        else control.card.removeAttribute('aria-current')
+      }
+
+      if (focusConfirm) next.confirm.focus()
+      if (changed) {
+        cancelPreview()
+        if (onPreview) onPreview(id)
+      }
+    }
+
     for (const [index, opt] of options.entries()) {
-      const card = document.createElement('button')
-      card.className = 'charcard'
-      card.type = 'button'
+      const card = document.createElement('article')
+      card.className = 'charcard character-choice'
+      card.tabIndex = 0
+      card.setAttribute('role', 'listitem')
       card.style.setProperty('--accent', opt.accent)
       card.dataset.class = opt.id
-      const coreSummary = getClassSkills(opt.id)
-        .map((skill) => `${skill.key} ${skill.name}, ${skill.oneLiner}`)
-        .join('. ')
-      const d = getSkillDef(opt.id, 'd')
-      const f = getSkillDef(opt.id, 'f')
       const passive = PASSIVE_PREVIEW[opt.id]
+      const strengths = opt.traits.slice(0, 2)
       card.setAttribute(
         'aria-label',
-        `${opt.name}, ${opt.epithet}. ${coreSummary}. ` +
-          `D ${d?.name ?? '회복'}, ${d?.oneLiner ?? ''}. ` +
-          `F ${f?.name ?? '점멸'}, ${f?.oneLiner ?? ''}. ` +
-          `패시브 ${passive.name}, ${passive.description}`,
+        `${opt.name}, ${opt.epithet}. 플레이 스타일: ${opt.tagline}. ` +
+          `강점: ${strengths.join(', ')}. ` +
+          `패시브 ${passive.name}: ${passive.description}. ` +
+          `선택한 뒤 시작 버튼으로 확정합니다.`,
       )
 
       const img = document.createElement('img')
@@ -290,32 +293,72 @@ export function showCharacterSelect(
 
       const hotkey = document.createElement('div')
       hotkey.className = 'hotkey'
+      hotkey.setAttribute('aria-hidden', 'true')
       hotkey.innerHTML =
         `<small>0${index + 1}</small>` +
         `<span>${opt.hotkey}</span>`
       card.appendChild(hotkey)
 
       const info = document.createElement('div')
-      info.className = 'info'
+      info.className = 'info character-choice-copy'
       info.innerHTML =
         `<span class="role">${opt.role}</span>` +
         `<h3>${opt.name}</h3>` +
-        `<div class="epithet">${opt.epithet}</div>` +
-        `<div class="tagline">${opt.tagline}</div>` +
-        `<div class="traits">${opt.traits.map((t) => `<span>${t}</span>`).join('')}</div>`
-      info.appendChild(createKitPreview(opt.id))
+        `<div class="epithet">${opt.epithet}</div>`
+      info.appendChild(createDecisionSummary(opt))
       card.appendChild(info)
 
       const selectLabel = document.createElement('div')
       selectLabel.className = 'select-label'
-      selectLabel.innerHTML = '선택 <span aria-hidden="true">↗</span>'
+      selectLabel.setAttribute('aria-hidden', 'true')
+      selectLabel.textContent = '선택'
       card.appendChild(selectLabel)
 
+      const confirm = document.createElement('button')
+      confirm.className = 'character-confirm'
+      confirm.type = 'button'
+      confirm.disabled = true
+      confirm.textContent = `${opt.name} 선택 · 시작`
+      confirm.setAttribute('aria-label', `${opt.name} 선택 후 게임 시작`)
+      confirm.addEventListener('click', (event) => {
+        event.stopPropagation()
+        choose(opt.id)
+      })
+      card.appendChild(confirm)
+
+      cardControls.set(opt.id, { card, confirm, selectLabel })
       card.addEventListener('pointerenter', () => schedulePreview(opt.id))
       card.addEventListener('pointerleave', () => cancelPreview(opt.id))
-      card.addEventListener('focus', () => schedulePreview(opt.id))
-      card.addEventListener('blur', () => cancelPreview(opt.id))
-      card.addEventListener('click', () => choose(opt.id))
+      card.addEventListener('focusin', () => schedulePreview(opt.id))
+      card.addEventListener('focusout', (event) => {
+        if (!(event.relatedTarget instanceof Node) || !card.contains(event.relatedTarget)) {
+          cancelPreview(opt.id)
+        }
+      })
+      card.addEventListener('click', () => {
+        card.focus({ preventScroll: true })
+        selectForConfirmation(opt.id)
+      })
+      card.addEventListener('keydown', (event) => {
+        if (event.target !== card) return
+        if (event.key === 'Enter' || event.key === ' ') {
+          event.preventDefault()
+          selectForConfirmation(opt.id, true)
+          return
+        }
+
+        const direction =
+          event.key === 'ArrowRight' || event.key === 'ArrowDown'
+            ? 1
+            : event.key === 'ArrowLeft' || event.key === 'ArrowUp'
+              ? -1
+              : 0
+        if (direction === 0) return
+        event.preventDefault()
+        const nextIndex = (index + direction + options.length) % options.length
+        const nextOption = options[nextIndex]
+        if (nextOption) cardControls.get(nextOption.id)?.card.focus()
+      })
       cards.appendChild(card)
     }
 
@@ -327,7 +370,7 @@ export function showCharacterSelect(
     window.addEventListener('keydown', onKey)
 
     parent.appendChild(root)
-    ;(cards.firstElementChild as HTMLButtonElement | null)?.focus()
+    ;(cards.firstElementChild as HTMLElement | null)?.focus()
     // The accessibility focus is not download intent; later keyboard/pointer dwell is.
     suppressInitialFocusPreview = false
   })
