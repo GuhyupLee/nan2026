@@ -2,6 +2,7 @@ import { xpToNext } from '../sim/progression.ts'
 import { effectiveAtkDamage } from '../sim/stats.ts'
 import type { World } from '../sim/types.ts'
 import { RUN_TIME_LIMIT } from '../sim/constants.ts'
+import { ELITE_SPAWN_TIMES } from '../sim/enemies.ts'
 
 /**
  * HUD — 캐릭터 위 체력바 + 하단 경험치 바 + 타이머.
@@ -27,6 +28,10 @@ export class Hud {
   private readonly xpFill: HTMLDivElement
   private readonly xpBar: HTMLDivElement
   private readonly clock: HTMLDivElement
+  private readonly runInfo: HTMLDivElement
+  private readonly runKills: HTMLElement
+  private readonly runLevel: HTMLElement
+  private readonly runRelics: HTMLElement
   private readonly passive: HTMLDivElement
   private readonly passiveName: HTMLElement
   private readonly passiveValue: HTMLElement
@@ -38,6 +43,8 @@ export class Hud {
   /** 화면에 남아 흐르는 붉은 잔상 비율. 실제 체력보다 천천히 따라간다. */
   private ghostRatio = 1
   private lastLevel = 0
+  private lastKills = -1
+  private lastRelics = -1
   private renderedWorld: World | null = null
   private lastHp = 0
   private pendingDamage = 0
@@ -66,6 +73,18 @@ export class Hud {
     this.clock = document.createElement('div')
     this.clock.className = 'clock'
     parent.appendChild(this.clock)
+
+    this.runInfo = document.createElement('div')
+    this.runInfo.className = 'run-info'
+    this.runInfo.innerHTML =
+      `<span><small>KOs</small><b data-run-kills>000</b></span>` +
+      `<span><small>LV</small><b data-run-level>01</b></span>` +
+      `<span><small>SEAL</small><b data-run-relics>0/${ELITE_SPAWN_TIMES.length}</b></span>`
+    this.runInfo.setAttribute('aria-label', '런 전황')
+    this.runKills = this.runInfo.querySelector('[data-run-kills]')!
+    this.runLevel = this.runInfo.querySelector('[data-run-level]')!
+    this.runRelics = this.runInfo.querySelector('[data-run-relics]')!
+    parent.appendChild(this.runInfo)
 
     this.passive = document.createElement('div')
     this.passive.className = 'passive-hud'
@@ -102,6 +121,9 @@ export class Hud {
       this.damagePulse = 0
       this.passivePollLeft = 0
       this.passive.dataset.class = world.playerClass
+      this.lastKills = -1
+      this.lastRelics = -1
+      this.lastLevel = 0
     }
 
     // 지속 접촉 피해는 작은 값이 매 틱 들어온다. 그대로 번쩍이면 붉은 화면이
@@ -148,9 +170,28 @@ export class Hud {
     this.floatBar.dataset.danger = ratio <= 0.25 ? 'crit' : ratio <= 0.5 ? 'warn' : 'ok'
 
     const level = world.progression.level
+    let runInfoChanged = false
     if (level !== this.lastLevel) {
       this.lastLevel = level
       this.lv.textContent = String(level)
+      this.runLevel.textContent = String(level).padStart(2, '0')
+      runInfoChanged = true
+    }
+    if (world.kills !== this.lastKills) {
+      this.lastKills = world.kills
+      this.runKills.textContent = String(world.kills).padStart(3, '0')
+      runInfoChanged = true
+    }
+    if (world.relicsClaimed !== this.lastRelics) {
+      this.lastRelics = world.relicsClaimed
+      this.runRelics.textContent = `${world.relicsClaimed}/${ELITE_SPAWN_TIMES.length}`
+      runInfoChanged = true
+    }
+    if (runInfoChanged) {
+      this.runInfo.setAttribute(
+        'aria-label',
+        `처치 ${world.kills}, 레벨 ${level}, 월식 인장 ${world.relicsClaimed}/${ELITE_SPAWN_TIMES.length}`,
+      )
     }
 
     // --- 경험치 ---
@@ -216,6 +257,7 @@ export class Hud {
     this.floatBar.style.display = d
     this.xpBar.style.display = d
     this.clock.style.display = d
+    this.runInfo.style.display = d
     this.passive.style.display = d
     this.damageVignette.style.display = d
   }

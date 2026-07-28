@@ -108,6 +108,7 @@ export function createWorld(seed: number, playerClass: PlayerClass = 'ranged'): 
     casts: [],
     attacks: [],
     actionStarts: [],
+    damageFeedback: [],
     awaitingChoice: false,
     outcome: 'alive',
   }
@@ -259,6 +260,7 @@ export function drainEvents(world: World): void {
   world.casts.length = 0
   world.attacks.length = 0
   world.actionStarts.length = 0
+  world.damageFeedback.length = 0
 }
 
 /**

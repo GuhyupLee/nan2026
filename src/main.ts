@@ -7,6 +7,7 @@ import {
   startVrmPreload,
 } from './render/vrm-rig.ts'
 import { ARENA_RADIUS, DT, MAX_TICKS_PER_FRAME } from './sim/constants.ts'
+import { BOSS_SPAWN_TIME, spawnBoss } from './sim/enemies.ts'
 import { createInput } from './sim/types.ts'
 import type { PlayerClass, World } from './sim/types.ts'
 import {
@@ -352,13 +353,30 @@ function beginRun(playerClass: PlayerClass): void {
   fpsFrames = 0
   statsTimer = 0.25
   fps = 0
-  if (
-    import.meta.env.DEV &&
-    new URLSearchParams(window.location.search).get('qa') === 'relic'
-  ) {
-    world.pendingRelicChoices = 1
-    world.relicsClaimed = 1
-    world.awaitingChoice = true
+  if (import.meta.env.DEV) {
+    const qa = new URLSearchParams(window.location.search).get('qa')
+    if (qa === 'relic') {
+      world.pendingRelicChoices = 1
+      world.relicsClaimed = 1
+      world.awaitingChoice = true
+    } else if (qa === 'boss') {
+      // 보스 등장부터 예고선까지 5.4초만 기다리면 되는 시각 검수 진입점.
+      // 프로덕션 빌드에서는 이 분기 전체가 제거된다.
+      world.tick = Math.round(BOSS_SPAWN_TIME / DT)
+      world.time = world.tick * DT
+      world.spawnEnabled = false
+      if (spawnBoss(world.enemies, world.rng, world.player.pos.x, world.player.pos.y)) {
+        const boss = world.enemies.count - 1
+        world.enemies.x[boss] = 8
+        world.enemies.y[boss] = 0
+        world.enemies.prevX[boss] = 8
+        world.enemies.prevY[boss] = 0
+        world.boss.spawned = true
+        world.boss.spawnedAt = world.time
+        world.boss.active = true
+        world.boss.hp = world.boss.maxHp
+      }
+    }
   }
   running = true
 }

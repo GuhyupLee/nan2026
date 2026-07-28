@@ -20,7 +20,7 @@ import {
   PLAYER_ACTION_TIMING,
   playerActionTiming,
 } from '../src/sim/action-timing.ts'
-import { damageEnemy } from '../src/sim/damage.ts'
+import { MAX_DAMAGE_FEEDBACK, damageEnemy } from '../src/sim/damage.ts'
 import { castSkill } from '../src/sim/kits.ts'
 import {
   BOSS_CHARGE_AT,
@@ -77,6 +77,7 @@ import { createInput } from '../src/sim/types.ts'
 import { length } from '../src/sim/vec.ts'
 import {
   createWorld,
+  drainEvents,
   grantXp,
   resolveLevelUp,
   resolveRewardChoice,
@@ -563,6 +564,65 @@ console.log('\nsim smoke check\n')
     sustain.player.hp > beforeSustain &&
       sustain.player.killHealBudget < budgetBefore,
   )
+}
+
+// --- 적 피해 피드백은 실제 적용량·우선순위·절대 상한을 지킨다 ---
+{
+  const feedback = createWorld(137, 'ranged')
+  feedback.spawnEnabled = false
+  spawnEnemy(feedback.enemies, feedback.rng, 0, 0, TYPE_WALKER)
+  feedback.enemies.hp[0] = 100
+  feedback.enemies.maxHp[0] = 100
+  damageEnemy(feedback, 0, 30)
+  const first = feedback.damageFeedback[0]
+  check(
+    '적 피해 피드백은 요청량이 아니라 실제 적용량과 남은 체력을 기록한다',
+    first?.amount === 30 && first.hpAfter === 70 && !first.lethal,
+  )
+  check(
+    '피해를 받은 적은 짧은 체력바 노출 시간을 얻는다',
+    feedback.enemies.hpVisibleUntil[0]! > feedback.time,
+  )
+
+  feedback.damageFeedback.length = 0
+  feedback.enemies.hp[0] = 10
+  damageEnemy(feedback, 0, 999)
+  const lethal = feedback.damageFeedback[0]
+  check(
+    '오버킬 피해 숫자는 남아 있던 체력으로 절삭된다',
+    lethal?.amount === 10 && lethal.hpAfter === 0 && lethal.lethal,
+  )
+  damageEnemy(feedback, 0, 1)
+  check(
+    '죽은 적 재타격은 피해 피드백을 중복 발행하지 않는다',
+    feedback.damageFeedback.length === 1,
+  )
+
+  const capped = createWorld(138, 'ranged')
+  capped.spawnEnabled = false
+  for (let i = 0; i < 25; i++) {
+    spawnEnemy(capped.enemies, capped.rng, 0, 0, TYPE_WALKER)
+    damageEnemy(capped, i, 1)
+  }
+  for (let i = 0; i < 5; i++) {
+    spawnEnemy(capped.enemies, capped.rng, 0, 0, TYPE_ELITE)
+    damageEnemy(capped, capped.enemies.count - 1, 1)
+  }
+  const importantFeedback = capped.damageFeedback.filter(
+    (event) => event.enemyType === TYPE_ELITE || event.enemyType === TYPE_BOSS,
+  ).length
+  check(
+    '광역 피해 피드백 큐는 절대 상한을 넘지 않는다',
+    capped.damageFeedback.length <= MAX_DAMAGE_FEEDBACK,
+    `${capped.damageFeedback.length}`,
+  )
+  check(
+    '일반 피해가 많아도 정예 피드백 예약분을 보존한다',
+    importantFeedback === 5,
+    `${importantFeedback}`,
+  )
+  drainEvents(capped)
+  check('drainEvents가 적 피해 피드백까지 비운다', capped.damageFeedback.length === 0)
 }
 
 // --- 스킬 런타임 ---

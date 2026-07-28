@@ -209,6 +209,68 @@ button {
   animation: deadline-pulse 0.8s steps(2, end) infinite;
 }
 
+.run-info {
+  position: fixed;
+  left: max(var(--ui-safe-left), 0.5rem);
+  top: max(var(--ui-safe-top), 0.5rem);
+  z-index: 5;
+  display: flex;
+  align-items: stretch;
+  min-height: 2.55rem;
+  overflow: hidden;
+  border: var(--ui-hairline) solid #4d5662;
+  border-left: 2px solid var(--ui-cyan);
+  color: #edf2f6;
+  background:
+    linear-gradient(90deg, rgba(77, 208, 255, 0.08), transparent 42%),
+    rgba(7, 10, 15, 0.84);
+  box-shadow:
+    0 3px 0 rgba(0, 0, 0, 0.34),
+    inset 0 1px rgba(255, 255, 255, 0.035);
+  clip-path: polygon(0 0, calc(100% - 0.48rem) 0, 100% 0.48rem, 100% 100%, 0 100%);
+  pointer-events: none;
+}
+
+.run-info > span {
+  min-width: 3.25rem;
+  padding: 0.32rem 0.62rem 0.28rem;
+  display: grid;
+  align-content: center;
+  gap: 0.08rem;
+  border-right: var(--ui-hairline) solid rgba(120, 131, 145, 0.42);
+}
+
+.run-info > span:last-child {
+  min-width: 4.2rem;
+  border-right: 0;
+}
+
+.run-info small,
+.run-info b {
+  display: block;
+  font-variant-numeric: tabular-nums;
+  line-height: 1;
+}
+
+.run-info small {
+  color: #8995a4;
+  font-size: 0.5rem;
+  font-weight: 760;
+  letter-spacing: 0.16em;
+}
+
+.run-info b {
+  color: #f4f6f8;
+  font-size: 0.78rem;
+  font-weight: 790;
+  letter-spacing: 0.05em;
+  text-shadow: 0 2px 3px #000;
+}
+
+.run-info > span:last-child b {
+  color: #e8bd61;
+}
+
 @keyframes deadline-pulse {
   50% {
     border-color: #ff7183;
@@ -4251,6 +4313,27 @@ button {
 }
 
 @media (max-width: 820px), (max-aspect-ratio: 3 / 4) {
+  .run-info {
+    min-height: 2.2rem;
+  }
+
+  .run-info > span {
+    min-width: 2.6rem;
+    padding-inline: 0.44rem;
+  }
+
+  .run-info > span:last-child {
+    min-width: 3.4rem;
+  }
+
+  .run-info small {
+    font-size: 0.44rem;
+  }
+
+  .run-info b {
+    font-size: 0.68rem;
+  }
+
   .kit-core {
     grid-template-columns: repeat(2, minmax(0, 1fr));
   }

@@ -2,12 +2,13 @@ import * as THREE from 'three'
 
 import { playerActionDuration } from '../sim/action-timing.ts'
 import { DT } from '../sim/constants.ts'
-import { TYPE_BOSS } from '../sim/enemies.ts'
+import { TYPE_BOSS, TYPE_ELITE } from '../sim/enemies.ts'
 import type { SkillId } from '../sim/skills.ts'
 import type { PlayerClass, World } from '../sim/types.ts'
 import type { Vec2 } from '../sim/vec.ts'
 import { length, lerp, lerpAngle } from '../sim/vec.ts'
 import { createArena } from './arena.ts'
+import { CombatReadabilityFx } from './combat-readability.ts'
 import {
   type CharacterRig,
   createCharacterRig,
@@ -70,6 +71,7 @@ export class Renderer {
   private readonly lightRig: THREE.Group
   private readonly sun: THREE.DirectionalLight
   private readonly enemyRenderer: EnemyRenderer
+  private readonly combatReadability: CombatReadabilityFx
   private readonly targetingGroup: THREE.Group
   private readonly targetingRingGeometry: THREE.RingGeometry
   private readonly targetingLineGeometry: THREE.PlaneGeometry
@@ -151,6 +153,7 @@ export class Renderer {
     this.scene.add(this.charRig.group)
 
     this.enemyRenderer = new EnemyRenderer(this.scene)
+    this.combatReadability = new CombatReadabilityFx(this.scene)
     this.impact = new ImpactFx(this.scene)
     // 스킬 이펙트가 타격 연출을 직접 만들지 않고 훅으로 위임한다.
     // 두 모듈이 서로를 몰라야 각각 따로 갈아끼울 수 있다.
@@ -417,6 +420,7 @@ export class Renderer {
     this.weaponTrail.update(now, dt)
 
     this.enemyRenderer.update(world, visualAlpha, dt)
+    this.combatReadability.update(world, visualAlpha)
     this.skillFx.update(world, visualAlpha, now, dt)
     // 히트스톱으로 스케일한 dt를 주면 안 된다 — 화면이 멈춘 동안 흔들림과
     // 숫자까지 멈춰서 타격감이 아니라 프레임 드랍으로 읽힌다.
@@ -590,6 +594,22 @@ export class Renderer {
       this.actionFacingUntil =
         startedAt + playerActionDuration(world.playerClass, action.kind)
     }
+
+    // 광역기는 한 틱에 수십 체를 때릴 수 있다. 기존 32개 숫자 풀을 지키면서
+    // 정예·보스 피드백을 먼저 보여주고 한 프레임 최대 8개만 넘긴다.
+    let damageNumbers = 0
+    for (let i = 0; i < world.damageFeedback.length && damageNumbers < 4; i++) {
+      const hit = world.damageFeedback[i]!
+      if (hit.enemyType !== TYPE_ELITE && hit.enemyType !== TYPE_BOSS) continue
+      this.impact.popNumber(hit.x, hit.y, hit.amount, 'normal')
+      damageNumbers += 1
+    }
+    for (let i = 0; i < world.damageFeedback.length && damageNumbers < 8; i++) {
+      const hit = world.damageFeedback[i]!
+      if (hit.enemyType === TYPE_ELITE || hit.enemyType === TYPE_BOSS) continue
+      this.impact.popNumber(hit.x, hit.y, hit.amount, 'normal')
+      damageNumbers += 1
+    }
   }
 
   dispose(): void {
@@ -608,6 +628,7 @@ export class Renderer {
     this.charRig.dispose()
     this.weaponTrail.dispose()
     this.enemyRenderer.dispose()
+    this.combatReadability.dispose()
     this.skillFx.dispose()
     this.impact.dispose()
     this.post.dispose()

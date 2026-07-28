@@ -181,6 +181,23 @@ export interface AttackEvent {
 }
 
 /**
+ * 적에게 실제로 적용된 피해 한 건.
+ *
+ * 요청 피해가 아니라 남아 있던 체력으로 절삭한 값을 저장한다. 렌더러는
+ * 적 풀의 슬롯 인덱스를 보존하지 않고 이 좌표 스냅샷만 읽으므로,
+ * 같은 틱의 swap-remove 뒤 다른 적 위에 숫자가 붙지 않는다.
+ */
+export interface DamageFeedbackEvent {
+  x: number
+  y: number
+  amount: number
+  hpAfter: number
+  maxHp: number
+  enemyType: number
+  lethal: boolean
+}
+
+/**
  * UI가 보스 체력바를 그릴 때 읽는 최소 상태.
  *
  * 보스 슬롯 인덱스는 의도적으로 저장하지 않는다. 적 풀은 swap-remove를 쓰므로
@@ -273,6 +290,8 @@ export interface World {
   attacks: AttackEvent[]
   /** 렌더러가 판정보다 먼저 전투 애니메이션을 시작하는 데 쓰는 이벤트. */
   actionStarts: ActionStartEvent[]
+  /** 적 피격 숫자와 중요 타격 피드백. */
+  damageFeedback: DamageFeedbackEvent[]
 
   /**
    * 레벨업 선택 대기 중인가.

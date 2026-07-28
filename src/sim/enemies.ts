@@ -110,6 +110,8 @@ export const BOSS_RECOVER_AT = 6.35
 export const BOSS_CHARGE_SPEED = 24
 /** 직선 돌진에 맞은 실수가 일반 선회 접촉과 같은 값으로 끝나지 않게 한다. */
 export const BOSS_CHARGE_DAMAGE_MUL = 3.5
+/** 적과 플레이어의 몸 반경 밖으로 인정하는 접촉 여유. 돌진 예고 폭도 공유한다. */
+export const ENEMY_CONTACT_REACH = 0.35
 
 export type BossPhase = 'arrival' | 'orbit' | 'windup' | 'charge' | 'recover'
 
@@ -158,6 +160,8 @@ export interface EnemyPool {
   type: Uint8Array
   /** 피격 점멸 남은 시간(초). 렌더가 흰색 보간에 쓴다. */
   flash: Float32Array
+  /** 피해를 받은 뒤 선별 체력바를 계속 보여줄 시각. */
+  hpVisibleUntil: Float32Array
 
   // --- 상태 (전부 "만료 시각" 방식) ---
   // 남은 시간을 매 틱 감산하면 적 수백 마리에 대해 매번 써야 한다.
@@ -212,6 +216,7 @@ export function createEnemyPool(): EnemyPool {
     maxHp: new Float32Array(MAX_ENEMIES),
     type: new Uint8Array(MAX_ENEMIES),
     flash: new Float32Array(MAX_ENEMIES),
+    hpVisibleUntil: new Float32Array(MAX_ENEMIES),
 
     markExpire: new Float32Array(MAX_ENEMIES),
     slowUntil: new Float32Array(MAX_ENEMIES),
@@ -374,6 +379,7 @@ export function spawnEnemy(
   pool.maxHp[i] = maxHp
   pool.type[i] = type
   pool.flash[i] = 0
+  pool.hpVisibleUntil[i] = -1
 
   // 슬롯 재사용이므로 상태를 반드시 초기화한다.
   // 안 그러면 죽은 적의 둔화·점등이 새로 스폰된 적에게 상속된다.
@@ -477,8 +483,6 @@ const SEPARATION = 14
 const MAX_CONTACT_ATTACKERS = 6
 
 /** 몸 겹침 위로 더 주는 접촉 여유 사거리. 위 주석 참조. */
-const CONTACT_REACH = 0.35
-
 const neighborBuf = new Int32Array(96)
 const impulseOut = { x: 0, y: 0 }
 
@@ -677,7 +681,7 @@ export function stepEnemies(
     // 서로 밀어내는 분리 조향 때문에 플레이어 주위에 고리를 만들고, 그 고리에서
     // 실제로 반경 안에 들어오는 건 한두 마리뿐이다. 계측상 접촉 시간이 전체의
     // 2%였다. 조금의 여유 사거리를 줘야 "둘러싸였다"가 피해로 이어진다.
-    const touch = def.radius + playerRadius + CONTACT_REACH
+    const touch = def.radius + playerRadius + ENEMY_CONTACT_REACH
     if (bossPhase !== 'arrival' && cdx * cdx + cdy * cdy < touch * touch) {
       const chargeDamageMul =
         isBoss && bossPhase === 'charge' ? BOSS_CHARGE_DAMAGE_MUL : 1

@@ -3,6 +3,53 @@ import { dropRelic } from './rewards.ts'
 import { grantXp } from './world.ts'
 import type { World } from './types.ts'
 
+/** 헤드리스 실행에서 소비자가 없어도 피드백 큐가 자라지 않는 절대 상한. */
+export const MAX_DAMAGE_FEEDBACK = 24
+/** 나머지 네 칸은 정예·보스 타격을 위해 예약한다. */
+const MAX_COMMON_DAMAGE_FEEDBACK = 20
+const HP_BAR_REVEAL_DURATION = 0.75
+
+function isImportantEnemyType(type: number): boolean {
+  return type === TYPE_BOSS || type === TYPE_ELITE
+}
+
+function pushDamageFeedback(
+  world: World,
+  event: World['damageFeedback'][number],
+): void {
+  const important = isImportantEnemyType(event.enemyType)
+  if (!important) {
+    let common = 0
+    for (let i = 0; i < world.damageFeedback.length; i++) {
+      if (!isImportantEnemyType(world.damageFeedback[i]!.enemyType)) common += 1
+    }
+    if (
+      common >= MAX_COMMON_DAMAGE_FEEDBACK ||
+      world.damageFeedback.length >= MAX_DAMAGE_FEEDBACK
+    ) {
+      return
+    }
+    world.damageFeedback.push(event)
+    return
+  }
+
+  if (world.damageFeedback.length < MAX_DAMAGE_FEEDBACK) {
+    world.damageFeedback.push(event)
+    return
+  }
+
+  // 중요 타격이 광역 잡몹 숫자에 밀리지 않게 가장 오래된 일반 타격을 교체한다.
+  // 큐가 전부 중요 타격이면 가장 오래된 하나를 교체해 절대 상한을 지킨다.
+  let replace = 0
+  for (let i = 0; i < world.damageFeedback.length; i++) {
+    if (!isImportantEnemyType(world.damageFeedback[i]!.enemyType)) {
+      replace = i
+      break
+    }
+  }
+  world.damageFeedback[replace] = event
+}
+
 /**
  * 피해 단일 관문.
  *
@@ -22,12 +69,31 @@ export function damageEnemy(world: World, i: number, amount: number): boolean {
   const pool = world.enemies
   // 이미 죽어 스윕을 기다리는 적은 다시 때리지 않는다 — XP 중복 지급 방지.
   if (pool.hp[i]! <= 0) return false
+  if (!(amount > 0)) return false
 
-  pool.hp[i] = pool.hp[i]! - amount
+  const hpBefore = pool.hp[i]!
+  const applied = Math.min(hpBefore, Math.max(0, amount))
+  pool.hp[i] = hpBefore - applied
   pool.flash[i] = 0.08
+  pool.hpVisibleUntil[i] = Math.max(
+    pool.hpVisibleUntil[i]!,
+    world.time + HP_BAR_REVEAL_DURATION,
+  )
   const isBoss = pool.type[i] === TYPE_BOSS
   const isElite = pool.type[i] === TYPE_ELITE
   if (isBoss) world.boss.hp = Math.max(0, pool.hp[i]!)
+
+  if (applied > 0) {
+    pushDamageFeedback(world, {
+      x: pool.x[i]!,
+      y: pool.y[i]!,
+      amount: applied,
+      hpAfter: Math.max(0, pool.hp[i]!),
+      maxHp: pool.maxHp[i]!,
+      enemyType: pool.type[i]!,
+      lethal: pool.hp[i]! <= 0,
+    })
+  }
 
   if (pool.hp[i]! > 0) return false
 

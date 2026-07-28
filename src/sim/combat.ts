@@ -18,7 +18,7 @@ function hasTrait(world: World, trait: string): boolean {
   return world.upgradesTaken.has(upgradeTraitToken(trait))
 }
 
-function pickTarget(
+export function pickAutoAttackTarget(
   pool: EnemyPool,
   px: number,
   py: number,
@@ -282,7 +282,7 @@ export function stepAutoAttack(
     return 0
   }
 
-  const target = pickTarget(
+  const target = pickAutoAttackTarget(
     pool,
     p.pos.x,
     p.pos.y,
