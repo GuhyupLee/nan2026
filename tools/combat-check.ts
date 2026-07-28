@@ -341,6 +341,37 @@ function skillLoss(
 }
 
 {
+  const world = createWorld(4301, 'ranged')
+  world.spawnEnabled = false
+  world.player.attackCooldown = Number.POSITIVE_INFINITY
+  world.player.hp = 100
+  const contact = addTarget(world, 0, 0)
+  world.lastAim.x = 10
+  unlockSkill(world.skills, 'r', 1)
+
+  assert.equal(castSkill(world, 'r'), true)
+  const actionEnd = world.playerAction?.endAt
+  assert.ok(actionEnd !== undefined)
+  assert.equal(actionEnd, playerActionTiming('ranged', 'r').duration)
+  assert.equal(world.player.invulnUntil, actionEnd)
+
+  const protectedTicks = Math.round(actionEnd / DT)
+  for (let tick = 0; tick < protectedTicks; tick += 1) {
+    stepWorld(world, fixedInput(10, 0))
+  }
+  assert.equal(world.time, actionEnd)
+  assert.equal(world.player.hp, 100)
+  world.enemies.x[contact] = world.player.pos.x
+  world.enemies.y[contact] = world.player.pos.y
+  world.enemies.prevX[contact] = world.player.pos.x
+  world.enemies.prevY[contact] = world.player.pos.y
+  world.enemies.vx[contact] = 0
+  world.enemies.vy[contact] = 0
+  stepWorld(world, fixedInput(10, 0))
+  assert.ok(world.player.hp < 100)
+}
+
+{
   const rangedTraits = new Set([
     'orbital-prism',
     'singularity-interference',

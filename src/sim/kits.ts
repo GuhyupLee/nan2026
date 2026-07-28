@@ -774,6 +774,16 @@ export function castSkill(world: World, slot: SkillId): boolean {
   )
   if (!accepted) return false
 
+  if (world.playerClass === 'ranged' && slot === 'r') {
+    // 일현은 0.9초 동안 전장을 가르는 고정 자세다. 근접 궁극기의 긴
+    // 무적·회복보다 짧지만, 보스 패턴 속에서도 시전을 완주할 수 있게 한다.
+    const action = world.playerAction as PendingPlayerAction | null
+    p.invulnUntil = Math.max(
+      p.invulnUntil,
+      action?.endAt ?? world.time,
+    )
+  }
+
   if (world.playerClass === 'melee' && slot === 'w') {
     const action = world.playerAction as PendingPlayerAction | null
     if (!action) return false

@@ -82,7 +82,7 @@ const RANGED: Record<string, SkillDef> = {
     name: '일현',
     tag: '궁극',
     oneLiner: '화면 끝에서 끝까지. 직선 위의 모든 것이 사라진다',
-    detail: '전장 관통 · 폭 6.8 · 피해 1,700 · 점등 5초',
+    detail: '전장 관통 · 폭 6.8 · 피해 1,700 · 시전 0.9초 무적 · 점등 5초',
     damage: [1700],
     damagePattern: 'single',
     icon: 'art/skills/ranged-r.webp',

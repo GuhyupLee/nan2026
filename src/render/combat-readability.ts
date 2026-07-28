@@ -246,7 +246,7 @@ export class CombatReadabilityFx {
   }
 
   update(world: World, alpha: number): void {
-    const preferCluster = world.playerClass === 'ranged' && !world.boss.active
+    const preferCluster = world.playerClass === 'ranged'
     if (preferCluster) {
       this.targetHash.rebuild(
         world.enemies.count,

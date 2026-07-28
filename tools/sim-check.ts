@@ -36,6 +36,7 @@ import {
   ENEMY_TYPES,
   MIN_ENEMY_SPAWN_DISTANCE,
   TYPE_BOSS,
+  TYPE_BRUTE,
   TYPE_ELITE,
   TYPE_WALKER,
   bossPhaseAt,
@@ -475,14 +476,15 @@ console.log('\nsim smoke check\n')
     m.stats.atkRange < r.stats.atkRange / 3,
     `${m.stats.atkRange} vs ${r.stats.atkRange}`,
   )
-  // 근딜이 더 단단해야 하지만 격차가 벌어지면 원딜이 전멸한다.
+  // 근딜이 더 단단해야 하지만 패시브 회복·긴 궁극기 무적까지 있으므로,
+  // 기본 EHP 격차까지 크게 벌어지면 원딜이 전멸한다.
   // 처음 1.94배로 뒀더니 8시드에서 원딜 0/8, 근딜 8/8이었다.
   // 상한을 테스트로 못박아 다시 벌어지지 않게 한다.
   {
     const ratio =
       m.stats.maxHp / m.stats.damageTakenMul / (r.stats.maxHp / r.stats.damageTakenMul)
-    check('근딜이 원딜보다 단단하다', ratio > 1.1, `${ratio.toFixed(2)}배`)
-    check('다만 격차가 1.5배를 넘지 않는다', ratio < 1.5, `${ratio.toFixed(2)}배`)
+    check('근딜이 원딜보다 단단하다', ratio > 1.05, `${ratio.toFixed(2)}배`)
+    check('다만 기본 EHP 격차가 20%를 넘지 않는다', ratio < 1.2, `${ratio.toFixed(2)}배`)
   }
   check('시작 체력은 최대 체력과 같다', m.player.hp === m.stats.maxHp && r.player.hp === r.stats.maxHp)
 
@@ -919,14 +921,68 @@ console.log('\nsim smoke check\n')
   }
 
   const inCone = add(5, 0)
-  add(0, 4.5)
+  const flankCluster = add(0, 4.5)
   add(0.65, 4.5)
   add(-0.65, 4.5)
   add(0, 5.15)
   hash.rebuild(pool.count, pool.x, pool.y)
   check(
-    '조준 cone 밖 군집은 cone 안 표적보다 우선하지 않는다',
-    pickAutoAttackTarget(pool, hash, 0, 0, 15, 0, 15, true) === inCone,
+    '원거리 자동 평타는 커서 밖이어도 더 가깝고 뭉친 위협을 우선한다',
+    pickAutoAttackTarget(pool, hash, 0, 0, 15, 0, 15, true) === flankCluster,
+    `target=${pickAutoAttackTarget(pool, hash, 0, 0, 15, 0, 15, true)} ` +
+      `cluster=${flankCluster} inCone=${inCone}`,
+  )
+}
+
+{
+  const pool = createEnemyPool()
+  const rng = createRng(804)
+  const hash = createEnemyHash()
+  const add = (x: number, y: number): number => {
+    spawnEnemy(pool, rng, 0, 0, TYPE_WALKER)
+    const i = pool.count - 1
+    pool.x[i] = x
+    pool.y[i] = y
+    return i
+  }
+
+  const isolated = add(4, 0)
+  const clusterCenter = add(3.55, 3.66)
+  add(4.15, 3.66)
+  add(3.55, 4.26)
+  add(4, 4.11)
+  hash.rebuild(pool.count, pool.x, pool.y)
+
+  check(
+    '가장 가까운 적의 30% 안쪽에 있는 밀집 표적은 관통 효율로 우선한다',
+    pickAutoAttackTarget(pool, hash, 0, 0, 15, 0, 15, true) === clusterCenter,
+    `target=${pickAutoAttackTarget(pool, hash, 0, 0, 15, 0, 15, true)} ` +
+      `cluster=${clusterCenter} isolated=${isolated}`,
+  )
+}
+
+{
+  const pool = createEnemyPool()
+  const rng = createRng(805)
+  const hash = createEnemyHash()
+  const add = (x: number, y: number, type = TYPE_WALKER): number => {
+    spawnEnemy(pool, rng, 0, 0, type)
+    const i = pool.count - 1
+    pool.x[i] = x
+    pool.y[i] = y
+    return i
+  }
+
+  const nearest = add(4, 0)
+  add(3.69, 3.8, TYPE_BRUTE)
+  add(4.29, 3.8, TYPE_BRUTE)
+  add(3.69, 4.4, TYPE_BRUTE)
+  add(4.14, 4.25, TYPE_BRUTE)
+  hash.rebuild(pool.count, pool.x, pool.y)
+
+  check(
+    '30% 밖의 대형 밀집군도 실제 최근접 안전 범위를 침범하지 않는다',
+    pickAutoAttackTarget(pool, hash, 0, 0, 15, 0, 15, true) === nearest,
   )
 }
 

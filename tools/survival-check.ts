@@ -46,6 +46,7 @@ const QWER = ['q', 'w', 'e', 'r'] as const satisfies readonly SkillId[]
 
 interface PilotState {
   nextSkill: number
+  orbitSign: -1 | 1
 }
 
 interface Result {
@@ -214,6 +215,29 @@ function pilot(
   const centerDistance = Math.hypot(px, py)
   if (centerDistance > 1e-6) {
     const edge = centerDistance / world.arenaRadius
+    if (!melee && edge > 0.68) {
+      const radialX = px / centerDistance
+      const radialY = py / centerDistance
+      const outward = moveX * radialX + moveY * radialY
+      if (outward > 0) {
+        moveX -= radialX * outward
+        moveY -= radialY * outward
+      }
+
+      const velocityCross =
+        radialX * world.player.vel.y -
+        radialY * world.player.vel.x
+      const orbitSign =
+        Math.abs(velocityCross) > 0.2
+          ? velocityCross > 0
+            ? 1
+            : -1
+          : state.orbitSign
+      moveX += -radialY * orbitSign * 5.5
+      moveY += radialX * orbitSign * 5.5
+      moveX -= radialX * (edge - 0.68) * 8
+      moveY -= radialY * (edge - 0.68) * 8
+    }
     const pull = edge * edge * 2.2
     moveX -= (px / centerDistance) * pull
     moveY -= (py / centerDistance) * pull
@@ -249,15 +273,23 @@ function pilot(
     }
   }
 
+  let chosenSlot: SkillId | null = null
   if (!world.playerAction && !world.ult.active) {
     for (let offset = 0; offset < QWER.length; offset++) {
       const index = (state.nextSkill + offset) % QWER.length
       const slot = QWER[index]!
       if (!isReady(world.skills, slot)) continue
       pressed |= SKILL_BIT[slot]
+      chosenSlot = slot
       state.nextSkill = (index + 1) % QWER.length
       break
     }
+  }
+  if (!melee && chosenSlot === 'w' && moveLength > 1e-6) {
+    // 굴절은 조준 반대편으로 이동한다. 벽을 등지고 있을 때도 실제
+    // 플레이어처럼 안전한 이동 벡터를 향하도록 커서를 반대로 둔다.
+    input.aim.x = px - input.move.x * 10
+    input.aim.y = py - input.move.y * 10
   }
   input.skillsPressed = pressed
 }
@@ -265,7 +297,10 @@ function pilot(
 function run(cls: PlayerClass, seed: number): Result {
   const world = createWorld(seed, cls)
   const input = createInput()
-  const state: PilotState = { nextSkill: seed % QWER.length }
+  const state: PilotState = {
+    nextSkill: seed % QWER.length,
+    orbitSign: seed % 2 === 0 ? 1 : -1,
+  }
   const maxTicks = Math.round(RUN_TIME_LIMIT / DT)
 
   let minHpFrac = 1
@@ -396,12 +431,12 @@ for (const cls of ['ranged', 'melee'] as const) {
   if (median(selected.map((row) => row.totalDamage)) <= 0) {
     throw new Error(`${cls}: 접촉 피해가 0이라 생존 계측이 무효입니다.`)
   }
-  if (median(selected.map((row) => row.bossProgress)) < 0.5) {
-    throw new Error(`${cls}: 보스 진행도 중앙값이 50% 미만이라 보스 계측이 무효입니다.`)
+  if (median(selected.map((row) => row.bossProgress)) < 0.8) {
+    throw new Error(`${cls}: 보스 진행도 중앙값이 80% 미만이라 보스 계측이 무효입니다.`)
   }
-  if (wins < Math.ceil(selected.length / 3) || wins >= selected.length) {
+  if (wins < Math.ceil(selected.length / 2) || wins >= selected.length) {
     throw new Error(
-      `${cls}: 승리 ${wins}/${selected.length} — 강하지만 이길 수 있는 33~92% 범위를 벗어났습니다.`,
+      `${cls}: 승리 ${wins}/${selected.length} — 강하지만 이길 수 있는 50~92% 범위를 벗어났습니다.`,
     )
   }
   const relics = median(selected.map((row) => row.relics))
@@ -424,4 +459,22 @@ for (const cls of ['ranged', 'melee'] as const) {
         `${(minimumHp * 100).toFixed(1)}%가 유효 범위를 벗어났습니다.`,
     )
   }
+}
+
+const rangedWins = results.filter(
+  (row) => row.cls === 'ranged' && row.outcome === 'victory',
+).length
+const meleeWins = results.filter(
+  (row) => row.cls === 'melee' && row.outcome === 'victory',
+).length
+if (rangedWins < 8) {
+  throw new Error(
+    `원거리 생존 회귀 — 승리 ${rangedWins}/${SEEDS.length}, 최소 8승이 필요합니다.`,
+  )
+}
+if (Math.abs(rangedWins - meleeWins) > 3) {
+  throw new Error(
+    `클래스 생존 격차 ${Math.abs(rangedWins - meleeWins)}승 — ` +
+      `원거리 ${rangedWins}/${SEEDS.length}, 근거리 ${meleeWins}/${SEEDS.length}`,
+  )
 }

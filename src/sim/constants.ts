@@ -27,7 +27,7 @@ export const ARENA_RADIUS = 30
 /** 플레이어 기본 스탯. */
 export const PLAYER_RADIUS = 0.55
 export const PLAYER_SPEED = 10.7
-export const PLAYER_MAX_HP = 115
+export const PLAYER_MAX_HP = 125
 
 /** 이동 응답성. 값이 클수록 즉각적. 서바이버류는 즉각적인 쪽이 손맛이 좋다. */
 export const PLAYER_ACCEL = 90

@@ -16,7 +16,9 @@ const RANGED_CLUSTER_RADIUS = 2.6
 const RANGED_CLUSTER_RADIUS_SQ = RANGED_CLUSTER_RADIUS * RANGED_CLUSTER_RADIUS
 const RANGED_CLUSTER_MAX_NEIGHBORS = 4
 const RANGED_CLUSTER_SCORE_WEIGHT = 0.22
-const RANGED_CLUSTER_DISTANCE_WINDOW = 1.02
+// 원거리 평타는 "가까운 적"이라는 기대를 먼저 지킨다. 다만 가장 가까운
+// 적보다 실제 거리 기준 30% 안쪽이면, 관통 효율이 높은 밀집 방향을 고른다.
+const RANGED_CLUSTER_DISTANCE_WINDOW = 1.3 * 1.3
 const hitBuf: number[] = []
 const clusterBuf = new Int32Array(MAX_ENEMIES)
 
@@ -76,6 +78,7 @@ export function pickAutoAttackTarget(
 
   let nearestConeScore = Infinity
   let nearestScore = Infinity
+  let nearestDistanceSq = Infinity
   const r2 = range * range
   const cosCone = Math.cos(CONE_HALF)
 
@@ -88,6 +91,7 @@ export function pickAutoAttackTarget(
     const dy = pool.y[i]! - py
     const d2 = dx * dx + dy * dy
     if (d2 > r2) continue
+    if (d2 < nearestDistanceSq) nearestDistanceSq = d2
 
     const big = ENEMY_TYPES[pool.type[i]!]!.radius >= 0.6
     const score = big ? d2 * BIG_TARGET_DISCOUNT : d2
@@ -98,10 +102,14 @@ export function pickAutoAttackTarget(
     if (score < nearestConeScore) nearestConeScore = score
   }
 
-  const useCone = Number.isFinite(nearestConeScore)
-  const baseLimit =
-    (useCone ? nearestConeScore : nearestScore) *
-    (preferCluster ? RANGED_CLUSTER_DISTANCE_WINDOW : 1)
+  // 원거리 평타는 완전 자동 조준이다. 커서는 QWER 방향을 정하지만 평타의
+  // 가까운 위협 탐색을 가두지 않는다. 근접 평타만 기존 조준 cone을 지킨다.
+  const useCone = !preferCluster && Number.isFinite(nearestConeScore)
+  const baseLimit = preferCluster
+    ? nearestDistanceSq * RANGED_CLUSTER_DISTANCE_WINDOW
+    : useCone
+      ? nearestConeScore
+      : nearestScore
   let target = -1
   let targetScore = Infinity
 
@@ -120,7 +128,7 @@ export function pickAutoAttackTarget(
 
     const big = ENEMY_TYPES[pool.type[i]!]!.radius >= 0.6
     let score = big ? d2 * BIG_TARGET_DISCOUNT : d2
-    if (score > baseLimit) continue
+    if ((preferCluster ? d2 : score) > baseLimit) continue
     if (preferCluster) {
       score /= 1 + nearbyEnemyCount(pool, hash, i) * RANGED_CLUSTER_SCORE_WEIGHT
     }
@@ -347,9 +355,9 @@ export function stepAutoAttack(
 
   // 틱 맨 앞의 해시는 이후 적 이동·신규 스폰을 아직 반영하지 않는다.
   // 군집 점수를 쓰는 원거리만 발사 직전에 갱신해 실제 화면의 무리를 센다.
-  // 보스전에서는 조준한 단일 위협을 잡몹 무리가 빼앗지 않게 기존 규칙으로
-  // 돌아간다. 군집 최적화는 일반 웨이브를 관통해 정리할 때만 필요하다.
-  const preferCluster = world.playerClass === 'ranged' && !world.boss.active
+  // 보스전에도 소환물이 플레이어를 둘러싸므로 원거리의 가까운 밀집 우선은
+  // 계속 유지한다. 큰 적 거리 보정 덕분에 가까운 보스는 그대로 우선된다.
+  const preferCluster = world.playerClass === 'ranged'
   if (preferCluster) hash.rebuild(pool.count, pool.x, pool.y)
 
   const target = pickAutoAttackTarget(
