@@ -9,6 +9,8 @@ import {
   HEAL_BOOST_TIME,
   HEAL_COOLDOWN,
   HEAL_SPEED_BOOST,
+  KILL_HEAL_CAP,
+  KILL_HEAL_RATE,
   PLAYER_MAX_HP,
   PLAYER_RADIUS,
   PLAYER_SPEED,
@@ -40,6 +42,15 @@ export interface Stats {
   atkInterval: number
   atkRange: number
   atkPierce: number
+  /** 평타에만 적용되는 피해 배수. QWER 피해와 분리한다. */
+  basicAttackDamageMul: number
+  /** XP 보석과 전장 아이템의 획득 반경 배수. */
+  pickupRadiusMul: number
+  /** 회복 구슬의 회복량 배수. */
+  battlefieldHealMul: number
+  /** 처치 회복 토큰 버킷의 최대치와 초당 회복량. */
+  killHealCap: number
+  killHealRate: number
   /**
    * 점등된 적에게 평타가 주는 추가 피해.
    *
@@ -111,6 +122,11 @@ export function createStats(
     atkInterval: melee ? 0.42 : ATK_INTERVAL,
     atkRange: melee ? 3.2 : ATK_RANGE,
     atkPierce: melee ? 2 : ATK_PIERCE,
+    basicAttackDamageMul: 1,
+    pickupRadiusMul: 1,
+    battlefieldHealMul: 1,
+    killHealCap: KILL_HEAL_CAP,
+    killHealRate: KILL_HEAL_RATE,
     // 원거리는 점등 시 13 → 30 (약 2.3배). 스킬 하나만 맞춰두면 평타가 배 이상 아프다.
     markBonus: melee ? 5 : 17,
     markKillHeal: melee ? 0 : 4,
@@ -131,6 +147,11 @@ export function createStats(
 /** 배수까지 적용한 실효 공격력. */
 export function effectiveAtkDamage(s: Stats): number {
   return s.atkDamage * s.atkDamageMul
+}
+
+/** 평타 전용 증폭까지 반영한 실효 공격력. */
+export function effectiveBasicAttackDamage(s: Stats): number {
+  return effectiveAtkDamage(s) * s.basicAttackDamageMul
 }
 
 /**

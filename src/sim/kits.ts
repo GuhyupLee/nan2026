@@ -139,7 +139,8 @@ function dmg(world: World, slot: SkillId, base: number): number {
   return (
     base *
     skillDamageMul(world.skills, slot) *
-    world.stats.atkDamageMul
+    world.stats.atkDamageMul *
+    (world.time < world.player.utilityPowerUntil ? 1.25 : 1)
   )
 }
 

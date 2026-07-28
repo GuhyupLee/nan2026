@@ -1,11 +1,17 @@
 import { emitActionStart } from './actions.ts'
 import { DT } from './constants.ts'
 import { damageEnemy } from './damage.ts'
-import { ENEMY_TYPES, MAX_ENEMIES, type EnemyPool } from './enemies.ts'
+import {
+  ENEMY_TYPES,
+  MAX_ENEMIES,
+  TYPE_BOSS,
+  TYPE_ELITE,
+  type EnemyPool,
+} from './enemies.ts'
 import { tryEmpoweredAttack } from './kits.ts'
 import { upgradeTraitToken } from './progression.ts'
 import type { SpatialHash } from './spatial.ts'
-import { effectiveAtkDamage, effectiveAtkInterval } from './stats.ts'
+import { effectiveBasicAttackDamage, effectiveAtkInterval } from './stats.ts'
 import { isMarked } from './status.ts'
 import type { TracerEvent, World } from './types.ts'
 
@@ -24,6 +30,47 @@ const clusterBuf = new Int32Array(MAX_ENEMIES)
 
 function hasTrait(world: World, trait: string): boolean {
   return world.upgradesTaken.has(upgradeTraitToken(trait))
+}
+
+function basicDamage(world: World): number {
+  return (
+    effectiveBasicAttackDamage(world.stats) *
+    (world.time < world.player.utilityPowerUntil ? 1.25 : 1)
+  )
+}
+
+function damageWithExecution(world: World, index: number, amount: number): boolean {
+  const pool = world.enemies
+  const type = pool.type[index]!
+  const ordinary = type !== TYPE_BOSS && type !== TYPE_ELITE
+  const executes =
+    ordinary &&
+    hasTrait(world, 'decapitation') &&
+    pool.hp[index]! <= pool.maxHp[index]! * 0.18
+  const killed = damageEnemy(
+    world,
+    index,
+    executes ? pool.hp[index]! : amount,
+  )
+  if (!killed || !executes || !hasTrait(world, 'execution-spread')) return killed
+
+  const x = pool.x[index]!
+  const y = pool.y[index]!
+  const radiusSquared = 3.2 * 3.2
+  for (let i = 0; i < pool.count; i += 1) {
+    if (i === index || pool.hp[i]! <= 0) continue
+    const otherType = pool.type[i]!
+    if (otherType === TYPE_BOSS || otherType === TYPE_ELITE) continue
+    const dx = pool.x[i]! - x
+    const dy = pool.y[i]! - y
+    if (dx * dx + dy * dy > radiusSquared) continue
+    if (pool.hp[i]! > pool.maxHp[i]! * 0.3) continue
+    damageEnemy(world, i, pool.hp[i]!)
+  }
+  if (world.rings.length < 32) {
+    world.rings.push({ x, y, radius: 3.2, kind: 3 })
+  }
+  return killed
 }
 
 /**
@@ -212,11 +259,122 @@ function resolveSplitRay(
   if (target < 0) return
 
   damaged.add(target)
-  const base = effectiveAtkDamage(world.stats) * 0.5
+  const base = basicDamage(world) * 0.5
   const damage = isMarked(pool, target, world.time)
     ? base + world.stats.markBonus * 0.5
     : base
   damageEnemy(world, target, damage)
+}
+
+function resolveAuxiliaryRay(
+  world: World,
+  tracers: TracerEvent[],
+  angle: number,
+  excluded: ReadonlySet<number>,
+): boolean {
+  const p = world.player
+  const pool = world.enemies
+  let rayAngle = angle
+
+  if (hasTrait(world, 'auxiliary-tracking')) {
+    let target = -1
+    let distance = Number.POSITIVE_INFINITY
+    for (let i = 0; i < pool.count; i += 1) {
+      if (pool.hp[i]! <= 0 || excluded.has(i)) continue
+      const dx = pool.x[i]! - p.pos.x
+      const dy = pool.y[i]! - p.pos.y
+      const d2 = dx * dx + dy * dy
+      if (d2 <= world.stats.atkRange ** 2 && d2 < distance) {
+        target = i
+        distance = d2
+      }
+    }
+    if (target >= 0) {
+      rayAngle = Math.atan2(
+        pool.y[target]! - p.pos.y,
+        pool.x[target]! - p.pos.x,
+      )
+    }
+  }
+
+  const dx = Math.cos(rayAngle)
+  const dy = Math.sin(rayAngle)
+  const ex = p.pos.x + dx * world.stats.atkRange
+  const ey = p.pos.y + dy * world.stats.atkRange
+  let target = -1
+  let distance = Number.POSITIVE_INFINITY
+  for (let i = 0; i < pool.count; i += 1) {
+    if (pool.hp[i]! <= 0 || excluded.has(i)) continue
+    const radius = ENEMY_TYPES[pool.type[i]!]!.radius + 0.24
+    if (
+      distSqToSegment(pool.x[i]!, pool.y[i]!, p.pos.x, p.pos.y, ex, ey) >
+      radius * radius
+    ) {
+      continue
+    }
+    const d2 = (pool.x[i]! - p.pos.x) ** 2 + (pool.y[i]! - p.pos.y) ** 2
+    if (d2 < distance) {
+      target = i
+      distance = d2
+    }
+  }
+  if (tracers.length < 64) {
+    tracers.push({
+      x0: p.pos.x,
+      y0: p.pos.y,
+      x1: ex,
+      y1: ey,
+      width: 0.55,
+      kind: 0,
+    })
+  }
+  if (target < 0) return false
+  return damageWithExecution(world, target, basicDamage(world) * 0.4)
+}
+
+function resolveBackstrike(
+  world: World,
+  tracers: TracerEvent[],
+  angle: number,
+): boolean {
+  const p = world.player
+  const pool = world.enemies
+  const backAngle = angle + Math.PI
+  const dx = Math.cos(backAngle)
+  const dy = Math.sin(backAngle)
+  const reach = Math.min(world.stats.atkRange, 4.2)
+  const ex = p.pos.x + dx * reach
+  const ey = p.pos.y + dy * reach
+  let target = -1
+  let distance = Number.POSITIVE_INFINITY
+  for (let i = 0; i < pool.count; i += 1) {
+    if (pool.hp[i]! <= 0) continue
+    const radius = ENEMY_TYPES[pool.type[i]!]!.radius + ATTACK_WIDTH
+    if (
+      distSqToSegment(pool.x[i]!, pool.y[i]!, p.pos.x, p.pos.y, ex, ey) >
+      radius * radius
+    ) {
+      continue
+    }
+    const d2 = (pool.x[i]! - p.pos.x) ** 2 + (pool.y[i]! - p.pos.y) ** 2
+    if (d2 < distance) {
+      target = i
+      distance = d2
+    }
+  }
+  if (tracers.length < 64) {
+    tracers.push({
+      x0: p.pos.x,
+      y0: p.pos.y,
+      x1: ex,
+      y1: ey,
+      width: 0.75,
+      kind: 3,
+    })
+  }
+  if (target < 0) return false
+  const multiplier = hasTrait(world, 'backstrike-focus') ? 0.75 : 0.5
+  return damageWithExecution(world, target, basicDamage(world) * multiplier)
 }
 
 function resolveAutoAttack(
@@ -267,10 +425,13 @@ function resolveAutoAttack(
     return da - db
   })
 
-  const base = effectiveAtkDamage(s)
+  const base = basicDamage(world)
+  const doubleStrike = p.doubleAttackReady > 0
+  if (doubleStrike) p.doubleAttackReady -= 1
   const count = Math.min(hitBuf.length, s.atkPierce)
   const pierceAmplification = hasTrait(world, 'pierce-amplification')
   const primaryTargets = new Set<number>()
+  let primaryKill = false
   for (let k = 0; k < count; k++) {
     const i = hitBuf[k]!
     primaryTargets.add(i)
@@ -279,7 +440,52 @@ function resolveAutoAttack(
       : base
     const damage =
       markedDamage * (pierceAmplification ? 1 + k * 0.12 : 1)
-    damageEnemy(world, i, damage)
+    if (
+      damageWithExecution(world, i, damage * (doubleStrike ? 2 : 1))
+    ) {
+      primaryKill = true
+    }
+  }
+
+  if (hasTrait(world, 'interference-burst') && count > 0) {
+    const source = hitBuf[count - 1]!
+    const x = pool.x[source]!
+    const y = pool.y[source]!
+    const supernova = hasTrait(world, 'supernova-chain')
+    const radius = supernova ? 3.2 : 2.2
+    const radiusSquared = radius * radius
+    const burstDamage = base * (supernova ? 0.8 : 0.45)
+    for (let i = 0; i < pool.count; i += 1) {
+      if (pool.hp[i]! <= 0 || primaryTargets.has(i)) continue
+      const ox = pool.x[i]! - x
+      const oy = pool.y[i]! - y
+      if (ox * ox + oy * oy <= radiusSquared) {
+        damageWithExecution(world, i, burstDamage)
+      }
+    }
+    if (world.rings.length < 32) {
+      world.rings.push({ x, y, radius, kind: supernova ? 3 : 0 })
+    }
+  }
+
+  if (hasTrait(world, 'auxiliary-beam')) {
+    const offset = hasTrait(world, 'auxiliary-focus') ? 0.12 : 0.26
+    resolveAuxiliaryRay(world, tracers, angle + offset, primaryTargets)
+    if (hasTrait(world, 'supernova-chain')) {
+      resolveAuxiliaryRay(world, tracers, angle - offset, primaryTargets)
+    }
+  }
+
+  let backKill = false
+  if (hasTrait(world, 'backstrike')) {
+    backKill = resolveBackstrike(world, tracers, angle)
+  }
+  if (
+    primaryKill &&
+    backKill &&
+    hasTrait(world, 'dual-kill-gauge')
+  ) {
+    p.gauge = Math.min(100, p.gauge + 8)
   }
 
   if (hasTrait(world, 'horizon-focus') && count > 0) {
@@ -378,7 +584,9 @@ export function stepAutoAttack(
   const dy = targetY - p.pos.y
   const angle = dx * dx + dy * dy > 1e-8 ? Math.atan2(dy, dx) : p.facing
 
-  p.attackCooldown = effectiveAtkInterval(s)
+  p.attackCooldown =
+    effectiveAtkInterval(s) *
+    (world.time < p.pickupHasteUntil ? 0.65 : 1)
   resolveAutoAttack(
     world,
     pool,

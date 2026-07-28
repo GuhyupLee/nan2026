@@ -226,7 +226,7 @@ export interface DamageTraitMeta {
   trait: string
   playerClass: PlayerClass
   /** 이 성질이 실제 추가 피해를 만드는 슬롯. */
-  affectsSlots: readonly SkillId[]
+  affectsSlots: readonly (SkillId | 'attack')[]
   label: string
 }
 
@@ -235,6 +235,30 @@ export interface DamageTraitMeta {
  * 수치 계산은 아래 getSkillDamageBreakdown 한 곳에서 맡는다.
  */
 export const DAMAGE_TRAIT_META: readonly DamageTraitMeta[] = [
+  {
+    trait: 'interference-burst',
+    playerClass: 'ranged',
+    affectsSlots: ['attack'],
+    label: '종단 간섭 폭발',
+  },
+  {
+    trait: 'auxiliary-beam',
+    playerClass: 'ranged',
+    affectsSlots: ['attack'],
+    label: '보조 광선',
+  },
+  {
+    trait: 'supernova-chain',
+    playerClass: 'ranged',
+    affectsSlots: ['attack'],
+    label: '연쇄 초신성',
+  },
+  {
+    trait: 'utility-overdrive',
+    playerClass: 'ranged',
+    affectsSlots: ['attack', 'q', 'w', 'e', 'r', 'f'],
+    label: '잔광 과출력',
+  },
   { trait: 'orbital-prism', playerClass: 'ranged', affectsSlots: ['q'], label: '귀환 낙광' },
   {
     trait: 'singularity-interference',
@@ -255,6 +279,30 @@ export const DAMAGE_TRAIT_META: readonly DamageTraitMeta[] = [
     playerClass: 'melee',
     affectsSlots: ['q'],
     label: '귀환 참격',
+  },
+  {
+    trait: 'decapitation',
+    playerClass: 'melee',
+    affectsSlots: ['attack'],
+    label: '참수',
+  },
+  {
+    trait: 'backstrike',
+    playerClass: 'melee',
+    affectsSlots: ['attack'],
+    label: '월영 후면 참격',
+  },
+  {
+    trait: 'gem-double-strike',
+    playerClass: 'melee',
+    affectsSlots: ['attack'],
+    label: '보석 포식 연격',
+  },
+  {
+    trait: 'execution-spread',
+    playerClass: 'melee',
+    affectsSlots: ['attack'],
+    label: '연쇄 처형',
   },
   {
     trait: 'returning-sheath',

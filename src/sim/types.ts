@@ -143,6 +143,16 @@ export interface Player {
    * 구간에 예산이 차서 "몰아친 뒤 숨 고르기"라는 리듬이 생긴다.
    */
   killHealBudget: number
+  /** XP 보석을 주운 직후 공격 가속이 유지되는 시각. */
+  pickupHasteUntil: number
+  /** D/F 사용 뒤 공격력 증폭이 유지되는 시각. */
+  utilityPowerUntil: number
+  /** 다음 피격을 완전히 막는 과회복 보호막 횟수. */
+  guardCharges: number
+  /** 피의 포식이 다음 추가 평타를 준비하기까지 모은 보석 수. */
+  xpGemCounter: number
+  /** 준비된 추가 평타 횟수. */
+  doubleAttackReady: number
   /**
    * 근접 패시브 「참흔」 게이지 0~100.
    * 원거리 클래스에서는 쓰이지 않는다.

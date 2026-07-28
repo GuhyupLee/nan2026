@@ -98,9 +98,10 @@ function candidatePool(world: World): UpgradeCandidate[] {
         upgrade,
         new Set([upgrade.id, upgradeRankToken(upgrade.id, 2)]),
       ),
-    ]
+    ].slice(0, upgrade.ranks.length)
     assert(
-      new Set(presentations.map((entry) => entry.name)).size === 3,
+      new Set(presentations.map((entry) => entry.name)).size ===
+        upgrade.ranks.length,
       `${upgrade.id}의 I·II·III 카드 제목이 구분되지 않음`,
     )
   }
@@ -134,6 +135,57 @@ function candidatePool(world: World): UpgradeCandidate[] {
     world.skills.q.branch === 'singularity-interference' &&
       world.skills.w.branch === 'singularity-interference',
     '합성 branch가 두 스킬에 연결되지 않음',
+  )
+}
+
+// 확장 카드 풀과 월광 전승 잠금은 런 시작 스냅샷만 읽는다.
+{
+  const rangedBase = UPGRADES.filter(
+    (upgrade) =>
+      upgrade.classFilter.includes('ranged') &&
+      upgrade.family === 'optical-device',
+  )
+  const meleeBase = UPGRADES.filter(
+    (upgrade) =>
+      upgrade.classFilter.includes('melee') &&
+      upgrade.family === 'sword-art',
+  )
+  assert(rangedBase.length === 12, '원거리 기본 카드 풀이 12종이 아님')
+  assert(meleeBase.length === 12, '근거리 기본 카드 풀이 12종이 아님')
+
+  const locked = createWorld(260, 'melee')
+  assert(
+    !getUpgrade('decapitating-flash')!.isAvailable(locked),
+    '잠긴 참두 일섬이 기본 런에 노출됨',
+  )
+  assert(
+    !getUpgrade('revival-seal')!.isAvailable(locked),
+    '잠긴 귀환의 인장이 기본 런에 노출됨',
+  )
+
+  const unlocked = createWorld(260, 'melee', {
+    meta: {
+      version: 1,
+      maxHpBonus: 0,
+      speedMultiplier: 1,
+      unlockedUpgradeIds: [
+        'decapitating-flash',
+        'eclipse-execution-array',
+        'revival-seal',
+      ],
+    },
+  })
+  assert(
+    getUpgrade('decapitating-flash')!.isAvailable(unlocked),
+    '런 스냅샷으로 참두 일섬이 열리지 않음',
+  )
+  const revival = getUpgrade('revival-seal')!
+  assert(revival.isAvailable(unlocked), '귀환의 인장이 열리지 않음')
+  assert(applyUpgrade(unlocked, revival.id)?.rank === 1, '전승 카드 적용 실패')
+  assert(!revival.isAvailable(unlocked), '1랭크 전승 카드가 다시 노출됨')
+  assert(
+    getUpgradePresentation(revival, new Set()).rarity === 'legacy',
+    '전승 카드 희귀도 표시가 없음',
   )
 }
 

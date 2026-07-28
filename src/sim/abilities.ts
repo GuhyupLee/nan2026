@@ -31,6 +31,12 @@ export interface RingEvent {
 
 function tryFlash(world: World): boolean {
   if (!consumeCooldown(world.skills, 'f')) return false
+  if (world.upgradesTaken.has(upgradeTraitToken('utility-overdrive'))) {
+    world.player.utilityPowerUntil = Math.max(
+      world.player.utilityPowerUntil,
+      world.time + 3,
+    )
+  }
 
   const p = world.player
   let dx = world.lastAim.x - p.pos.x
@@ -96,7 +102,10 @@ function tryFlash(world: World): boolean {
       x: fromX,
       y: fromY,
       radius: 3.2,
-      damage: effectiveAtkDamage(world.stats) * 0.65,
+      damage:
+        effectiveAtkDamage(world.stats) *
+        (world.time < world.player.utilityPowerUntil ? 1.25 : 1) *
+        0.65,
       impulse: 8,
       markDuration: MARK_DURATION,
       slowMul: 1,
@@ -110,6 +119,9 @@ function tryFlash(world: World): boolean {
 function tryHeal(world: World): boolean {
   const p = world.player
   if (!consumeCooldown(world.skills, 'd')) return false
+  if (world.upgradesTaken.has(upgradeTraitToken('utility-overdrive'))) {
+    p.utilityPowerUntil = Math.max(p.utilityPowerUntil, world.time + 3)
+  }
 
   const overflow = Math.max(
     0,
@@ -125,6 +137,12 @@ function tryHeal(world: World): boolean {
   ) {
     // 초과 회복량이 크더라도 긴 무적으로 바뀌지 않게 보호 시간을 고정한다.
     p.invulnUntil = Math.max(p.invulnUntil, world.time + 0.65)
+  }
+  if (
+    overflow > 0 &&
+    world.upgradesTaken.has(upgradeTraitToken('overheal-guard'))
+  ) {
+    p.guardCharges = Math.min(1, p.guardCharges + 1)
   }
 
   pushRing(world, p.pos.x, p.pos.y, 3.2, 1)

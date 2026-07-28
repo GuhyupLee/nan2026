@@ -5,6 +5,7 @@ import {
 } from './boss.ts'
 import { ENEMY_TYPES, removeEnemy, TYPE_BOSS, TYPE_ELITE } from './enemies.ts'
 import { dropRelic } from './rewards.ts'
+import { upgradeTraitToken } from './progression.ts'
 import type { World } from './types.ts'
 import { dropXpGem } from './xp-gems.ts'
 
@@ -174,6 +175,30 @@ export function damageEnemy(
     if (amount > 0) {
       world.player.killHealBudget -= amount
       world.player.hp += amount
+    }
+  }
+
+  if (
+    world.upgradesTaken.has(upgradeTraitToken('moon-drain')) &&
+    !isBoss
+  ) {
+    const healPerKill = 2
+    const missingHp = Math.max(0, world.stats.maxHp - world.player.hp)
+    const amount = Math.min(
+      healPerKill,
+      world.player.killHealBudget,
+      missingHp,
+    )
+    if (amount > 0) {
+      world.player.killHealBudget -= amount
+      world.player.hp += amount
+    } else if (
+      missingHp <= 0 &&
+      world.player.killHealBudget >= healPerKill &&
+      world.upgradesTaken.has(upgradeTraitToken('overheal-guard'))
+    ) {
+      world.player.killHealBudget -= healPerKill
+      world.player.guardCharges = Math.min(1, world.player.guardCharges + 1)
     }
   }
 

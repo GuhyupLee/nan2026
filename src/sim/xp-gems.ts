@@ -29,6 +29,8 @@ export interface XpGemPool {
   prevX: Float32Array
   prevY: Float32Array
   value: Float32Array
+  /** 가장 최근 step에서 합쳐 먹은 실제 보석 개수. */
+  collectedCount: number
   attracted: Uint8Array
   /** Seconds since drop; used only for the forgiving stale-gem latch. */
   age: Float32Array
@@ -43,6 +45,7 @@ export function createXpGemPool(capacity = MAX_XP_GEMS): XpGemPool {
     prevX: new Float32Array(size),
     prevY: new Float32Array(size),
     value: new Float32Array(size),
+    collectedCount: 0,
     attracted: new Uint8Array(size),
     age: new Float32Array(size),
   }
@@ -53,6 +56,7 @@ export function createXpGemPool(capacity = MAX_XP_GEMS): XpGemPool {
  */
 export function resetXpGemPool(pool: XpGemPool): void {
   pool.count = 0
+  pool.collectedCount = 0
   pool.x.fill(0)
   pool.y.fill(0)
   pool.prevX.fill(0)
@@ -124,8 +128,12 @@ export function stepXpGems(
   playerY: number,
   dt: number,
   forceAttract = false,
+  pickupRadiusMultiplier = 1,
 ): number {
-  const pickupRadiusSquared = XP_GEM_PICKUP_RADIUS * XP_GEM_PICKUP_RADIUS
+  pool.collectedCount = 0
+  const pickupRadius =
+    XP_GEM_PICKUP_RADIUS * Math.max(0.1, pickupRadiusMultiplier)
+  const pickupRadiusSquared = pickupRadius * pickupRadius
   const magnetRadiusSquared = XP_GEM_MAGNET_RADIUS * XP_GEM_MAGNET_RADIUS
   const elapsed = Number.isFinite(dt) && dt > 0 ? dt : 0
   const travel = XP_GEM_ATTRACT_SPEED * elapsed
@@ -143,6 +151,7 @@ export function stepXpGems(
     const distanceSquared = dx * dx + dy * dy
     if (distanceSquared <= pickupRadiusSquared) {
       collected += pool.value[i]!
+      pool.collectedCount += 1
       removeXpGem(pool, i)
       continue
     }
@@ -158,8 +167,9 @@ export function stepXpGems(
     if (pool.attracted[i] === 0 || travel <= 0) continue
 
     const distance = Math.sqrt(distanceSquared)
-    if (distance <= travel + XP_GEM_PICKUP_RADIUS) {
+    if (distance <= travel + pickupRadius) {
       collected += pool.value[i]!
+      pool.collectedCount += 1
       removeXpGem(pool, i)
       continue
     }

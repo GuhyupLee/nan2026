@@ -1,8 +1,6 @@
 import {
   ARENA_RADIUS,
   DT,
-  KILL_HEAL_CAP,
-  KILL_HEAL_RATE,
   PLAYER_ACCEL,
   RUN_TIME_LIMIT,
 } from './constants.ts'
@@ -118,7 +116,12 @@ export function createWorld(
     invulnUntil: -1,
     // 예산은 가득 찬 채로 시작한다. 첫 교전에서 회복이 없으면 초반 난이도가
     // 실제 설계보다 급해 보인다.
-    killHealBudget: KILL_HEAL_CAP,
+    killHealBudget: stats.killHealCap,
+    pickupHasteUntil: -1,
+    utilityPowerUntil: -1,
+    guardCharges: 0,
+    xpGemCounter: 0,
+    doubleAttackReady: 0,
     gauge: 0,
     empowered: false,
   }
@@ -224,6 +227,7 @@ export function stepWorld(world: World, input: Input): void {
     p.pos.x,
     p.pos.y,
     world.time,
+    world.stats.pickupRadiusMul,
   )
   applyBattlefieldPickupEffects(world, collectedPickups)
 
@@ -233,8 +237,29 @@ export function stepWorld(world: World, input: Input): void {
     p.pos.y,
     DT,
     world.time < world.battlefieldPickups.magnetUntil,
+    world.stats.pickupRadiusMul,
   )
-  if (collectedXp > 0) grantXp(world, collectedXp)
+  if (collectedXp > 0) {
+    grantXp(world, collectedXp)
+    const gemCount = world.xpGems.collectedCount
+    if (
+      gemCount > 0 &&
+      world.upgradesTaken.has(upgradeTraitToken('gem-overclock'))
+    ) {
+      p.pickupHasteUntil = Math.max(p.pickupHasteUntil, world.time + 0.5)
+    }
+    if (
+      gemCount > 0 &&
+      world.upgradesTaken.has(upgradeTraitToken('gem-double-strike'))
+    ) {
+      p.xpGemCounter += gemCount
+      const earned = Math.floor(p.xpGemCounter / 10)
+      if (earned > 0) {
+        p.doubleAttackReady = Math.min(3, p.doubleAttackReady + earned)
+        p.xpGemCounter %= 10
+      }
+    }
+  }
   // 정예 인장은 플레이어 이동 뒤를 추적한다. 회수로 선택 화면이 열려도
   // 현재 고정 틱은 끝까지 마치고 다음 프레임부터 멈춰 결정론을 유지한다.
   stepRelicDrops(world)
@@ -319,6 +344,30 @@ export function stepWorld(world: World, input: Input): void {
       }
     }
 
+    if (incoming > 0 && p.guardCharges > 0) {
+      p.guardCharges -= 1
+      incoming = 0
+      if (world.rings.length < 32) {
+        world.rings.push({ x: p.pos.x, y: p.pos.y, radius: 2.8, kind: 3 })
+      }
+    }
+
+    const revivalSpent = 'state:revival:spent'
+    if (
+      incoming >= p.hp &&
+      world.upgradesTaken.has(upgradeTraitToken('revival')) &&
+      !world.upgradesTaken.has(revivalSpent)
+    ) {
+      world.upgradesTaken.add(revivalSpent)
+      p.hp = Math.max(1, world.stats.maxHp * 0.5)
+      p.invulnUntil = world.time + 2
+      incoming = 0
+      detonateBattlefieldBomb(world, BATTLEFIELD_BOMB_MAX_KILLS)
+      if (world.rings.length < 32) {
+        world.rings.push({ x: p.pos.x, y: p.pos.y, radius: 9, kind: 3 })
+      }
+    }
+
     p.hp = Math.max(0, p.hp - incoming)
     // 같은 틱에 보스를 먼저 쓰러뜨렸다면 승리를 사망으로 덮지 않는다.
     // 반대 순서에서도 damageEnemy가 victory를 설정하므로 동시 판정은 승리 우선이다.
@@ -359,10 +408,19 @@ function applyBattlefieldPickupEffects(world: World, collected: number): void {
   const pickups = world.battlefieldPickups
   const healCount = collectedBattlefieldPickupCount(collected, PICKUP_HEAL)
   if (healCount > 0) {
+    const healAmount =
+      BATTLEFIELD_HEAL_AMOUNT * world.stats.battlefieldHealMul * healCount
+    const missingHp = Math.max(0, world.stats.maxHp - world.player.hp)
     world.player.hp = Math.min(
       world.stats.maxHp,
-      world.player.hp + BATTLEFIELD_HEAL_AMOUNT * healCount,
+      world.player.hp + healAmount,
     )
+    if (
+      healAmount > missingHp &&
+      world.upgradesTaken.has(upgradeTraitToken('overheal-guard'))
+    ) {
+      world.player.guardCharges = Math.min(1, world.player.guardCharges + 1)
+    }
     pickups.healActivations += healCount
   }
 
@@ -465,7 +523,10 @@ function stepPlayer(world: World, input: Input): void {
   const meleeDash = action?.meleeDash
 
   // 처치 회복 예산을 채운다. 상한이 있어야 회복이 피해를 압도하지 않는다.
-  p.killHealBudget = Math.min(KILL_HEAL_CAP, p.killHealBudget + KILL_HEAL_RATE * DT)
+  p.killHealBudget = Math.min(
+    world.stats.killHealCap,
+    p.killHealBudget + world.stats.killHealRate * DT,
+  )
 
   // 렌더 보간용으로 직전 상태를 먼저 보관한다.
   p.prevPos.x = p.pos.x

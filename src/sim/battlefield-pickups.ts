@@ -160,8 +160,11 @@ export function stepBattlefieldPickups(
   playerX: number,
   playerY: number,
   time: number,
+  pickupRadiusMultiplier = 1,
 ): number {
-  const pickupRadiusSquared = BATTLEFIELD_PICKUP_RADIUS * BATTLEFIELD_PICKUP_RADIUS
+  const pickupRadius =
+    BATTLEFIELD_PICKUP_RADIUS * Math.max(0.1, pickupRadiusMultiplier)
+  const pickupRadiusSquared = pickupRadius * pickupRadius
   let collected = 0
 
   for (let i = pool.count - 1; i >= 0; i -= 1) {

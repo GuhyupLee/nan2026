@@ -5086,6 +5086,11 @@ body.pickup-buff-active #hint:not(.hidden) {
   --family-secondary: #e7c676;
 }
 
+.lvcard[data-family='legacy'] {
+  --family-accent: #d7f5ae;
+  --family-secondary: #f5e7a7;
+}
+
 .lvcard[data-rarity='awakening'] {
   border-color: color-mix(in srgb, var(--accent) 72%, #8e744b);
   background:
@@ -5139,6 +5144,16 @@ body.pickup-buff-active #hint:not(.hidden) {
 .lvcard[data-kind='relic-upgrade']::after {
   height: 3px;
   background: linear-gradient(90deg, transparent, #e4bd70, var(--accent), transparent);
+}
+
+.lvcard[data-rarity='legacy'] {
+  --accent: #d7f5ae;
+  border-color: rgba(215, 245, 174, 0.58);
+  background:
+    radial-gradient(circle at 84% 14%, rgba(215, 245, 174, 0.16), transparent 34%),
+    linear-gradient(145deg, rgba(129, 164, 94, 0.13), transparent 52%),
+    #121813;
+  box-shadow: 0 0.65rem 1.8rem rgba(64, 92, 45, 0.3);
 }
 
 /* 가족색은 1px 하단 테두리가 아니라 프레임·아이콘·배지 전체에서 반복한다.

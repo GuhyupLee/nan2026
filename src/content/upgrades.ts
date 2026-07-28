@@ -16,8 +16,8 @@ import type { PlayerClass, World } from '../sim/types.ts'
  */
 
 export type UpgradeRank = 1 | 2 | 3
-export type UpgradeFamily = 'optical-device' | 'sword-art' | 'fusion'
-export type UpgradeRarity = 'standard' | 'awakening' | 'fusion'
+export type UpgradeFamily = 'optical-device' | 'sword-art' | 'fusion' | 'legacy'
+export type UpgradeRarity = 'standard' | 'awakening' | 'fusion' | 'legacy'
 
 export interface UpgradeRankDef {
   rank: UpgradeRank
@@ -52,6 +52,8 @@ export interface UpgradeDef {
   slot?: SkillId
   ranks: readonly UpgradeRankDef[]
   fusion?: UpgradeFusion
+  /** 월광 전승에서 해금되어야 드래프트에 등장하는 콘텐츠 id. */
+  unlockId?: string
   /** 클래스·선행 각성·스킬 해금·최대 랭크를 한 번에 검사한다. */
   isAvailable: (world: World) => boolean
   /**
@@ -71,6 +73,9 @@ interface UpgradeBlueprint {
   slot?: SkillId
   ranks: readonly UpgradeRankDef[]
   fusion?: UpgradeFusion
+  unlockId?: string
+  /** 융합이 아닌 1랭크 전승 카드에만 사용한다. */
+  singleRank?: boolean
   isAvailable?: (world: World) => boolean
   effects: readonly ((world: World) => void)[]
 }
@@ -117,7 +122,11 @@ function defineUpgrade(blueprint: UpgradeBlueprint): UpgradeDef {
   if (!first || blueprint.ranks.length !== blueprint.effects.length) {
     throw new Error(`강화 ${blueprint.id}의 랭크 설명과 효과 수가 다릅니다.`)
   }
-  if (!blueprint.fusion && blueprint.ranks.length !== 3) {
+  if (
+    !blueprint.fusion &&
+    !blueprint.singleRank &&
+    blueprint.ranks.length !== 3
+  ) {
     throw new Error(`일반 강화 ${blueprint.id}는 I·II·III 세 랭크가 필요합니다.`)
   }
   if (blueprint.ranks.some((rank, index) => rank.rank !== index + 1)) {
@@ -126,6 +135,12 @@ function defineUpgrade(blueprint: UpgradeBlueprint): UpgradeDef {
 
   const available = (world: World): boolean => {
     if (!blueprint.classFilter.includes(world.playerClass)) return false
+    if (
+      blueprint.unlockId &&
+      !world.runConfig.meta.unlockedUpgradeIds.includes(blueprint.unlockId)
+    ) {
+      return false
+    }
     if (readRank(world.upgradesTaken, blueprint.id) >= blueprint.ranks.length) return false
     if (blueprint.slot && !world.skills[blueprint.slot].unlocked) return false
     if (
@@ -148,6 +163,7 @@ function defineUpgrade(blueprint: UpgradeBlueprint): UpgradeDef {
     ...(blueprint.slot ? { slot: blueprint.slot } : {}),
     ranks: blueprint.ranks,
     ...(blueprint.fusion ? { fusion: blueprint.fusion } : {}),
+    ...(blueprint.unlockId ? { unlockId: blueprint.unlockId } : {}),
     isAvailable: available,
     apply: (world, rank = 1) => {
       const effect = blueprint.effects[rank - 1]
@@ -609,7 +625,286 @@ const MELEE_UPGRADES: readonly UpgradeDef[] = [
   }),
 ] as const
 
+const RANGED_EXPANSION_UPGRADES: readonly UpgradeDef[] = [
+  defineUpgrade({
+    id: 'interference-filament',
+    name: '간섭 필라멘트',
+    glyph: '⌁',
+    weight: 8,
+    classFilter: RANGED,
+    family: 'optical-device',
+    ranks: [
+      { rank: 1, displayName: '이중 투과', oneLiner: '평타 관통 +1' },
+      { rank: 2, displayName: '다중 투과', oneLiner: '평타 관통 +1' },
+      {
+        rank: 3,
+        displayName: '종단 간섭',
+        oneLiner: '마지막 관통 지점에서 간섭 폭발을 일으킵니다.',
+        trait: 'interference-burst',
+        awakeningName: '종단 간섭',
+      },
+    ],
+    effects: [
+      (w) => {
+        w.stats.atkPierce += 1
+      },
+      (w) => {
+        w.stats.atkPierce += 1
+      },
+      () => {},
+    ],
+  }),
+  defineUpgrade({
+    id: 'dual-focus',
+    name: '이중 초점',
+    glyph: '◉',
+    weight: 8,
+    classFilter: RANGED,
+    family: 'optical-device',
+    ranks: [
+      {
+        rank: 1,
+        displayName: '보조 광선',
+        oneLiner: '평타 피해 40%의 보조 광선을 발사합니다.',
+        trait: 'auxiliary-beam',
+      },
+      {
+        rank: 2,
+        displayName: '초점 수렴',
+        oneLiner: '보조 광선의 발사각이 좁아집니다.',
+        trait: 'auxiliary-focus',
+      },
+      {
+        rank: 3,
+        displayName: '자율 초점',
+        oneLiner: '보조 광선이 가까운 별도 표적을 자동 추적합니다.',
+        trait: 'auxiliary-tracking',
+        awakeningName: '자율 초점',
+      },
+    ],
+    effects: [() => {}, () => {}, () => {}],
+  }),
+  defineUpgrade({
+    id: 'collector-array',
+    name: '수집 배열기',
+    glyph: '⌾',
+    weight: 7,
+    classFilter: RANGED,
+    family: 'optical-device',
+    ranks: [
+      { rank: 1, displayName: '인력 증폭', oneLiner: '획득 반경 +30%' },
+      { rank: 2, displayName: '광역 집속', oneLiner: '획득 반경 +30%' },
+      {
+        rank: 3,
+        displayName: '보석 과충전',
+        oneLiner: 'XP 보석을 주우면 0.5초간 평타 간격이 35% 감소합니다.',
+        trait: 'gem-overclock',
+        awakeningName: '보석 과충전',
+      },
+    ],
+    effects: [
+      (w) => {
+        w.stats.pickupRadiusMul *= 1.3
+      },
+      (w) => {
+        w.stats.pickupRadiusMul *= 1.3
+      },
+      () => {},
+    ],
+  }),
+  defineUpgrade({
+    id: 'afterglow-battery',
+    name: '월광 축전지',
+    glyph: '◇',
+    weight: 7,
+    classFilter: RANGED,
+    family: 'optical-device',
+    ranks: [
+      { rank: 1, displayName: '회복 충전', oneLiner: 'D 재사용 대기시간 -15%' },
+      { rank: 2, displayName: '점멸 충전', oneLiner: 'F 재사용 대기시간 -15%' },
+      {
+        rank: 3,
+        displayName: '잔광 과출력',
+        oneLiner: 'D·F 사용 후 3초간 공격 피해가 25% 증가합니다.',
+        trait: 'utility-overdrive',
+        awakeningName: '잔광 과출력',
+      },
+    ],
+    effects: [
+      (w) => scaleSkillCooldown(w, 'd', 0.85),
+      (w) => scaleSkillCooldown(w, 'f', 0.85),
+      () => {},
+    ],
+  }),
+] as const
+
+const MELEE_EXPANSION_UPGRADES: readonly UpgradeDef[] = [
+  defineUpgrade({
+    id: 'decapitating-flash',
+    name: '참두 일섬',
+    glyph: '斬',
+    weight: 8,
+    classFilter: MELEE,
+    family: 'sword-art',
+    unlockId: 'decapitating-flash',
+    ranks: [
+      { rank: 1, displayName: '급소 절개', oneLiner: '평타 피해 +12%' },
+      { rank: 2, displayName: '필살 예기', oneLiner: '평타 피해 +12%' },
+      {
+        rank: 3,
+        displayName: '참수',
+        oneLiner: '체력 18% 이하 일반 적을 평타로 즉시 처형합니다.',
+        trait: 'decapitation',
+        awakeningName: '참수',
+      },
+    ],
+    effects: [
+      (w) => {
+        w.stats.basicAttackDamageMul *= 1.12
+      },
+      (w) => {
+        w.stats.basicAttackDamageMul *= 1.12
+      },
+      () => {},
+    ],
+  }),
+  defineUpgrade({
+    id: 'moon-drain-breath',
+    name: '흡월 연공',
+    glyph: '月',
+    weight: 8,
+    classFilter: MELEE,
+    family: 'sword-art',
+    ranks: [
+      {
+        rank: 1,
+        displayName: '월기 흡수',
+        oneLiner: '처치 회복 상한 +6',
+        trait: 'moon-drain',
+      },
+      { rank: 2, displayName: '연공 순환', oneLiner: '처치 회복 속도 +2' },
+      {
+        rank: 3,
+        displayName: '과회복 호흡',
+        oneLiner: '과회복을 다음 피격 1회를 막는 보호막으로 바꿉니다.',
+        trait: 'overheal-guard',
+        awakeningName: '과회복 호흡',
+      },
+    ],
+    effects: [
+      (w) => {
+        w.stats.killHealCap += 6
+        w.player.killHealBudget += 6
+      },
+      (w) => {
+        w.stats.killHealRate += 2
+      },
+      () => {},
+    ],
+  }),
+  defineUpgrade({
+    id: 'moonshadow-double',
+    name: '월영 쌍격',
+    glyph: '双',
+    weight: 8,
+    classFilter: MELEE,
+    family: 'sword-art',
+    ranks: [
+      {
+        rank: 1,
+        displayName: '등 뒤의 칼',
+        oneLiner: '평타가 뒤쪽 적도 피해 50%로 벱니다.',
+        trait: 'backstrike',
+      },
+      {
+        rank: 2,
+        displayName: '월영 강화',
+        oneLiner: '뒤쪽 베기 피해가 75%로 증가합니다.',
+        trait: 'backstrike-focus',
+      },
+      {
+        rank: 3,
+        displayName: '쌍살',
+        oneLiner: '앞뒤 적을 동시에 처치하면 게이지를 8 얻습니다.',
+        trait: 'dual-kill-gauge',
+        awakeningName: '쌍살',
+      },
+    ],
+    effects: [() => {}, () => {}, () => {}],
+  }),
+  defineUpgrade({
+    id: 'blood-feast-step',
+    name: '혈연 보식',
+    glyph: '血',
+    weight: 7,
+    classFilter: MELEE,
+    family: 'sword-art',
+    ranks: [
+      { rank: 1, displayName: '포식 반경', oneLiner: '획득 반경 +30%' },
+      { rank: 2, displayName: '혈기 섭취', oneLiner: '회복 구슬 효과 +50%' },
+      {
+        rank: 3,
+        displayName: '보석 포식',
+        oneLiner: 'XP 보석 10개마다 다음 평타가 두 번 적중합니다.',
+        trait: 'gem-double-strike',
+        awakeningName: '보석 포식',
+      },
+    ],
+    effects: [
+      (w) => {
+        w.stats.pickupRadiusMul *= 1.3
+      },
+      (w) => {
+        w.stats.battlefieldHealMul *= 1.5
+      },
+      () => {},
+    ],
+  }),
+] as const
+
 const FUSION_UPGRADES: readonly UpgradeDef[] = [
+  defineUpgrade({
+    id: 'supernova-specimen',
+    name: '초신성 표본',
+    glyph: '✦',
+    weight: 24,
+    classFilter: RANGED,
+    family: 'fusion',
+    unlockId: 'supernova-specimen',
+    fusion: {
+      requires: ['interference-filament', 'dual-focus'],
+    },
+    ranks: [
+      {
+        rank: 1,
+        displayName: '연쇄 초신성',
+        oneLiner: '종단 폭발이 커지고 보조 광선이 양방향으로 연쇄됩니다.',
+        trait: 'supernova-chain',
+      },
+    ],
+    effects: [() => {}],
+  }),
+  defineUpgrade({
+    id: 'eclipse-execution-array',
+    name: '월식 처형진',
+    glyph: '☾',
+    weight: 24,
+    classFilter: MELEE,
+    family: 'fusion',
+    unlockId: 'eclipse-execution-array',
+    fusion: {
+      requires: ['decapitating-flash', 'moonshadow-double'],
+    },
+    ranks: [
+      {
+        rank: 1,
+        displayName: '연쇄 처형',
+        oneLiner: '처형이 주변의 빈사 상태 일반 적에게 퍼집니다.',
+        trait: 'execution-spread',
+      },
+    ],
+    effects: [() => {}],
+  }),
   defineUpgrade({
     id: 'singularity-interferometer',
     name: '사건지평 간섭계',
@@ -672,10 +967,35 @@ const FUSION_UPGRADES: readonly UpgradeDef[] = [
   }),
 ] as const
 
+const LEGACY_UPGRADES: readonly UpgradeDef[] = [
+  defineUpgrade({
+    id: 'revival-seal',
+    name: '귀환의 인장',
+    glyph: '印',
+    weight: 3,
+    classFilter: [...RANGED, ...MELEE],
+    family: 'legacy',
+    unlockId: 'revival-seal',
+    singleRank: true,
+    ranks: [
+      {
+        rank: 1,
+        displayName: '월광 귀환',
+        oneLiner: '치명상을 한 번 버티고 체력 50%·2초 무적·정화 폭발을 얻습니다.',
+        trait: 'revival',
+      },
+    ],
+    effects: [() => {}],
+  }),
+] as const
+
 export const UPGRADES: readonly UpgradeDef[] = [
   ...RANGED_UPGRADES,
+  ...RANGED_EXPANSION_UPGRADES,
   ...MELEE_UPGRADES,
+  ...MELEE_EXPANSION_UPGRADES,
   ...FUSION_UPGRADES,
+  ...LEGACY_UPGRADES,
 ]
 
 const BY_ID = new Map(UPGRADES.map((upgrade) => [upgrade.id, upgrade]))
@@ -764,15 +1084,24 @@ export function getUpgradePresentation(
   const nextRank = Math.min(currentRank + 1, maxRank)
   const rankDef = upgrade.ranks[nextRank - 1]!
   const fusion = upgrade.fusion !== undefined
-  const awakening = !fusion && nextRank === 3
-  const rarity: UpgradeRarity = fusion ? 'fusion' : awakening ? 'awakening' : 'standard'
+  const legacy = upgrade.family === 'legacy'
+  const awakening = !fusion && !legacy && nextRank === 3
+  const rarity: UpgradeRarity = fusion
+    ? 'fusion'
+    : legacy
+      ? 'legacy'
+      : awakening
+        ? 'awakening'
+        : 'standard'
   const familyLabel =
     upgrade.family === 'optical-device'
       ? '광학 장치'
       : upgrade.family === 'sword-art'
         ? '검술 유파'
-        : '각성 합성'
-  const rankLabel = fusion ? '합성' : `RANK ${romanRank(nextRank)}`
+        : upgrade.family === 'fusion'
+          ? '각성 합성'
+          : '월광 전승'
+  const rankLabel = fusion ? '합성' : legacy ? '전승' : `RANK ${romanRank(nextRank)}`
   const name = fusion ? upgrade.name : `${upgrade.name} · ${rankDef.displayName}`
   const badges = [
     familyLabel,
@@ -871,6 +1200,8 @@ export function applyUpgradeBurst(
  * delivering the run's headline evolution instead of stopping one draft short.
  */
 export function getRelicUpgradeBurstCount(world: World, id: string): number {
+  const upgrade = getUpgrade(id)
+  if (upgrade?.ranks.length === 1) return 1
   const completesRecipe = FUSION_UPGRADES.some((fusion) => {
     const requirements = fusion.fusion?.requires
     if (!requirements?.includes(id)) return false
