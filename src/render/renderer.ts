@@ -13,6 +13,7 @@ import { SURGE_BEATS } from '../sim/surges.ts'
 import type { PlayerClass, World } from '../sim/types.ts'
 import type { Vec2 } from '../sim/vec.ts'
 import { length, lerp, lerpAngle } from '../sim/vec.ts'
+import { AdaptiveQualityPolicy } from './adaptive-quality.ts'
 import { createArena } from './arena.ts'
 import { BattlefieldPickupRenderer } from './battlefield-pickups.ts'
 import { CombatReadabilityFx } from './combat-readability.ts'
@@ -94,6 +95,12 @@ export class Renderer {
   private actionFacingUntil = -Infinity
   /** 렌더 프레임 간격(초). 이벤트 수명 애니메이션에 쓴다. */
   private lastFrameTime = 0
+  /** 실제 rAF 간격만 보고 세션 중 한 번 high -> low 전환하는 렌더 전용 정책. */
+  private readonly adaptiveQuality = new AdaptiveQualityPolicy()
+  private readonly handleVisibilityChange = (): void => {
+    this.lastFrameTime = 0
+    this.adaptiveQuality.resetObservation()
+  }
   /** pause에서 accumulator가 0으로 비워져도 시각화 시계가 뒤로 가지 않게 한다. */
   private lastVisualSimTime = 0
 
@@ -256,6 +263,7 @@ export class Renderer {
     this.resize()
     window.addEventListener('resize', this.resize)
     this.coarsePointer.addEventListener('change', this.resize)
+    document.addEventListener('visibilitychange', this.handleVisibilityChange)
     // resize 이벤트만 믿으면 안 된다. 탭이 백그라운드에서 로드되거나
     // 레이아웃이 늦게 잡히면 캔버스가 0×0으로 굳고, aspect가 NaN이 되어
     // 화면이 영구히 검게 남는다. 컨테이너를 직접 관찰해 확실히 잡는다.
@@ -370,12 +378,19 @@ export class Renderer {
    */
   render(world: World, alpha: number): void {
     const now = performance.now() / 1000
+    const hasPreviousFrame = this.lastFrameTime !== 0
+    const frameInterval = hasPreviousFrame ? now - this.lastFrameTime : 1 / 60
     // 첫 프레임과 탭 복귀 시 dt가 튀지 않게 막는다.
-    const dt =
-      this.lastFrameTime === 0
-        ? 1 / 60
-        : THREE.MathUtils.clamp(now - this.lastFrameTime, 0, 0.1)
+    const dt = THREE.MathUtils.clamp(frameInterval, 0, 0.1)
     this.lastFrameTime = now
+    if (
+      hasPreviousFrame &&
+      !this.constrained &&
+      this.adaptiveQuality.observe(frameInterval)
+    ) {
+      // 같은 resize 경로가 DPR, 그림자, 후처리 버퍼를 원자적으로 맞춘다.
+      this.resize()
+    }
     // prevPos → pos는 [world.time - DT, world.time] 구간을 나타낸다.
     // 애니메이션도 같은 구간을 샘플링해야 타격 자세와 월드 착지가 한 틱
     // 어긋나지 않는다.
@@ -684,7 +699,10 @@ export class Renderer {
    */
   private updateRenderQuality(width: number, height: number): boolean {
     const nextConstrained =
-      this.coarsePointer.matches || width <= 900 || Math.min(width, height) <= 700
+      this.adaptiveQuality.downgraded ||
+      this.coarsePointer.matches ||
+      width <= 900 ||
+      Math.min(width, height) <= 700
     const nextPixelRatio = Math.min(window.devicePixelRatio || 1, nextConstrained ? 1.35 : 2)
     const nextShadowMapSize = nextConstrained ? 1024 : 2048
     this.impact.setShakeScale(nextConstrained ? 0.6 : 1)
@@ -830,6 +848,7 @@ export class Renderer {
   dispose(): void {
     window.removeEventListener('resize', this.resize)
     this.coarsePointer.removeEventListener('change', this.resize)
+    document.removeEventListener('visibilitychange', this.handleVisibilityChange)
     this.resizeObserver.disconnect()
 
     this.targetingGroup.visible = false
