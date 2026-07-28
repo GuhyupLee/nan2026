@@ -187,6 +187,29 @@ export function showCharacterSelect(
       `<p>5분 안에 보스를 쓰러뜨리면 승리.</p>`
     title.appendChild(titleCopy)
 
+    let done = false
+    let previewTimer: number | null = null
+    let previewTarget: PlayerClass | null = null
+    let suppressInitialFocusPreview = true
+
+    const cancelPreview = (id?: PlayerClass): void => {
+      if (id && previewTarget !== id) return
+      if (previewTimer !== null) window.clearTimeout(previewTimer)
+      previewTimer = null
+      previewTarget = null
+    }
+
+    const schedulePreview = (id: PlayerClass): void => {
+      if (done || settingsOpen || suppressInitialFocusPreview || !onPreview) return
+      cancelPreview()
+      previewTarget = id
+      previewTimer = window.setTimeout(() => {
+        previewTimer = null
+        previewTarget = null
+        if (!done && !settingsOpen) onPreview(id)
+      }, 140)
+    }
+
     let settingsOpen = false
     if (onSettings) {
       const settings = document.createElement('button')
@@ -197,6 +220,7 @@ export function showCharacterSelect(
       const openSettings = async (): Promise<void> => {
         if (done || settingsOpen) return
         settingsOpen = true
+        cancelPreview()
         window.removeEventListener('keydown', onKey)
         try {
           await onSettings()
@@ -225,10 +249,10 @@ export function showCharacterSelect(
       : '마우스를 누른 채 이동 · Q W E R 스킬 · D 회복 · F 점멸'
     root.appendChild(foot)
 
-    let done = false
     const choose = (id: PlayerClass): void => {
       if (done || settingsOpen) return
       done = true
+      cancelPreview()
       window.removeEventListener('keydown', onKey)
       root.classList.add('closing')
       // 페이드가 끝난 뒤 제거한다. 바로 지우면 전환이 툭 끊긴다.
@@ -291,9 +315,10 @@ export function showCharacterSelect(
       selectLabel.innerHTML = '선택 <span aria-hidden="true">↗</span>'
       card.appendChild(selectLabel)
 
-      const preview = (): void => onPreview?.(opt.id)
-      card.addEventListener('pointerenter', preview)
-      card.addEventListener('focus', preview)
+      card.addEventListener('pointerenter', () => schedulePreview(opt.id))
+      card.addEventListener('pointerleave', () => cancelPreview(opt.id))
+      card.addEventListener('focus', () => schedulePreview(opt.id))
+      card.addEventListener('blur', () => cancelPreview(opt.id))
       card.addEventListener('click', () => choose(opt.id))
       cards.appendChild(card)
     }
@@ -307,5 +332,7 @@ export function showCharacterSelect(
 
     parent.appendChild(root)
     ;(cards.firstElementChild as HTMLButtonElement | null)?.focus()
+    // The accessibility focus is not download intent; later keyboard/pointer dwell is.
+    suppressInitialFocusPreview = false
   })
 }
