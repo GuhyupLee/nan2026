@@ -91,6 +91,7 @@ export interface UpgradePresentation {
   rankLabel: string
   rarity: UpgradeRarity
   family: UpgradeFamily
+  /** 카드에서 같은 클래스의 선택지를 구분하는 고유 강화 경로명. */
   familyLabel: string
   slot?: SkillId
   trait?: string
@@ -1102,14 +1103,10 @@ export function getUpgradePresentation(
       : awakening
         ? 'awakening'
         : 'standard'
-  const familyLabel =
-    upgrade.family === 'optical-device'
-      ? '광학 장치'
-      : upgrade.family === 'sword-art'
-        ? '검술 유파'
-        : upgrade.family === 'fusion'
-          ? '각성 합성'
-          : '월광 전승'
+  // family는 카드 색·문양을 통일하는 시각 그룹이다. 이를 그대로 문구로
+  // 노출하면 원거리 3택이 모두 "광학 장치"로 보여 선택지를 구분할 수 없다.
+  // 화면에는 각 장비의 고유 경로명을 쓰고, 시각 그룹은 data-family로 유지한다.
+  const familyLabel = upgrade.name
   const rankLabel = fusion ? '합성' : legacy ? '전승' : `RANK ${romanRank(nextRank)}`
   const name = fusion ? upgrade.name : `${upgrade.name} · ${rankDef.displayName}`
   const badges = [

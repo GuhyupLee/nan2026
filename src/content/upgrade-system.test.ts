@@ -104,6 +104,10 @@ function candidatePool(world: World): UpgradeCandidate[] {
         upgrade.ranks.length,
       `${upgrade.id}의 I·II·III 카드 제목이 구분되지 않음`,
     )
+    assert(
+      presentations.every((entry) => entry.familyLabel === upgrade.name),
+      `${upgrade.id}의 카드 경로명이 고유 장비명과 다름`,
+    )
   }
 
   const rangedQ = getUpgradeBranchPresentation('singularity-interference', 'q')
