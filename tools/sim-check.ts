@@ -96,7 +96,7 @@ import {
 } from '../src/sim/world.ts'
 import { pushBlast } from '../src/sim/zones.ts'
 import { BALANCE_REGRESSION_SAMPLES } from './balance/baseline.ts'
-import { BALANCE_SEEDS, runBalanceScenario } from './balance/model.ts'
+import { BALANCE_SEEDS, median, runBalanceScenario } from './balance/model.ts'
 
 
 let failures = 0
@@ -270,6 +270,7 @@ console.log('\nsim smoke check\n')
 
 // --- QWER 실제 처치율을 반영한 5분 레벨 페이스 ---
 {
+  const playerClasses = ['ranged', 'melee'] as const
   const samples = BALANCE_REGRESSION_SAMPLES.map((expected) => {
     const qwer = runBalanceScenario(expected.playerClass, expected.seed)
     const auto = runBalanceScenario(expected.playerClass, expected.seed, { useQwer: false })
@@ -281,7 +282,7 @@ console.log('\nsim smoke check\n')
       qwer,
     ]),
   )
-  const curveSamples = (['ranged', 'melee'] as const).flatMap((playerClass) =>
+  const curveSamples = playerClasses.flatMap((playerClass) =>
     BALANCE_SEEDS.map(
       (seed) =>
         qwerByKey.get(`${playerClass}:${seed}`) ??
@@ -294,11 +295,22 @@ console.log('\nsim smoke check\n')
       return `${qwer.playerClass}:${qwer.seed}=${time?.toFixed(1) ?? '--'}s/${qwer.kills}킬`
     })
     .join(', ')
+  const lv26Target = TARGET_LEVEL_TIMES[25]!
+  const lv26Medians = new Map(
+    playerClasses.map((playerClass) => [
+      playerClass,
+      median(
+        curveSamples
+          .filter((qwer) => qwer.playerClass === playerClass)
+          .map((qwer) => qwer.levelTimes[25] ?? Number.POSITIVE_INFINITY),
+      ),
+    ]),
+  )
+  const medianDetails = playerClasses
+    .map((playerClass) => `${playerClass}=${lv26Medians.get(playerClass)!.toFixed(1)}s`)
+    .join(', ')
 
   check(
-    // 보류 상태다. 적 밀도 100→165, 레벨 상한 20→26으로 설계 목표 자체가
-    // 바뀌었고, 예정된 스킬 밸류 재설계가 XP 수입을 또 바꾼다. 지금 스냅샷을
-    // 다시 뜨면 그대로 버려지므로 그때까지는 "만렙에 도달은 한다"만 지킨다.
     '만렙에 제한 시간 안에 도달한다',
     curveSamples.every((qwer) => {
       const time = qwer.levelTimes[MAX_LEVEL - 1]
@@ -307,9 +319,8 @@ console.log('\nsim smoke check\n')
     details,
   )
   check(
-    // 보류: 위와 같은 이유. 목표 시각 대신 곡선이 뒤집히지 않는지만 본다.
     '레벨 도달 시각이 단조 증가한다',
-    (['ranged', 'melee'] as const).every((playerClass) =>
+    playerClasses.every((playerClass) =>
       curveSamples
         .filter((qwer) => qwer.playerClass === playerClass)
         .every((qwer) => {
@@ -325,6 +336,19 @@ console.log('\nsim smoke check\n')
     details,
   )
   check(
+    '클래스별 Lv26 중앙값이 4:52 목표 ±8초다',
+    playerClasses.every(
+      (playerClass) =>
+        Math.abs(lv26Medians.get(playerClass)! - lv26Target) <= 8,
+    ),
+    `target=${lv26Target.toFixed(1)}s, ${medianDetails}`,
+  )
+  check(
+    '클래스별 Lv26 중앙값 격차가 10초 이하다',
+    Math.abs(lv26Medians.get('ranged')! - lv26Medians.get('melee')!) <= 10,
+    medianDetails,
+  )
+  check(
     'QWER 실제 처치율이 자동 공격 기준선보다 시드별 50% 이상 높다',
     samples.every(({ qwer, auto }) => qwer.kills >= auto.kills * 1.5),
     samples
@@ -335,9 +359,6 @@ console.log('\nsim smoke check\n')
       .join(', '),
   )
   check(
-    // 보류: 처치 수 스냅샷은 밸런스를 건드릴 때마다 깨진다. 재설계가 끝나
-    // 수치가 안정되면 다시 뜬다. 그 사이에도 회귀를 잡을 수 있도록, 스냅샷
-    // 대신 **결정론**을 검사한다 — 이쪽이 오히려 더 중요한 계약이다.
     '같은 시드를 두 번 돌리면 결과가 같다',
     samples.every(({ expected, qwer }) => {
       const again = runBalanceScenario(expected.playerClass, expected.seed, { useQwer: true })
