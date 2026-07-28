@@ -1,7 +1,7 @@
 import { ENEMY_TYPES, removeEnemy, TYPE_BOSS, TYPE_ELITE } from './enemies.ts'
 import { dropRelic } from './rewards.ts'
-import { grantXp } from './world.ts'
 import type { World } from './types.ts'
+import { dropXpGem } from './xp-gems.ts'
 
 /** 헤드리스 실행에서 소비자가 없어도 피드백 큐가 자라지 않는 절대 상한. */
 export const MAX_DAMAGE_FEEDBACK = 24
@@ -100,7 +100,7 @@ export function damageEnemy(world: World, i: number, amount: number): boolean {
   // 사망 처리는 여기서 한 번만 일어난다.
   const def = ENEMY_TYPES[pool.type[i]!]!
   world.kills += 1
-  grantXp(world, def.xp)
+  dropXpGem(world.xpGems, pool.x[i]!, pool.y[i]!, def.xp)
 
   // 점등된 적이 죽으면 빛이 돌아온다 — 원거리의 지속 회복.
   //

@@ -7,6 +7,7 @@ import type { SkillId } from './skills.ts'
 import type { SpatialHash } from './spatial.ts'
 import type { Stats } from './stats.ts'
 import type { Vec2 } from './vec.ts'
+import type { XpGemPool } from './xp-gems.ts'
 import type { PendingBlast, Zone } from './zones.ts'
 import type { RelicDrop } from './rewards.ts'
 
@@ -254,6 +255,8 @@ export interface World {
   lastAim: Vec2
 
   enemies: EnemyPool
+  /** Fixed-capacity XP drops. Only entries below count are active. */
+  xpGems: XpGemPool
   enemyHash: SpatialHash
   boss: BossState
   /** 다음에 등장할 정예 비트의 인덱스. 지정 비트는 각각 한 번만 소비한다. */

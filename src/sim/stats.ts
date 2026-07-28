@@ -79,7 +79,7 @@ export interface Stats {
  * 대신 체력과 피해 감소로 버티게 한다. 위치 게임이 정반대여야 클래스 선택에
  * 의미가 생긴다.
  *
- * 근딜 실효 체력 = 130 / 0.80 ≈ 163, 원딜은 110 / 0.84 ≈ 131이다.
+ * 근딜 실효 체력 = 130 / 0.80 ≈ 163, 원딜은 110 / 0.82 ≈ 134이다.
  * 근딜 단일 대상 DPS = 22 / 0.42 ≈ 52. 원딜 46보다 높지만 붙어야만 나온다.
  */
 export function createStats(cls: PlayerClass): Stats {
@@ -97,7 +97,7 @@ export function createStats(cls: PlayerClass): Stats {
     // 근접은 붙어 있는 것이 일이라 실제로 맞는 시간이 원거리보다 길다
     // (계측: 접촉 약 18%). 실효 체력 차이는 남기되 근접도 보스 패턴을
     // 무시하면 죽는 선으로 둔다.
-    damageTakenMul: melee ? 0.8 : 0.84,
+    damageTakenMul: melee ? 0.8 : 0.82,
 
     atkDamage: melee ? 22 : ATK_DAMAGE,
     atkInterval: melee ? 0.42 : ATK_INTERVAL,

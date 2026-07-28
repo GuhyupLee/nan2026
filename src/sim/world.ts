@@ -39,6 +39,7 @@ import { createSkillBook, tickSkills, unlockSkill } from './skills.ts'
 import { createStats } from './stats.ts'
 import type { Input, Player, PlayerClass, World } from './types.ts'
 import { length, lerpAngle, normalize, vec2 } from './vec.ts'
+import { createXpGemPool, stepXpGems } from './xp-gems.ts'
 
 export function createWorld(seed: number, playerClass: PlayerClass = 'ranged'): World {
   const stats = createStats(playerClass)
@@ -86,6 +87,7 @@ export function createWorld(seed: number, playerClass: PlayerClass = 'ranged'): 
     upgradesTaken: new Set(),
     lastAim: vec2(1, 0),
     enemies: createEnemyPool(),
+    xpGems: createXpGemPool(),
     enemyHash: createEnemyHash(),
     boss: {
       spawned: false,
@@ -137,11 +139,13 @@ export function stepWorld(world: World, input: Input): void {
   // 같은 틱의 이동이 그 새 위치에서 이어져야 순간이동이 매끄럽다.
   stepAbilities(world, input)
   stepPlayer(world, input)
+  const p = world.player
+  const collectedXp = stepXpGems(world.xpGems, p.pos.x, p.pos.y, DT)
+  if (collectedXp > 0) grantXp(world, collectedXp)
   // 정예 인장은 플레이어 이동 뒤를 추적한다. 회수로 선택 화면이 열려도
   // 현재 고정 틱은 끝까지 마치고 다음 프레임부터 멈춰 결정론을 유지한다.
   stepRelicDrops(world)
 
-  const p = world.player
   if (world.spawnEnabled) {
     // 일반 스폰보다 먼저 정예 자리를 확보한다. 보스와 달리 정예는 세 번의
     // 고정 보상 비트이며 풀 용량으로 실패하면 다음 틱에 재시도한다.
