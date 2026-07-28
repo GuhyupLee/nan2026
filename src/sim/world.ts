@@ -46,11 +46,13 @@ import {
   consumeLevelUp,
   createProgression,
   upgradeTraitToken,
+  xpPacingMultiplier,
 } from './progression.ts'
 import { createRng } from './rng.ts'
 import { stepEliteRewardBeats, stepRelicDrops } from './rewards.ts'
 import { createSkillBook, tickSkills, unlockSkill } from './skills.ts'
 import { createStats } from './stats.ts'
+import { stepSurgeBeats } from './surges.ts'
 import type { Input, Player, PlayerClass, World } from './types.ts'
 import { length, lerpAngle, normalize, vec2 } from './vec.ts'
 import { createXpGemPool, stepXpGems } from './xp-gems.ts'
@@ -113,6 +115,9 @@ export function createWorld(seed: number, playerClass: PlayerClass = 'ranged'): 
       maxHp: BOSS_MAX_HP,
     },
     eliteBeatIndex: 0,
+    surgeBeatIndex: 0,
+    surgeWarningIndex: 0,
+    surgeStartedAt: -1,
     relicDrops: [],
     pendingRelicChoices: 0,
     relicsClaimed: 0,
@@ -180,6 +185,7 @@ export function stepWorld(world: World, input: Input): void {
     // 일반 스폰보다 먼저 정예 자리를 확보한다. 보스와 달리 정예는 세 번의
     // 고정 보상 비트이며 풀 용량으로 실패하면 다음 틱에 재시도한다.
     stepEliteRewardBeats(world)
+    stepSurgeBeats(world)
 
     // 일반 스폰보다 먼저 보스 슬롯을 확보한다. 용량 부족으로 실패하면
     // spawned를 올리지 않아 다음 틱에 안전하게 다시 시도한다.
@@ -354,7 +360,15 @@ export function grantXp(world: World, amount: number): void {
     world.playerClass === 'melee'
       ? MELEE_XP_GAIN_MULTIPLIER
       : RANGED_XP_GAIN_MULTIPLIER
-  addXp(world.progression, amount * classMultiplier, world.time)
+  const pacingMultiplier = xpPacingMultiplier(
+    world.progression.level,
+    world.time,
+  )
+  addXp(
+    world.progression,
+    amount * classMultiplier * pacingMultiplier,
+    world.time,
+  )
   world.awaitingChoice =
     world.pendingRelicChoices > 0 || world.progression.pendingLevelUps > 0
 }

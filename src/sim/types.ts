@@ -266,6 +266,12 @@ export interface World {
   boss: BossState
   /** 다음에 등장할 정예 비트의 인덱스. 지정 비트는 각각 한 번만 소비한다. */
   eliteBeatIndex: number
+  /** 다음에 실제로 등장할 고정 서지 비트의 인덱스. */
+  surgeBeatIndex: number
+  /** 다음에 예고할 서지 비트의 인덱스. 실제 등장 재시도와 분리한다. */
+  surgeWarningIndex: number
+  /** 가장 최근 서지가 실제로 시작된 시각. HUD·렌더 피드백의 공통 기준점. */
+  surgeStartedAt: number
   /** 정예가 남긴 월식 인장. 지연 뒤 플레이어를 추적한다. */
   relicDrops: RelicDrop[]
   /** 획득했지만 아직 선택하지 않은 전리품 보상 수. 레벨업보다 먼저 처리한다. */

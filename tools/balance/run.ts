@@ -22,7 +22,7 @@ function printSeedResults(
   autoOnly: readonly BalanceRunResult[],
 ): void {
   console.log('\n시드별 5분 실측 (QWER 쿨마다 사용)\n')
-  console.log('class   seed  kills  kills/min  auto kills  uplift   Lv20    curve MAE')
+  console.log('class   seed  kills  kills/min  auto kills  uplift   Lv26    curve MAE')
 
   for (const result of qwer) {
     const baseline = autoOnly.find(

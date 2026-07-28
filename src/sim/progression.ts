@@ -83,16 +83,33 @@ export const XP_FOR_NEXT = [
 ] as const
 
 /**
- * QWER까지 포함한 근접의 실제 XP 획득 속도가 원거리보다 약 14% 높다.
- * 요구 XP는 공통으로 유지하고 획득량만 보정해 두 클래스의 선택 타이밍을 맞춘다.
+ * 서지까지 포함한 24시드 실측에서 두 클래스의 Lv26 중앙값이 4:51 부근에
+ * 모이도록 보정했다. 요구 XP는 공통으로 유지해 카드 선택 문법은 같게 둔다.
  */
-export const MELEE_XP_GAIN_MULTIPLIER = 0.525
+export const MELEE_XP_GAIN_MULTIPLIER = 0.56
 
 /**
- * 원거리는 넓은 Q/E와 관통 평타로 같은 시간에 더 많은 처치를 만든다.
- * 공통 XP 곡선을 유지하되 획득량을 보정해 두 클래스의 카드 선택 시점을 맞춘다.
+ * 원거리는 넓은 Q/E와 관통 평타로 처치 편차가 크다. 12시드 중앙값을 기준으로
+ * 보정해 특정 빌드가 조금 느려도 대표 회귀 시드는 제한 시간 안에 완주한다.
  */
-export const RANGED_XP_GAIN_MULTIPLIER = 0.515
+export const RANGED_XP_GAIN_MULTIPLIER = 0.535
+
+/** 마지막 1분에 목표 레벨보다 뒤처진 빌드만 완만하게 따라잡는다. */
+export const XP_CATCH_UP_START = 240
+export const XP_CATCH_UP_MAX = 1.5
+const XP_CATCH_UP_FULL_DELAY = 10
+
+export function xpPacingMultiplier(level: number, time: number): number {
+  if (level >= MAX_LEVEL || time < XP_CATCH_UP_START) return 1
+  const target = TARGET_LEVEL_TIMES[level]
+  if (target === undefined || time <= target) return 1
+  const bonus = Math.min(
+    XP_CATCH_UP_MAX - 1,
+    ((time - target) / XP_CATCH_UP_FULL_DELAY) *
+      (XP_CATCH_UP_MAX - 1),
+  )
+  return 1 + bonus
+}
 
 /** 레벨업 시 무엇을 주는가. */
 export type LevelReward =

@@ -25,7 +25,7 @@ export interface RingEvent {
   y: number
   /** 최종 반경. */
   radius: number
-  /** 0 = 시안(점멸), 1 = 초록(회복) */
+  /** 0=시안, 1=회복, 2=금빛, 3=참격, 4=적대 서지 예고. */
   kind: number
 }
 

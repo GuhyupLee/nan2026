@@ -369,6 +369,23 @@ console.log(
 summarize(results, 'ranged')
 summarize(results, 'melee')
 
+if (process.argv.includes('--verbose')) {
+  for (const cls of ['ranged', 'melee'] as const) {
+    console.log(`\n${cls} seeds`)
+    for (const row of results.filter((result) => result.cls === cls)) {
+      console.log(
+        `  ${String(row.seed).padStart(3)}  ${row.outcome.padEnd(7)}  ` +
+          `${row.survivedSec.toFixed(1).padStart(5)}s  ` +
+          `boss ${(row.bossProgress * 100).toFixed(0).padStart(3)}%  ` +
+          `minHP ${(row.minHpFrac * 100).toFixed(0).padStart(3)}%  ` +
+          `damage ${Math.round(row.totalDamage).toString().padStart(4)}  ` +
+          `kills ${String(row.kills).padStart(4)}  Lv${String(row.level).padStart(2)}  ` +
+          `H/M/B ${row.healPickups}/${row.magnetPickups}/${row.bombPickups}`,
+      )
+    }
+  }
+}
+
 for (const cls of ['ranged', 'melee'] as const) {
   const selected = results.filter((row) => row.cls === cls)
   const wins = selected.filter((row) => row.outcome === 'victory').length
@@ -391,7 +408,16 @@ for (const cls of ['ranged', 'melee'] as const) {
     )
   }
   const danger = median(selected.map((row) => row.dangerFrac))
-  if (danger < 0.01 || danger > 0.35) {
-    throw new Error(`${cls}: 위험시간 ${(danger * 100).toFixed(1)}%가 유효 범위를 벗어났습니다.`)
+  const minimumHp = median(selected.map((row) => row.minHpFrac))
+  // 근접의 부동 각성은 50% 문턱을 넘는 첫 타격을 무효화하고 즉시 회복
+  // 판단을 유도한다. 따라서 탱커는 저체력 체류 시간이 짧아도 실제로 문턱까지
+  // 밀렸다면 압박이 성립한다. 원거리는 기존처럼 위험시간 자체를 요구한다.
+  const pressured =
+    danger >= 0.01 || (cls === 'melee' && minimumHp <= 0.55)
+  if (!pressured || danger > 0.35) {
+    throw new Error(
+      `${cls}: 위험시간 ${(danger * 100).toFixed(1)}% · 최저체력 ` +
+        `${(minimumHp * 100).toFixed(1)}%가 유효 범위를 벗어났습니다.`,
+    )
   }
 }

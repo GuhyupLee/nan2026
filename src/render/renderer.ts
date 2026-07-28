@@ -9,6 +9,7 @@ import {
 import { DT } from '../sim/constants.ts'
 import { TYPE_BOSS, TYPE_ELITE } from '../sim/enemies.ts'
 import type { SkillId } from '../sim/skills.ts'
+import { SURGE_BEATS } from '../sim/surges.ts'
 import type { PlayerClass, World } from '../sim/types.ts'
 import type { Vec2 } from '../sim/vec.ts'
 import { length, lerp, lerpAngle } from '../sim/vec.ts'
@@ -140,6 +141,7 @@ export class Renderer {
   private feedbackBloom = 1
   /** 새 월드 첫 프레임을 정예 등장으로 오인하지 않기 위한 직전 비트 인덱스. */
   private lastEliteBeatIndex = -1
+  private lastSurgeBeatIndex = -1
   /** Persistent simulation counters need renderer-side baselines for one-shot feedback. */
   private lastHealPickupActivations = -1
   private lastMagnetPickupActivations = -1
@@ -425,6 +427,7 @@ export class Renderer {
       this.feedbackBloom = 1
       this.post.setBloomBoost(1)
       this.lastEliteBeatIndex = world.eliteBeatIndex
+      this.lastSurgeBeatIndex = world.surgeBeatIndex
       this.lastHealPickupActivations =
         world.battlefieldPickups.healActivations
       this.lastMagnetPickupActivations =
@@ -543,6 +546,16 @@ export class Renderer {
       this.pulseBloom(1.52)
     }
     this.lastEliteBeatIndex = world.eliteBeatIndex
+
+    if (world.surgeBeatIndex > this.lastSurgeBeatIndex) {
+      const beat = SURGE_BEATS[world.surgeBeatIndex - 1]
+      const flash =
+        beat?.kind === 2 ? 0xb76cff : beat?.kind === 1 ? 0xffad43 : 0xff7548
+      this.impact.shake(0.48, 0.46, 9)
+      this.post.flash(flash, 0.16, 0.28)
+      this.pulseBloom(1.62)
+    }
+    this.lastSurgeBeatIndex = world.surgeBeatIndex
 
     for (let i = 0; i < world.casts.length; i++) {
       if (world.casts[i]!.slot !== 'r') continue

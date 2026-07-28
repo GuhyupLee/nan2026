@@ -55,9 +55,12 @@ import {
   MELEE_XP_GAIN_MULTIPLIER,
   RANGED_XP_GAIN_MULTIPLIER,
   TARGET_LEVEL_TIMES,
+  XP_CATCH_UP_MAX,
+  XP_CATCH_UP_START,
   XP_FOR_NEXT,
   pendingReward,
   rollUpgrades,
+  xpPacingMultiplier,
   type UpgradeCandidate,
 } from '../src/sim/progression.ts'
 import { createRng, type Rng } from '../src/sim/rng.ts'
@@ -92,7 +95,7 @@ import {
 } from '../src/sim/world.ts'
 import { pushBlast } from '../src/sim/zones.ts'
 import { BALANCE_REGRESSION_SAMPLES } from './balance/baseline.ts'
-import { runBalanceScenario } from './balance/model.ts'
+import { BALANCE_SEEDS, runBalanceScenario } from './balance/model.ts'
 
 
 let failures = 0
@@ -225,7 +228,17 @@ console.log('\nsim smoke check\n')
     MELEE_XP_GAIN_MULTIPLIER > 0 &&
       MELEE_XP_GAIN_MULTIPLIER < 1 &&
       RANGED_XP_GAIN_MULTIPLIER > 0 &&
-      RANGED_XP_GAIN_MULTIPLIER < 1,
+    RANGED_XP_GAIN_MULTIPLIER < 1,
+  )
+  check(
+    '막판 XP 보정은 목표보다 늦은 빌드에만 적용된다',
+    xpPacingMultiplier(25, XP_CATCH_UP_START) === 1 &&
+      xpPacingMultiplier(25, TARGET_LEVEL_TIMES[25]!) === 1,
+  )
+  check(
+    '막판 XP 보정은 50%에서 상한이 걸린다',
+    xpPacingMultiplier(25, TARGET_LEVEL_TIMES[25]! + 100) ===
+      XP_CATCH_UP_MAX,
   )
 }
 
@@ -261,10 +274,23 @@ console.log('\nsim smoke check\n')
     const auto = runBalanceScenario(expected.playerClass, expected.seed, { useQwer: false })
     return { expected, qwer, auto }
   })
-  const details = samples
-    .map(({ expected, qwer }) => {
+  const qwerByKey = new Map(
+    samples.map(({ expected, qwer }) => [
+      `${expected.playerClass}:${expected.seed}`,
+      qwer,
+    ]),
+  )
+  const curveSamples = (['ranged', 'melee'] as const).flatMap((playerClass) =>
+    BALANCE_SEEDS.map(
+      (seed) =>
+        qwerByKey.get(`${playerClass}:${seed}`) ??
+        runBalanceScenario(playerClass, seed),
+    ),
+  )
+  const details = curveSamples
+    .map((qwer) => {
       const time = qwer.levelTimes[MAX_LEVEL - 1]
-      return `${expected.playerClass}:${expected.seed}=${time?.toFixed(1) ?? '--'}s/${qwer.kills}킬`
+      return `${qwer.playerClass}:${qwer.seed}=${time?.toFixed(1) ?? '--'}s/${qwer.kills}킬`
     })
     .join(', ')
 
@@ -273,7 +299,7 @@ console.log('\nsim smoke check\n')
     // 바뀌었고, 예정된 스킬 밸류 재설계가 XP 수입을 또 바꾼다. 지금 스냅샷을
     // 다시 뜨면 그대로 버려지므로 그때까지는 "만렙에 도달은 한다"만 지킨다.
     '만렙에 제한 시간 안에 도달한다',
-    samples.every(({ qwer }) => {
+    curveSamples.every((qwer) => {
       const time = qwer.levelTimes[MAX_LEVEL - 1]
       return time !== null && time <= RUN_TIME_LIMIT
     }),
@@ -283,9 +309,9 @@ console.log('\nsim smoke check\n')
     // 보류: 위와 같은 이유. 목표 시각 대신 곡선이 뒤집히지 않는지만 본다.
     '레벨 도달 시각이 단조 증가한다',
     (['ranged', 'melee'] as const).every((playerClass) =>
-      samples
-        .filter(({ expected }) => expected.playerClass === playerClass)
-        .every(({ qwer }) => {
+      curveSamples
+        .filter((qwer) => qwer.playerClass === playerClass)
+        .every((qwer) => {
           let prev = -1
           for (const t of qwer.levelTimes) {
             if (t === null) break

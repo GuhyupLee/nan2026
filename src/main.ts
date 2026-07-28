@@ -15,6 +15,8 @@ import {
   PICKUP_HEAL,
   PICKUP_MAGNET,
 } from './sim/battlefield-pickups.ts'
+import { SURGE_BEATS, SURGE_WARNING_DURATION } from './sim/surges.ts'
+import { MAX_LEVEL } from './sim/progression.ts'
 import { createInput } from './sim/types.ts'
 import type { PlayerClass, World } from './sim/types.ts'
 import {
@@ -522,6 +524,22 @@ function beginRun(playerClass: PlayerClass): void {
       world.battlefieldPickups.magnetUntil =
         world.time + BATTLEFIELD_MAGNET_DURATION
       world.battlefieldPickups.magnetActivations = 1
+    } else if (
+      qa === 'surge' ||
+      qa === 'surge-2' ||
+      qa === 'surge-3'
+    ) {
+      // 선택한 급습 3초 전부터 예고 HUD·지면 링·실제 편대 진입을 검수한다.
+      // 프로덕션 빌드에서는 이 분기 전체가 제거된다.
+      const surgeIndex = qa === 'surge-2' ? 1 : qa === 'surge-3' ? 2 : 0
+      const previewAt =
+        SURGE_BEATS[surgeIndex]!.at - SURGE_WARNING_DURATION
+      world.tick = Math.round(previewAt / DT)
+      world.time = world.tick * DT
+      world.player.invulnUntil = Number.POSITIVE_INFINITY
+      world.progression.level = MAX_LEVEL
+      world.surgeBeatIndex = surgeIndex
+      world.surgeWarningIndex = surgeIndex
     }
   }
   running = true

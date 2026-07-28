@@ -107,7 +107,12 @@ export function damageEnemy(
   // 사망 처리는 여기서 한 번만 일어난다.
   const def = ENEMY_TYPES[pool.type[i]!]!
   world.kills += 1
-  dropXpGem(world.xpGems, pool.x[i]!, pool.y[i]!, def.xp)
+  dropXpGem(
+    world.xpGems,
+    pool.x[i]!,
+    pool.y[i]!,
+    def.xp * pool.xpScale[i]!,
+  )
   if (!isBoss && !isElite && allowBattlefieldPickupDrop) {
     tryDropBattlefieldPickup(
       world.battlefieldPickups,

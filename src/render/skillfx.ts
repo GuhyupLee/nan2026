@@ -65,9 +65,21 @@ const HEX_SILVER = 0xeaf2ff
 const HEX_JADE = 0x7df0a0
 const HEX_VIOLET = 0x8f6cff
 
-/** RingEvent.kind 순서: 0=점멸 1=회복 2=폭발/궁 3=참격. */
-const RING_HEX = [0x8fe6ff, HEX_JADE, 0xffe6a3, HEX_CRIMSON] as const
-const RING_GAIN = [GAIN_CYAN, 1.25, GAIN_GOLD, GAIN_CRIMSON] as const
+/** RingEvent.kind 순서: 0=점멸 1=회복 2=폭발/궁 3=참격 4=적대 서지. */
+const RING_HEX = [
+  0x8fe6ff,
+  HEX_JADE,
+  0xffe6a3,
+  HEX_CRIMSON,
+  0xff7a35,
+] as const
+const RING_GAIN = [
+  GAIN_CYAN,
+  1.25,
+  GAIN_GOLD,
+  GAIN_CRIMSON,
+  1.85,
+] as const
 
 /** Zone.kind 순서: 0=빛기둥(시안) 1=둔화장판(보라). */
 const ZONE_HEX = [HEX_CYAN, HEX_VIOLET] as const

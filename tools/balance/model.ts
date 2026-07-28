@@ -59,7 +59,7 @@ export interface BalanceRunResult {
   playerClass: PlayerClass
   seed: number
   level: number
-  /** Lv1부터 Lv20까지. 도달하지 못한 레벨은 null. */
+  /** Lv1부터 현재 최대 레벨까지. 도달하지 못한 레벨은 null. */
   levelTimes: Array<number | null>
   /** 각 목표 시각까지 실제로 얻은 누적 XP. */
   xpAtTargets: number[]

@@ -15,6 +15,10 @@ import {
   bossPhaseAt,
   createEnemyHash,
 } from '../sim/enemies.ts'
+import {
+  SURGE_BEATS,
+  SURGE_WARNING_DURATION,
+} from '../sim/surges.ts'
 import type { World } from '../sim/types.ts'
 import { lerp } from '../sim/vec.ts'
 
@@ -29,6 +33,7 @@ const ELITE_TARGET = new THREE.Color(0xe8bd61)
 const BOSS_TARGET = new THREE.Color(0xf25a8c)
 const NORMAL_HEALTH = new THREE.Color(0xe9edf2)
 const BRUTE_HEALTH = new THREE.Color(0xff9a61)
+const SURGE_WARNING_COLORS = [0xff7548, 0xffad43, 0xb76cff] as const
 
 const BAR_VERTEX = /* glsl */ `
 attribute float aHp;
@@ -119,6 +124,7 @@ export class CombatReadabilityFx {
   private readonly barHp: THREE.InstancedBufferAttribute
   private readonly barAccent: THREE.InstancedBufferAttribute
   private readonly chargeMesh: THREE.Mesh<THREE.PlaneGeometry, THREE.ShaderMaterial>
+  private readonly surgeMesh: THREE.Mesh<THREE.RingGeometry, THREE.MeshBasicMaterial>
   private readonly chargeUniforms: {
     uTime: { value: number }
     uProgress: { value: number }
@@ -218,6 +224,25 @@ export class CombatReadabilityFx {
     this.chargeMesh.frustumCulled = false
     this.chargeMesh.renderOrder = 6
     scene.add(this.chargeMesh)
+
+    const surgeGeometry = new THREE.RingGeometry(0.955, 1, 128)
+    surgeGeometry.rotateX(-Math.PI / 2)
+    this.surgeMesh = new THREE.Mesh(
+      surgeGeometry,
+      new THREE.MeshBasicMaterial({
+        color: SURGE_WARNING_COLORS[0],
+        transparent: true,
+        opacity: 0.58,
+        depthTest: false,
+        depthWrite: false,
+        side: THREE.DoubleSide,
+        blending: THREE.AdditiveBlending,
+      }),
+    )
+    this.surgeMesh.visible = false
+    this.surgeMesh.frustumCulled = false
+    this.surgeMesh.renderOrder = 6
+    scene.add(this.surgeMesh)
   }
 
   update(world: World, alpha: number): void {
@@ -242,6 +267,7 @@ export class CombatReadabilityFx {
     this.drawRings(world, alpha, target)
     this.drawHealthBars(world, alpha, target)
     this.drawBossCharge(world, alpha)
+    this.drawSurgeWarning(world, alpha)
   }
 
   private setMatrix(
@@ -459,13 +485,46 @@ export class CombatReadabilityFx {
       cycle >= BOSS_CHARGE_AT && cycle < BOSS_RECOVER_AT ? 1 : 0
   }
 
+  private drawSurgeWarning(world: World, alpha: number): void {
+    const beat = SURGE_BEATS[world.surgeBeatIndex]
+    if (!beat) {
+      this.surgeMesh.visible = false
+      return
+    }
+    const remaining = beat.at - world.time
+    if (remaining <= 0 || remaining > SURGE_WARNING_DURATION) {
+      this.surgeMesh.visible = false
+      return
+    }
+
+    const progress = 1 - remaining / SURGE_WARNING_DURATION
+    const motion = this.chargeUniforms.uMotion.value
+    const pulse = 1 + Math.sin(world.time * 10) * 0.018 * motion
+    const x = lerp(world.player.prevPos.x, world.player.pos.x, alpha)
+    const z = lerp(world.player.prevPos.y, world.player.pos.y, alpha)
+    this.surgeMesh.position.set(x, 0.038, z)
+    this.surgeMesh.scale.setScalar(beat.warningRadius * pulse)
+    this.surgeMesh.material.color.setHex(
+      SURGE_WARNING_COLORS[beat.kind] ?? SURGE_WARNING_COLORS[0],
+    )
+    this.surgeMesh.material.opacity = 0.36 + progress * 0.28
+    this.surgeMesh.visible = true
+  }
+
   dispose(): void {
-    this.scene.remove(this.ringMesh, this.barMesh, this.chargeMesh)
+    this.scene.remove(
+      this.ringMesh,
+      this.barMesh,
+      this.chargeMesh,
+      this.surgeMesh,
+    )
     this.ringMesh.geometry.dispose()
     ;(this.ringMesh.material as THREE.Material).dispose()
     this.barMesh.geometry.dispose()
     ;(this.barMesh.material as THREE.Material).dispose()
     this.chargeMesh.geometry.dispose()
     this.chargeMesh.material.dispose()
+    this.surgeMesh.geometry.dispose()
+    this.surgeMesh.material.dispose()
   }
 }

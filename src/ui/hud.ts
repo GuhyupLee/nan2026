@@ -6,6 +6,10 @@ import {
   BATTLEFIELD_MAGNET_DURATION,
   BATTLEFIELD_MAGNET_MAX_REMAINING,
 } from '../sim/battlefield-pickups.ts'
+import {
+  SURGE_BEATS,
+  SURGE_WARNING_DURATION,
+} from '../sim/surges.ts'
 
 /**
  * HUD — 캐릭터 위 체력바 + 하단 경험치 바 + 타이머.
@@ -34,6 +38,10 @@ export class Hud {
   private readonly magnetTime: HTMLElement
   private readonly magnetProgress: HTMLElement
   private readonly clock: HTMLDivElement
+  private readonly surgeAlert: HTMLDivElement
+  private readonly surgeTitle: HTMLElement
+  private readonly surgeCountdown: HTMLElement
+  private readonly surgeInstruction: HTMLElement
   private readonly runInfo: HTMLDivElement
   private readonly runKills: HTMLElement
   private readonly runLevel: HTMLElement
@@ -54,6 +62,7 @@ export class Hud {
   private magnetDisplayTenths = -1
   private magnetProgressCeiling = BATTLEFIELD_MAGNET_DURATION
   private magnetWasActive = false
+  private surgeDisplayKey = ''
   private readonly reducedMotion = window.matchMedia('(prefers-reduced-motion: reduce)')
 
   constructor(parent: HTMLElement) {
@@ -92,6 +101,23 @@ export class Hud {
     this.clock.className = 'clock'
     parent.appendChild(this.clock)
 
+    this.surgeAlert = document.createElement('div')
+    this.surgeAlert.className = 'surge-alert'
+    this.surgeAlert.hidden = true
+    this.surgeAlert.setAttribute('role', 'status')
+    this.surgeAlert.setAttribute('aria-live', 'assertive')
+    this.surgeAlert.innerHTML =
+      `<span>WAVE SURGE</span>` +
+      `<strong data-surge-title></strong>` +
+      `<b data-surge-countdown></b>` +
+      `<small data-surge-instruction></small>`
+    this.surgeTitle = this.surgeAlert.querySelector('[data-surge-title]')!
+    this.surgeCountdown =
+      this.surgeAlert.querySelector('[data-surge-countdown]')!
+    this.surgeInstruction =
+      this.surgeAlert.querySelector('[data-surge-instruction]')!
+    parent.appendChild(this.surgeAlert)
+
     this.runInfo = document.createElement('div')
     this.runInfo.className = 'run-info'
     this.runInfo.innerHTML =
@@ -129,6 +155,7 @@ export class Hud {
       this.magnetDisplayTenths = -1
       this.magnetProgressCeiling = BATTLEFIELD_MAGNET_DURATION
       this.magnetWasActive = false
+      this.surgeDisplayKey = ''
       document.body.classList.remove('pickup-buff-active')
     }
 
@@ -259,6 +286,73 @@ export class Hud {
       world.boss.active && t <= 30 ? 'critical' : world.boss.active ? 'boss' : 'normal'
     this.clock.setAttribute('aria-label', `남은 시간 ${mm}분 ${ss}초`)
 
+    // --- 웨이브 서지 ---
+    // 정해진 편대가 갑자기 솟으면 억울한 스폰으로 읽힌다. 3초 예고 동안
+    // 편대 이름과 회피 문법을 한 줄로 보여 주고, 시작 뒤에는 짧게 충격만 남긴다.
+    const nextSurge = SURGE_BEATS[world.surgeBeatIndex]
+    const previousSurge =
+      world.surgeBeatIndex > 0
+        ? SURGE_BEATS[world.surgeBeatIndex - 1]
+        : undefined
+    const warningRemaining = nextSurge
+      ? nextSurge.at - world.time
+      : Number.POSITIVE_INFINITY
+    const warning =
+      nextSurge !== undefined &&
+      warningRemaining <= SURGE_WARNING_DURATION &&
+      warningRemaining > 0
+    const impact =
+      previousSurge !== undefined &&
+      world.surgeStartedAt >= 0 &&
+      world.time - world.surgeStartedAt < 1.25
+    if (warning) {
+      const countdown = Math.max(1, Math.ceil(warningRemaining))
+      this.updateSurgeAlert(
+        `warning:${world.surgeBeatIndex}:${countdown}`,
+        nextSurge.label,
+        String(countdown),
+        nextSurge.instruction,
+        nextSurge.kind,
+        'warning',
+      )
+    } else if (impact) {
+      this.updateSurgeAlert(
+        `impact:${world.surgeBeatIndex}`,
+        previousSurge.label,
+        '진입',
+        previousSurge.instruction,
+        previousSurge.kind,
+        'impact',
+      )
+    } else {
+      this.surgeAlert.hidden = true
+      this.surgeDisplayKey = ''
+    }
+
+  }
+
+  private updateSurgeAlert(
+    key: string,
+    title: string,
+    countdown: string,
+    instruction: string,
+    kind: number,
+    phase: 'warning' | 'impact',
+  ): void {
+    this.surgeAlert.hidden = false
+    this.surgeAlert.dataset.kind = String(kind)
+    this.surgeAlert.dataset.phase = phase
+    if (key === this.surgeDisplayKey) return
+    this.surgeDisplayKey = key
+    this.surgeTitle.textContent = title
+    this.surgeCountdown.textContent = countdown
+    this.surgeInstruction.textContent = instruction
+    this.surgeAlert.setAttribute(
+      'aria-label',
+      phase === 'warning'
+        ? `${title} ${countdown}초 전. ${instruction}`
+        : `${title} 시작. ${instruction}`,
+    )
   }
 
   setVisible(visible: boolean): void {
@@ -267,6 +361,7 @@ export class Hud {
     this.xpBar.style.display = d
     this.magnetBuff.style.display = d
     this.clock.style.display = d
+    this.surgeAlert.style.display = d
     this.runInfo.style.display = d
     this.damageVignette.style.display = d
   }

@@ -158,6 +158,10 @@ export interface EnemyPool {
   hp: Float32Array
   maxHp: Float32Array
   type: Uint8Array
+  /** Per-instance XP multiplier. Authored surge enemies use a reduced value. */
+  xpScale: Float32Array
+  /** Per-instance contact damage multiplier for authored threat beats. */
+  contactDamageScale: Float32Array
   /** 피격 점멸 남은 시간(초). 렌더가 흰색 보간에 쓴다. */
   flash: Float32Array
   /** 피해를 받은 뒤 선별 체력바를 계속 보여줄 시각. */
@@ -215,6 +219,8 @@ export function createEnemyPool(): EnemyPool {
     hp: new Float32Array(MAX_ENEMIES),
     maxHp: new Float32Array(MAX_ENEMIES),
     type: new Uint8Array(MAX_ENEMIES),
+    xpScale: new Float32Array(MAX_ENEMIES).fill(1),
+    contactDamageScale: new Float32Array(MAX_ENEMIES).fill(1),
     flash: new Float32Array(MAX_ENEMIES),
     hpVisibleUntil: new Float32Array(MAX_ENEMIES),
 
@@ -349,6 +355,11 @@ const SPAWN_RING_MIN_DISTANCE = 17
 const SPAWN_RING_MAX_DISTANCE = 21
 /** 첫 후보가 경계 밖이면 RNG를 더 쓰지 않고 원주를 고정 간격으로 탐색한다. */
 const SPAWN_POSITION_ATTEMPTS = 16
+/** 편대끼리 경계에 눌려 겹칠 때도 난수 없이 빈 호를 찾을 충분한 상한. */
+const AUTHORED_POSITION_ATTEMPTS = 256
+const GOLDEN_ANGLE = Math.PI * (3 - Math.sqrt(5))
+const AUTHORED_ANGLE_STEP = (Math.PI * 2) / AUTHORED_POSITION_ATTEMPTS
+const AUTHORED_BODY_GAP = 0.005
 
 interface SpawnPosition {
   x: number
@@ -369,11 +380,12 @@ function safeSpawnPosition(
   distance: number,
   limit: number,
 ): SpawnPosition {
-  const angleStep = (Math.PI * 2) / SPAWN_POSITION_ATTEMPTS
+  // 황금각으로 순회하면 포위 편대처럼 시작각이 촘촘한 호출들이 경계에서
+  // 같은 16방향 후보로 접혀 한 좌표에 겹치는 일을 피할 수 있다.
   const minimumDistanceSq =
     MIN_ENEMY_SPAWN_DISTANCE * MIN_ENEMY_SPAWN_DISTANCE
   for (let attempt = 0; attempt < SPAWN_POSITION_ATTEMPTS; attempt += 1) {
-    const candidateAngle = angle + attempt * angleStep
+    const candidateAngle = angle + attempt * GOLDEN_ANGLE
     const x = px + Math.cos(candidateAngle) * distance
     const y = py + Math.sin(candidateAngle) * distance
     const arenaDistance = Math.hypot(x, y)
@@ -409,6 +421,57 @@ function safeSpawnPosition(
   }
 }
 
+function overlapsAuthoredFormation(
+  pool: EnemyPool,
+  type: number,
+  x: number,
+  y: number,
+  separateFrom: number,
+): boolean {
+  const radius = ENEMY_TYPES[type]!.radius
+  for (let i = separateFrom; i < pool.count; i += 1) {
+    const dx = x - pool.x[i]!
+    const dy = y - pool.y[i]!
+    const minimum =
+      radius + ENEMY_TYPES[pool.type[i]!]!.radius + AUTHORED_BODY_GAP
+    if (dx * dx + dy * dy < minimum * minimum) return true
+  }
+  return false
+}
+
+function safeAuthoredSpawnPosition(
+  pool: EnemyPool,
+  px: number,
+  py: number,
+  type: number,
+  angle: number,
+  distance: number,
+  limit: number,
+  separateFrom: number,
+): SpawnPosition | null {
+  for (let attempt = 0; attempt < AUTHORED_POSITION_ATTEMPTS; attempt += 1) {
+    const spawn = safeSpawnPosition(
+      px,
+      py,
+      angle + attempt * AUTHORED_ANGLE_STEP,
+      distance,
+      limit,
+    )
+    if (
+      !overlapsAuthoredFormation(
+        pool,
+        type,
+        spawn.x,
+        spawn.y,
+        separateFrom,
+      )
+    ) {
+      return spawn
+    }
+  }
+  return null
+}
+
 export function spawnEnemy(
   pool: EnemyPool,
   rng: Rng,
@@ -420,8 +483,6 @@ export function spawnEnemy(
   if (pool.count >= MAX_ENEMIES) return
 
   const def = ENEMY_TYPES[type]!
-  const i = pool.count++
-
   // 플레이어 주변 링 위. 첫 각도가 경계 밖이면 같은 거리의 대체 각도를 찾는다.
   // 각도와 거리용 RNG 두 번만 소비해 기존 결정론적 스트림을 보존한다.
   const a = rng.next() * Math.PI * 2
@@ -432,8 +493,87 @@ export function spawnEnemy(
   )
   const limit = ARENA_RADIUS - def.radius - 0.5
   const spawn = safeSpawnPosition(px, py, a, d, limit)
-  const sx = spawn.x
-  const sy = spawn.y
+  writeEnemy(pool, type, spawn.x, spawn.y, time, 1)
+}
+
+/**
+ * 정해진 편대 각도·거리로 적을 한 마리 배치한다.
+ *
+ * 일반 스폰 RNG를 전혀 소비하지 않으므로 고정 비트 이벤트가 이후의 적 종류와
+ * 등장 방향을 바꾸지 않는다. 경계에서는 일반 스폰과 같은 안전 탐색을 거친다.
+ */
+export function spawnEnemyAtAngle(
+  pool: EnemyPool,
+  px: number,
+  py: number,
+  type: number,
+  time: number,
+  angle: number,
+  distance: number,
+  xpScale = 1,
+  healthScale = 1,
+  contactDamageScale = 1,
+  separateFrom = pool.count,
+): boolean {
+  if (
+    pool.count >= MAX_ENEMIES ||
+    !ENEMY_TYPES[type] ||
+    !Number.isFinite(px) ||
+    !Number.isFinite(py) ||
+    !Number.isFinite(angle) ||
+    !Number.isFinite(distance) ||
+    distance < MIN_ENEMY_SPAWN_DISTANCE ||
+    !(xpScale > 0) ||
+    !Number.isFinite(xpScale) ||
+    !(healthScale > 0) ||
+    !Number.isFinite(healthScale) ||
+    !(contactDamageScale > 0) ||
+    !Number.isFinite(contactDamageScale) ||
+    !Number.isInteger(separateFrom) ||
+    separateFrom < 0 ||
+    separateFrom > pool.count
+  ) {
+    return false
+  }
+
+  const def = ENEMY_TYPES[type]!
+  const limit = ARENA_RADIUS - def.radius - 0.5
+  const spawn = safeAuthoredSpawnPosition(
+    pool,
+    px,
+    py,
+    type,
+    angle,
+    distance,
+    limit,
+    separateFrom,
+  )
+  if (!spawn) return false
+  writeEnemy(
+    pool,
+    type,
+    spawn.x,
+    spawn.y,
+    time,
+    xpScale,
+    healthScale,
+    contactDamageScale,
+  )
+  return true
+}
+
+function writeEnemy(
+  pool: EnemyPool,
+  type: number,
+  sx: number,
+  sy: number,
+  time: number,
+  xpScale: number,
+  healthScale = 1,
+  contactDamageScale = 1,
+): void {
+  const def = ENEMY_TYPES[type]!
+  const i = pool.count++
 
   pool.x[i] = sx
   pool.y[i] = sy
@@ -441,10 +581,15 @@ export function spawnEnemy(
   pool.prevY[i] = sy
   pool.vx[i] = 0
   pool.vy[i] = 0
-  const maxHp = type === TYPE_BOSS ? BOSS_MAX_HP : def.hp * enemyHealthMultiplier(time)
+  const maxHp =
+    type === TYPE_BOSS
+      ? BOSS_MAX_HP
+      : def.hp * enemyHealthMultiplier(time) * healthScale
   pool.hp[i] = maxHp
   pool.maxHp[i] = maxHp
   pool.type[i] = type
+  pool.xpScale[i] = xpScale
+  pool.contactDamageScale[i] = contactDamageScale
   pool.flash[i] = 0
   pool.hpVisibleUntil[i] = -1
 
@@ -753,7 +898,12 @@ export function stepEnemies(
       const chargeDamageMul =
         isBoss && bossPhase === 'charge' ? BOSS_CHARGE_DAMAGE_MUL : 1
       const rewardThreatMul = isBoss ? 1 : threatDamageMul
-      contactDamage += def.contactDamage * chargeDamageMul * rewardThreatMul * DT
+      contactDamage +=
+        def.contactDamage *
+        pool.contactDamageScale[i]! *
+        chargeDamageMul *
+        rewardThreatMul *
+        DT
       contactCount++
     }
   }

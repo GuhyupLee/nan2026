@@ -10,7 +10,15 @@ const STORAGE_KEY = 'prototype-audio-settings-v1'
 const DEFAULT_SETTINGS: AudioSettings = { master: 0.8, sfx: 0.8, muted: false }
 
 type AudioContextConstructor = new () => AudioContext
-type SoundGroup = 'attack' | 'cast' | 'death' | 'level' | 'boss' | 'outcome' | 'ui'
+type SoundGroup =
+  | 'attack'
+  | 'cast'
+  | 'death'
+  | 'level'
+  | 'boss'
+  | 'surge'
+  | 'outcome'
+  | 'ui'
 
 function clamp01(value: number, fallback: number): number {
   return Number.isFinite(value) ? Math.min(1, Math.max(0, value)) : fallback
@@ -51,6 +59,7 @@ export class GameAudio {
     death: 0,
     level: 0,
     boss: 0,
+    surge: 0,
     outcome: 0,
     ui: 0,
   }
@@ -59,6 +68,8 @@ export class GameAudio {
   private lastTick = -1
   private lastLevel = 1
   private lastBossActive = false
+  private lastSurgeWarningIndex = 0
+  private lastSurgeBeatIndex = 0
   private lastOutcome: World['outcome'] = 'alive'
 
   getSettings(): AudioSettings {
@@ -116,6 +127,10 @@ export class GameAudio {
     const newTick = world.tick !== this.lastTick
     const levelled = !newWorld && world.progression.level > this.lastLevel
     const bossAppeared = !newWorld && world.boss.active && !this.lastBossActive
+    const surgeWarned =
+      !newWorld && world.surgeWarningIndex > this.lastSurgeWarningIndex
+    const surgeStarted =
+      !newWorld && world.surgeBeatIndex > this.lastSurgeBeatIndex
     const outcomeChanged =
       !newWorld && world.outcome !== this.lastOutcome && world.outcome !== 'alive'
 
@@ -123,6 +138,8 @@ export class GameAudio {
     this.lastTick = world.tick
     this.lastLevel = world.progression.level
     this.lastBossActive = world.boss.active
+    this.lastSurgeWarningIndex = world.surgeWarningIndex
+    this.lastSurgeBeatIndex = world.surgeBeatIndex
     this.lastOutcome = world.outcome
 
 
@@ -133,6 +150,8 @@ export class GameAudio {
 
     if (levelled && this.allow('level', 0.22)) this.levelUp()
     if (bossAppeared && this.allow('boss', 0.8)) this.bossArrival()
+    if (surgeWarned && this.allow('surge', 0.8)) this.surgeWarning()
+    if (surgeStarted && this.allow('surge', 0.8)) this.surgeImpact()
     if (outcomeChanged && this.allow('outcome', 0.8)) this.outcome(world.outcome)
 
     // 동일한 시뮬레이션 틱을 여러 번 그려도 이벤트음을 중복 재생하지 않는다.
@@ -178,6 +197,8 @@ export class GameAudio {
     this.lastTick = -1
     this.lastLevel = 1
     this.lastBossActive = false
+    this.lastSurgeWarningIndex = 0
+    this.lastSurgeBeatIndex = 0
     this.lastOutcome = 'alive'
   }
 
@@ -393,6 +414,18 @@ export class GameAudio {
     this.tone(62, 0.65, 0.085, 'sawtooth', 42)
     this.tone(93, 0.55, 0.055, 'triangle', 62, 0.08)
     this.noise(0.42, 0.055, 520, 0.02)
+  }
+
+  private surgeWarning(): void {
+    this.tone(330, 0.18, 0.05, 'square', 220)
+    this.tone(220, 0.2, 0.045, 'triangle', 165, 0.16)
+    this.tone(165, 0.25, 0.04, 'sawtooth', 110, 0.34)
+  }
+
+  private surgeImpact(): void {
+    this.tone(86, 0.32, 0.065, 'sawtooth', 52)
+    this.noise(0.18, 0.04, 780)
+    this.tone(430, 0.16, 0.028, 'triangle', 260, 0.04)
   }
 
   private outcome(result: World['outcome']): void {

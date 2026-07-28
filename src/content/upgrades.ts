@@ -258,7 +258,11 @@ const RANGED_UPGRADES: readonly UpgradeDef[] = [
     classFilter: RANGED,
     family: 'optical-device',
     ranks: [
-      { rank: 1, displayName: '생명광 충전', oneLiner: '최대 체력 +24, 즉시 24 회복' },
+      {
+        rank: 1,
+        displayName: '생명광 충전',
+        oneLiner: '최대 체력 +32, 즉시 32 회복, 공격 피해 +4%',
+      },
       { rank: 2, displayName: '광막 경화', oneLiner: '받는 피해 -10%' },
       {
         rank: 3,
@@ -270,8 +274,9 @@ const RANGED_UPGRADES: readonly UpgradeDef[] = [
     ],
     effects: [
       (w) => {
-        w.stats.maxHp += 24
-        w.player.hp = Math.min(w.stats.maxHp, w.player.hp + 24)
+        w.stats.maxHp += 32
+        w.player.hp = Math.min(w.stats.maxHp, w.player.hp + 32)
+        w.stats.atkDamageMul *= 1.04
       },
       (w) => {
         w.stats.damageTakenMul *= 0.9
