@@ -695,6 +695,20 @@ export class Renderer {
     let changed = nextConstrained !== this.constrained
     this.constrained = nextConstrained
 
+    const nextShadowsEnabled = !nextConstrained
+    if (this.gl.shadowMap.enabled !== nextShadowsEnabled) {
+      // 모바일 절차 캐릭터는 장식까지 약 90개 Mesh라 실제 그림자 패스가
+      // 본 렌더와 같은 수의 제출을 한 번 더 만든다. 발밑 blob shadow가 이미
+      // 접지를 보존하므로 제한 tier에서는 그 비용을 통째로 없앤다.
+      this.gl.shadowMap.enabled = nextShadowsEnabled
+      this.sun.castShadow = nextShadowsEnabled
+      if (!nextShadowsEnabled) {
+        this.sun.shadow.map?.dispose()
+        this.sun.shadow.map = null
+      }
+      changed = true
+    }
+
     if (Math.abs(nextPixelRatio - this.pixelRatio) > 0.01) {
       this.pixelRatio = nextPixelRatio
       this.gl.setPixelRatio(nextPixelRatio)

@@ -142,15 +142,16 @@ export class CombatReadabilityFx {
   constructor(scene: THREE.Scene) {
     this.scene = scene
 
-    const ringGeometry = new THREE.RingGeometry(0.78, 1, 64)
+    // 자동 표적은 알아볼 만큼만 감싼다. 두꺼운 원판은 소형 적과 보스의
+    // 실루엣을 가리므로 MOBA식 얇은 선택 링 비율로 제한한다.
+    const ringGeometry = new THREE.RingGeometry(0.86, 1, 64)
     ringGeometry.rotateX(-Math.PI / 2)
     this.ringMesh = new THREE.InstancedMesh(
       ringGeometry,
       new THREE.MeshBasicMaterial({
         color: 0xffffff,
-        vertexColors: true,
         transparent: true,
-        opacity: 0.76,
+        opacity: 0.66,
         depthTest: false,
         depthWrite: false,
         side: THREE.DoubleSide,

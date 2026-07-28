@@ -157,6 +157,10 @@ export class PostFx {
     this.gl = gl
     this.scene = scene
     this.camera = camera
+    // EffectComposer는 내부 패스마다 renderer.render()를 호출한다. three의
+    // 기본 autoReset을 두면 마지막 OutputPass의 1 draw만 남아 전체 부하가
+    // 숨겨지므로, 프레임 시작에서 직접 한 번만 초기화한다.
+    this.gl.info.autoReset = false
 
     this.composer = new EffectComposer(gl)
     this.composer.addPass(new RenderPass(scene, camera))
@@ -258,6 +262,7 @@ export class PostFx {
   }
 
   render(dt: number): void {
+    this.gl.info.reset()
     if (this.tintLeft > 0) {
       this.tintLeft = Math.max(0, this.tintLeft - dt)
       // 제곱으로 죽인다. 선형이면 끝자락이 오래 남아 화면이 물든 채로 보인다.
