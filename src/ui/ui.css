@@ -3060,8 +3060,8 @@ button {
   height: min(67vh, 52rem);
   min-height: 23rem;
   display: grid;
-  grid-template-columns: 1.055fr 0.945fr;
-  align-items: start;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  align-items: stretch;
   gap: clamp(2px, 0.45vw, 0.45rem);
 }
 
@@ -3081,11 +3081,6 @@ button {
   filter: none;
   appearance: none;
   text-align: left;
-}
-
-.charcard:nth-child(2) {
-  height: calc(100% - clamp(1rem, 3.4vh, 2.4rem));
-  margin-top: clamp(1rem, 3.4vh, 2.4rem);
 }
 
 .charcard::before {
@@ -3676,7 +3671,7 @@ button {
     height: calc(100dvh - max(var(--ui-safe-top), 0.65rem) - max(var(--ui-safe-bottom), 0.65rem) - 3.7rem);
     min-height: 0;
     display: grid;
-    grid-template-columns: 1.04fr 0.96fr;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
   }
 
   .charcard,
@@ -3719,28 +3714,6 @@ button {
    선택 화면의 로드아웃, 인게임 패시브, 상세 툴팁을 같은 얇은 프레임과
    숫자 규칙으로 묶는다. 전장 위에는 작은 상태만 두고 긴 설명은 툴팁에 둔다.
    -------------------------------------------------------------------------- */
-
-/* 두 캐릭터는 같은 선택지다. 의도적인 단차는 한쪽이 덜 중요한 카드처럼
-   읽히므로 모든 해상도에서 프레임과 기준선을 완전히 맞춘다. */
-.charselect .cards {
-  grid-template-columns: repeat(2, minmax(0, 1fr));
-  align-items: stretch;
-}
-
-.charcard,
-.charcard:nth-child(2) {
-  width: auto;
-  height: 100%;
-  margin: 0;
-  transform: none;
-}
-
-.charcard:hover,
-.charcard:focus-visible,
-.charcard:nth-child(2):hover,
-.charcard:nth-child(2):focus-visible {
-  transform: none;
-}
 
 .charcard .info {
   width: 100%;
