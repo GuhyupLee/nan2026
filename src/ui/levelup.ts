@@ -452,6 +452,27 @@ export function showLevelUp(parent: HTMLElement, world: World): Promise<void> {
         pick(cards[0]!, cardElements[0]!)
         return
       }
+
+      const direction =
+        e.key === 'ArrowRight' || e.key === 'ArrowDown'
+          ? 1
+          : e.key === 'ArrowLeft' || e.key === 'ArrowUp'
+            ? -1
+            : 0
+      if (direction !== 0 || e.key === 'Home' || e.key === 'End') {
+        e.preventDefault()
+        const focused = cardElements.indexOf(document.activeElement as HTMLButtonElement)
+        const next =
+          e.key === 'Home'
+            ? 0
+            : e.key === 'End'
+              ? cardElements.length - 1
+              : (Math.max(0, focused) + direction + cardElements.length) %
+                cardElements.length
+        cardElements[next]?.focus()
+        return
+      }
+
       const n = Number.parseInt(e.key, 10)
       if (Number.isFinite(n) && n >= 1 && n <= cards.length) {
         pick(cards[n - 1]!, cardElements[n - 1]!)

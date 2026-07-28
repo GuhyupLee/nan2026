@@ -177,14 +177,12 @@ export class PostFx {
     this.grade = new ShaderPass(GRADE_SHADER)
     this.composer.addPass(this.grade)
 
-    // WebGLRenderer의 antialias 옵션은 기본 프레임버퍼에만 적용된다. 실제 장면은
-    // EffectComposer의 비멀티샘플 렌더 타겟으로 그리므로 전투 실루엣의 AA가
-    // 사라진다. grade 뒤의 한 번짜리 FXAA로 그 경로를 복구한다.
+    // 선형 HDR에서 FXAA를 돌리면 발광 경계의 지각 명암을 잘못 읽는다.
+    // 톤매핑과 sRGB 변환을 먼저 끝낸 뒤 최종 화면 공간에서 AA를 적용한다.
+    this.composer.addPass(new OutputPass())
+
     this.fxaa = new ShaderPass(FXAAShader)
     this.composer.addPass(this.fxaa)
-
-    // 반드시 마지막. 렌더러의 ACESFilmic + sRGB가 여기서 적용된다.
-    this.composer.addPass(new OutputPass())
   }
 
   /**

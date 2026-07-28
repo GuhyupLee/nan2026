@@ -11,7 +11,10 @@ export default defineConfig({
   optimizeDeps: { include: ['three', '@pixiv/three-vrm'] },
   build: {
     target: 'es2022',
-    outDir: 'dist',
+    // Sites와 GitHub Pages가 함께 쓰는 단일 정적 산출물이다. 과거에는
+    // dist 루트를 만든 뒤 dist/client로 다시 복제해 VRM까지 두 벌 배포했다.
+    outDir: 'dist/client',
+    emptyOutDir: true,
     assetsInlineLimit: 4096,
   },
 })

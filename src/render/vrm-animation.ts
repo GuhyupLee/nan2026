@@ -99,6 +99,7 @@ interface Playback {
 }
 
 interface Outgoing {
+  kind: CharacterAction
   action: THREE.AnimationAction
   weight: number
   remaining: number
@@ -229,6 +230,7 @@ export class VrmAnimationController {
       if (previous.kind !== kind) {
         this.syncPlaybackTime(previous, time)
         this.outgoing = {
+          kind: previous.kind,
           action: previous.action,
           weight: actionWeight(this.elapsed(previous, time), previous.duration),
           remaining: ACTION_CROSS_FADE,
@@ -303,12 +305,24 @@ export class VrmAnimationController {
       }
     }
 
+    // 평타는 이동 중 거의 끊임없이 재생된다. 전신 one-shot이 걷기 가중치를
+    // 0으로 만들면 하체가 굳은 채 미끄러지므로, 평타에만 보행층을 남긴다.
+    const activeKeepsWalk =
+      active?.kind === 'attack' || active?.kind === 'empowered'
+    const outgoingKeepsWalk =
+      this.outgoing?.kind === 'attack' || this.outgoing?.kind === 'empowered'
+    const locomotionFloor =
+      this.walkBlend > 0.08 && (activeKeepsWalk || outgoingKeepsWalk)
+        ? Math.min(0.34, this.walkBlend * 0.34)
+        : 0
+
     // 빠른 스킬 캔슬에서는 나가는 모션과 새 모션의 페이드 곡선이 잠깐
-    // 겹칠 수 있다. 합을 1로 제한해야 관절 회전이 과장되지 않고 대기/걷기
-    // 가중치까지 포함한 블렌드가 항상 볼록 결합으로 유지된다.
+    // 겹칠 수 있다. 보행층 예약분을 제외한 합을 제한해야 관절 회전이
+    // 과장되지 않고 전체 블렌드가 항상 볼록 결합으로 유지된다.
     const oneShotWeight = activeWeight + outgoingWeight
-    if (oneShotWeight > 1) {
-      const scale = 1 / oneShotWeight
+    const maxOneShotWeight = 1 - locomotionFloor
+    if (oneShotWeight > maxOneShotWeight) {
+      const scale = maxOneShotWeight / oneShotWeight
       activeWeight *= scale
       outgoingWeight *= scale
       active?.action.setEffectiveWeight(activeWeight)

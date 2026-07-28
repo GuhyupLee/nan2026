@@ -106,6 +106,7 @@ export function showRecords(parent: HTMLElement): Promise<void> {
       '<div class="menu-eyebrow">RUN ARCHIVE</div>' +
       '<h2 id="records-title">점수 기록</h2>' +
       '<p>이 기기에 저장된 캐릭터별 최고 기록입니다.</p>'
+    heading.tabIndex = 0
     panel.appendChild(heading)
 
     const classes = document.createElement('div')
@@ -139,6 +140,7 @@ export function showRecords(parent: HTMLElement): Promise<void> {
     window.addEventListener('keydown', onKey)
     parent.appendChild(root)
     releaseFocusTrap = trapFocus(root)
-    back.focus()
+    // 대화상자를 열자마자 닫기 버튼으로 건너뛰지 않고 제목과 기록 맥락부터 읽힌다.
+    heading.focus()
   })
 }

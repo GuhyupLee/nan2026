@@ -159,7 +159,9 @@ export class Renderer {
   constructor(container: HTMLElement, arenaRadius: number) {
     this.container = container
     this.gl = new THREE.WebGLRenderer({
-      antialias: true,
+      // 실제 장면은 EffectComposer 렌더 타겟을 통과한다. 기본 프레임버퍼
+      // MSAA는 화면에 쓰이지 않으므로 메모리만 차지하고, AA는 PostFx가 맡는다.
+      antialias: false,
       powerPreference: 'high-performance',
     })
     this.gl.setPixelRatio(Math.min(window.devicePixelRatio, 2))

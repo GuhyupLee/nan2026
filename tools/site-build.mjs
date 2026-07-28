@@ -1,4 +1,4 @@
-import { copyFile, cp, mkdir, readdir, rm, writeFile } from 'node:fs/promises'
+import { access, copyFile, mkdir, readdir, rm, writeFile } from 'node:fs/promises'
 import { dirname, join } from 'node:path'
 import { fileURLToPath } from 'node:url'
 
@@ -7,14 +7,12 @@ const distDir = join(projectDir, 'dist')
 const clientDir = join(distDir, 'client')
 const serverDir = join(distDir, 'server')
 
-// Vite의 정적 산출물을 그대로 유지하면서 Sites가 기대하는 client 디렉터리에도 복제한다.
-// GitHub Pages·itch.io용 dist 루트와 Sites용 산출물을 한 번의 빌드로 함께 만든다.
-await rm(clientDir, { recursive: true, force: true })
-await mkdir(clientDir, { recursive: true })
-
+// Vite가 처음부터 dist/client에 쓴다. 이전 빌드가 루트에 남긴 대형 에셋만
+// 제거하고 정적 산출물은 복제하지 않는다.
+await access(join(clientDir, 'index.html'))
 for (const entry of await readdir(distDir, { withFileTypes: true })) {
-  if (entry.name === 'client' || entry.name === 'server' || entry.name === '.openai') continue
-  await cp(join(distDir, entry.name), join(clientDir, entry.name), { recursive: true })
+  if (entry.name === 'client') continue
+  await rm(join(distDir, entry.name), { recursive: true, force: true })
 }
 
 await mkdir(serverDir, { recursive: true })

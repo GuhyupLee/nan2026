@@ -123,7 +123,7 @@ export class Hud {
     this.runInfo.innerHTML =
       `<span><small>KOs</small><b data-run-kills>000</b></span>` +
       `<span><small>LV</small><b data-run-level>01</b></span>` +
-      `<span><small>SEAL</small><b data-run-relics>0/${ELITE_SPAWN_TIMES.length}</b></span>`
+      `<span><small>인장</small><b data-run-relics>0/${ELITE_SPAWN_TIMES.length}</b></span>`
     this.runInfo.setAttribute('aria-label', '런 전황')
     this.runKills = this.runInfo.querySelector('[data-run-kills]')!
     this.runLevel = this.runInfo.querySelector('[data-run-level]')!
