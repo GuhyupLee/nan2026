@@ -20,6 +20,7 @@ import { PostFx } from './post.ts'
 import { SkillFx } from './skillfx.ts'
 import { WeaponTrail } from './trails.ts'
 import { hasVrm } from './vrm-rig.ts'
+import { XpGemRenderer } from './xp-gems.ts'
 
 /**
  * 쿼터뷰 카메라 오프셋. 피치 ≈ atan(14/10.8) ≈ 52°. LoL·이터널 리턴 계열 각도.
@@ -103,6 +104,7 @@ export class Renderer {
   private readonly post: PostFx
   private readonly impact: ImpactFx
   private readonly impactParticles: ImpactParticles
+  private readonly xpGemRenderer: XpGemRenderer
   private readonly skillFx: SkillFx
   private weaponTrail: WeaponTrail
   /**
@@ -161,6 +163,7 @@ export class Renderer {
     this.combatReadability = new CombatReadabilityFx(this.scene)
     this.impact = new ImpactFx(this.scene)
     this.impactParticles = new ImpactParticles(this.scene)
+    this.xpGemRenderer = new XpGemRenderer(this.scene)
     // 스킬 이펙트가 타격 연출을 직접 만들지 않고 훅으로 위임한다.
     // 두 모듈이 서로를 몰라야 각각 따로 갈아끼울 수 있다.
     this.skillFx = new SkillFx(this.scene, {
@@ -401,6 +404,7 @@ export class Renderer {
       this.renderedWorld = world
       this.skillFx.reset()
       this.impactParticles.reset()
+      this.xpGemRenderer.reset()
       this.actionFacingUntil = -Infinity
     }
 
@@ -432,6 +436,7 @@ export class Renderer {
     // 리그가 본을 갱신한 **뒤**에 샘플해야 한 프레임 늦지 않는다.
     this.weaponTrail.update(now, dt)
 
+    this.xpGemRenderer.update(world.xpGems, visualAlpha, now)
     this.enemyRenderer.update(world, visualAlpha, dt)
     this.combatReadability.update(world, visualAlpha)
     // 훅이 같은 프레임의 벽시계를 birth time으로 쓰도록 SkillFx보다 먼저 갱신한다.
@@ -528,6 +533,7 @@ export class Renderer {
     const nextShadowMapSize = nextConstrained ? 1024 : 2048
     this.impact.setShakeScale(nextConstrained ? 0.6 : 1)
     this.impactParticles.setQuality(nextConstrained ? 0.45 : 1)
+    this.xpGemRenderer.setQuality(nextConstrained ? 0.45 : 1)
     this.skillFx.setQuality(nextConstrained ? 0.45 : 1)
     let changed = nextConstrained !== this.constrained
     this.constrained = nextConstrained
@@ -668,6 +674,7 @@ export class Renderer {
     this.enemyRenderer.dispose()
     this.combatReadability.dispose()
     this.skillFx.dispose()
+    this.xpGemRenderer.dispose()
     this.impactParticles.dispose()
     this.impact.dispose()
     this.post.dispose()
