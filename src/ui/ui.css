@@ -344,6 +344,17 @@ body.pickup-buff-active #hint:not(.hidden) {
   animation: deadline-pulse 0.8s steps(2, end) infinite;
 }
 
+.clock[data-mode='hard'] {
+  color: #ff8188;
+  border-color: rgba(255, 92, 104, 0.42);
+}
+
+.clock[data-mode='endless'] {
+  color: #f0cb7c;
+  border-color: rgba(224, 178, 92, 0.48);
+  text-shadow: 0 0 1rem rgba(224, 178, 92, 0.24);
+}
+
 .surge-alert {
   --surge-accent: #ff7548;
   position: fixed;
@@ -1165,6 +1176,70 @@ body.pickup-buff-active #hint:not(.hidden) {
 
 .mainmenu-action.primary::before {
   background: var(--ui-cyan);
+}
+
+.mainmenu-difficulty {
+  width: min(31rem, 100%);
+  min-height: 4.4rem;
+  margin: 0 0 clamp(0.7rem, 1.4vh, 1rem);
+  padding: 0.78rem 1rem;
+  border: 1px solid rgba(192, 207, 209, 0.2);
+  background:
+    linear-gradient(90deg, rgba(116, 188, 205, 0.09), transparent 72%),
+    rgba(8, 13, 17, 0.72);
+  color: #dbe4e3;
+  display: grid;
+  grid-template-columns: minmax(6rem, 0.6fr) minmax(0, 1.4fr) auto;
+  align-items: center;
+  gap: 0.9rem;
+  text-align: left;
+  cursor: pointer;
+}
+
+.mainmenu-difficulty span {
+  display: grid;
+  gap: 0.2rem;
+}
+
+.mainmenu-difficulty small {
+  color: #78929a;
+  font-size: 0.58rem;
+  letter-spacing: 0.18em;
+}
+
+.mainmenu-difficulty b {
+  font-family: var(--font-serif);
+  font-size: 1.08rem;
+}
+
+.mainmenu-difficulty em {
+  color: #93a3a5;
+  font-size: 0.72rem;
+  font-style: normal;
+}
+
+.mainmenu-difficulty i {
+  color: #67def4;
+  font-size: 0.68rem;
+  font-style: normal;
+  letter-spacing: 0.08em;
+}
+
+.mainmenu-difficulty[data-mode='hard'] {
+  border-color: rgba(238, 94, 104, 0.52);
+  background:
+    linear-gradient(90deg, rgba(182, 47, 57, 0.2), transparent 76%),
+    rgba(17, 9, 12, 0.82);
+}
+
+.mainmenu-difficulty[data-mode='hard'] i,
+.mainmenu-difficulty[data-mode='hard'] b {
+  color: #ff7680;
+}
+
+.mainmenu-difficulty:disabled {
+  cursor: not-allowed;
+  opacity: 0.48;
 }
 
 .mainmenu-action.legacy::before {
@@ -3093,6 +3168,7 @@ body.pickup-buff-active #hint:not(.hidden) {
 }
 
 .outcome .restart,
+.outcome .endless,
 .outcome .menu {
   min-width: 0;
   padding: 0.72rem 0.9rem 0.66rem;
@@ -3122,12 +3198,15 @@ body.pickup-buff-active #hint:not(.hidden) {
 
 .outcome .restart span,
 .outcome .restart small,
+.outcome .endless span,
+.outcome .endless small,
 .outcome .menu span,
 .outcome .menu small {
   display: block;
 }
 
 .outcome .restart span,
+.outcome .endless span,
 .outcome .menu span {
   font-size: 0.88rem;
   font-weight: 760;
@@ -3135,6 +3214,7 @@ body.pickup-buff-active #hint:not(.hidden) {
 }
 
 .outcome .restart small,
+.outcome .endless small,
 .outcome .menu small {
   margin-top: 0.16rem;
   color: #8f98a4;
@@ -3145,6 +3225,8 @@ body.pickup-buff-active #hint:not(.hidden) {
 
 .outcome .restart:hover,
 .outcome .restart:focus-visible,
+.outcome .endless:hover,
+.outcome .endless:focus-visible,
 .outcome .menu:hover,
 .outcome .menu:focus-visible {
   border-color: var(--accent);
@@ -3153,12 +3235,14 @@ body.pickup-buff-active #hint:not(.hidden) {
 }
 
 .outcome .restart:focus-visible,
+.outcome .endless:focus-visible,
 .outcome .menu:focus-visible {
   outline: 2px solid var(--accent);
   outline-offset: 3px;
 }
 
 .outcome .restart:active,
+.outcome .endless:active,
 .outcome .menu:active {
   transform: translateY(2px);
 }
@@ -3443,6 +3527,7 @@ body.pickup-buff-active #hint:not(.hidden) {
   }
 
   .outcome .restart,
+  .outcome .endless,
   .outcome .menu,
   .charselect-settings,
   .mainmenu-action,
@@ -5074,6 +5159,15 @@ body.pickup-buff-active #hint:not(.hidden) {
 .lvcard[data-family='optical-device'] {
   --family-accent: #67def4;
   --family-secondary: #b7f5ff;
+}
+
+.outcome .endless {
+  flex: 1.25;
+  border: var(--ui-hairline) solid #9b7342;
+  color: #f2d9a5;
+  background:
+    linear-gradient(135deg, rgba(200, 151, 73, 0.18), transparent 70%),
+    #1b1711;
 }
 
 .lvcard[data-family='sword-art'] {

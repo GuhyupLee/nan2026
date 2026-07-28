@@ -1,4 +1,8 @@
-import type { PlayerClass, RunMetaSnapshot } from '../sim/types.ts'
+import type {
+  PlayerClass,
+  RunDifficulty,
+  RunMetaSnapshot,
+} from '../sim/types.ts'
 
 /**
  * 최고 기록 저장.
@@ -44,6 +48,7 @@ export interface RunBuildSummaryV1 {
   seals: number
   /** 같은 시드 재도전이 시작 능력치·카드 언락까지 재현하도록 함께 보존한다. */
   meta?: RunMetaSnapshot
+  difficulty?: RunDifficulty
 }
 
 export interface RunRecord {
@@ -53,6 +58,9 @@ export interface RunRecord {
   /** 생존/클리어 시간(초). */
   time: number
   victory: boolean
+  difficulty?: RunDifficulty
+  endless?: boolean
+  endlessTime?: number
   /** 기록 시각(epoch ms). 동점일 때 최신을 위로 올린다. */
   at: number
   /** 이전 기록에는 없을 수 있으며, 손상되면 기본 전적만 보존한다. */
@@ -182,6 +190,9 @@ function sanitizeBuild(value: unknown): RunBuildSummaryV1 | null {
     fusionIds: sanitizeIdList(build.fusionIds),
     seals: build.seals,
     ...(meta ? { meta } : {}),
+    ...(build.difficulty === 'hard' || build.difficulty === 'normal'
+      ? { difficulty: build.difficulty }
+      : {}),
   }
 }
 
@@ -207,6 +218,13 @@ function sanitizeRecord(value: unknown): RunRecord | null {
     level: record.level,
     time: record.time,
     victory: record.victory,
+    ...(record.difficulty === 'hard' || record.difficulty === 'normal'
+      ? { difficulty: record.difficulty }
+      : {}),
+    ...(record.endless === true ? { endless: true } : {}),
+    ...(finiteNumber(record.endlessTime) && record.endlessTime >= 0
+      ? { endlessTime: record.endlessTime }
+      : {}),
     at: record.at,
     ...(build ? { build } : {}),
   }

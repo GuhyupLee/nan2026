@@ -13,7 +13,7 @@ import {
 } from './meta-progression.ts'
 
 export type GameOutcome = Exclude<World['outcome'], 'alive'>
-export type OutcomeAction = 'restart' | 'menu'
+export type OutcomeAction = 'restart' | 'menu' | 'endless'
 
 interface OutcomeCopy {
   eyebrow: string
@@ -191,7 +191,12 @@ export function showOutcome(
         kills: world.kills,
         level: world.progression.level,
         time: world.time,
-        victory: outcome === 'victory',
+        victory: outcome === 'victory' || world.victoryAt >= 0,
+        difficulty: world.runConfig.difficulty,
+        endless: world.endless,
+        endlessTime: world.endless
+          ? Math.max(0, world.time - world.endlessStartedAt)
+          : 0,
         at,
         build,
       })
@@ -214,6 +219,10 @@ export function showOutcome(
         scoreRow(`레벨 ${world.progression.level}`, s.level) +
         scoreRow('보스 처치', s.victory, true) +
         scoreRow(`남은 시간 ${formatTime(Math.max(0, 300 - world.time))}`, s.speed, true) +
+        scoreRow('생존 연장', s.survival, true) +
+        (s.difficultyMultiplier > 1
+          ? `<div class="row hard"><span>하드 모드</span><b>×${s.difficultyMultiplier.toFixed(1)}</b></div>`
+          : '') +
         `</div>` +
         recordsTable(records, at) +
         `</section>` +
@@ -245,6 +254,17 @@ export function showOutcome(
     const actions = document.createElement('div')
     actions.className = 'actions'
     panel.appendChild(actions)
+
+    let endless: HTMLButtonElement | null = null
+    if (world && outcome === 'victory' && !world.endless) {
+      endless = document.createElement('button')
+      endless.className = 'endless'
+      endless.type = 'button'
+      endless.innerHTML =
+        `<span>계속 싸운다</span>` +
+        `<small>ENDLESS · 40초마다 정예</small>`
+      actions.appendChild(endless)
+    }
 
     const restart = document.createElement('button')
     restart.className = 'restart'
@@ -295,6 +315,7 @@ export function showOutcome(
     }
 
     restart.addEventListener('click', () => finish('restart'))
+    endless?.addEventListener('click', () => finish('endless'))
     menu.addEventListener('click', () => finish('menu'))
     window.addEventListener('keydown', onKey)
     parent.appendChild(root)

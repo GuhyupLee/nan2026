@@ -71,6 +71,7 @@ export function createRunBuildSummary(world: World): RunBuildSummaryV1 {
       speedMultiplier: world.runConfig.meta.speedMultiplier,
       unlockedUpgradeIds: [...world.runConfig.meta.unlockedUpgradeIds],
     },
+    difficulty: world.runConfig.difficulty,
   }
 }
 

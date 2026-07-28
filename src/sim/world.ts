@@ -31,8 +31,10 @@ import {
   TYPE_ELITE,
   createEnemyHash,
   createEnemyPool,
+  enemyHealthMultiplier,
   rebuildEnemyHash,
   spawnBoss,
+  spawnElite,
   stepEnemies,
   targetAliveCount,
   thinEnemiesForBoss,
@@ -40,6 +42,7 @@ import {
 } from './enemies.ts'
 import {
   MELEE_XP_GAIN_MULTIPLIER,
+  MAX_LEVEL,
   RANGED_XP_GAIN_MULTIPLIER,
   addXp,
   consumeLevelUp,
@@ -87,6 +90,7 @@ function normalizeRunConfig(config?: Partial<RunConfig>): RunConfig {
     ),
   ).slice(0, 32)
   return {
+    difficulty: config?.difficulty === 'hard' ? 'hard' : 'normal',
     meta: {
       version: 1,
       maxHpBonus: Math.max(0, Math.min(30, maxHpBonus)),
@@ -143,6 +147,12 @@ export function createWorld(
     arenaRadius: ARENA_RADIUS,
     playerClass,
     runConfig,
+    endless: false,
+    endlessStartedAt: -1,
+    nextEndlessEliteAt: Number.POSITIVE_INFINITY,
+    endlessXp: 0,
+    pendingEndlessSkillRanks: 0,
+    victoryAt: -1,
     metaAwardedKills: 0,
     metaAwardedMoonlight: 0,
     metaVictoryAwarded: false,
@@ -270,6 +280,33 @@ export function stepWorld(world: World, input: Input): void {
     stepEliteRewardBeats(world)
     stepSurgeBeats(world)
 
+    if (world.endless && world.time >= world.nextEndlessEliteAt) {
+      const healthScale =
+        enemyHealthMultiplier(world.time, true) /
+        enemyHealthMultiplier(world.time)
+      if (
+        spawnElite(
+          world.enemies,
+          world.rng,
+          p.pos.x,
+          p.pos.y,
+          world.time,
+          healthScale,
+        )
+      ) {
+        world.nextEndlessEliteAt += 40
+        if (world.rings.length < 32) {
+          const elite = world.enemies.count - 1
+          world.rings.push({
+            x: world.enemies.x[elite]!,
+            y: world.enemies.y[elite]!,
+            radius: 6,
+            kind: 4,
+          })
+        }
+      }
+    }
+
     // 일반 스폰보다 먼저 보스 슬롯을 확보한다. 용량 부족으로 실패하면
     // spawned를 올리지 않아 다음 틱에 안전하게 다시 시도한다.
     if (!world.boss.spawned && world.time >= BOSS_SPAWN_TIME) {
@@ -292,7 +329,19 @@ export function stepWorld(world: World, input: Input): void {
         }
       }
     }
-    updateSpawner(world.enemies, world.rng, world.time, p.pos.x, p.pos.y)
+    const endlessHealthScale = world.endless
+      ? enemyHealthMultiplier(world.time, true) /
+        enemyHealthMultiplier(world.time)
+      : 1
+    updateSpawner(
+      world.enemies,
+      world.rng,
+      world.time,
+      p.pos.x,
+      p.pos.y,
+      targetAliveCount(world.time, world.endless),
+      endlessHealthScale,
+    )
   }
 
   // 돌진 recover 첫 틱에 적 이동이 시작되기 전에 종점 장판을 고정한다.
@@ -308,9 +357,13 @@ export function stepWorld(world: World, input: Input): void {
     world.boss.spawnedAt,
     world.relicsClaimed,
     world.boss.phaseTwoAt,
+    world.runConfig.difficulty === 'hard' ? 1.1 : 1,
   )
   // 무적 중에는 접촉 피해를 받지 않는다. 대시·궁극기가 성립하는 근거다.
-  const rawPlayerDamage = res.contactDamage + bossHazardDamage
+  const rawPlayerDamage =
+    res.contactDamage *
+      (world.runConfig.difficulty === 'hard' ? 1.25 : 1) +
+    bossHazardDamage
   if (rawPlayerDamage > 0 && world.time >= p.invulnUntil) {
     // 클래스별 피해 감소를 여기 한 곳에서만 적용한다.
     let incoming = rawPlayerDamage * world.stats.damageTakenMul
@@ -395,7 +448,8 @@ export function stepWorld(world: World, input: Input): void {
     world.outcome === 'alive' &&
     world.boss.spawned &&
     world.boss.active &&
-    world.time >= RUN_TIME_LIMIT
+    world.time >= RUN_TIME_LIMIT &&
+    !world.endless
   ) {
     world.outcome = 'timeout'
   }
@@ -485,13 +539,23 @@ export function grantXp(world: World, amount: number): void {
     world.progression.level,
     world.time,
   )
+  const scaledAmount = amount * classMultiplier * pacingMultiplier
+  if (world.endless && world.progression.level >= MAX_LEVEL) {
+    world.endlessXp += scaledAmount
+    while (world.endlessXp >= 420) {
+      world.endlessXp -= 420
+      world.pendingEndlessSkillRanks += 1
+    }
+  }
   addXp(
     world.progression,
-    amount * classMultiplier * pacingMultiplier,
+    scaledAmount,
     world.time,
   )
   world.awaitingChoice =
-    world.pendingRelicChoices > 0 || world.progression.pendingLevelUps > 0
+    world.pendingRelicChoices > 0 ||
+    world.pendingEndlessSkillRanks > 0 ||
+    world.progression.pendingLevelUps > 0
 }
 
 /**
@@ -501,7 +565,9 @@ export function grantXp(world: World, amount: number): void {
 export function resolveLevelUp(world: World): void {
   consumeLevelUp(world.progression)
   world.awaitingChoice =
-    world.pendingRelicChoices > 0 || world.progression.pendingLevelUps > 0
+    world.pendingRelicChoices > 0 ||
+    world.pendingEndlessSkillRanks > 0 ||
+    world.progression.pendingLevelUps > 0
 }
 
 /**
@@ -510,9 +576,29 @@ export function resolveLevelUp(world: World): void {
  */
 export function resolveRewardChoice(world: World): void {
   if (world.pendingRelicChoices > 0) world.pendingRelicChoices -= 1
+  else if (world.pendingEndlessSkillRanks > 0) {
+    world.pendingEndlessSkillRanks -= 1
+  }
   else consumeLevelUp(world.progression)
   world.awaitingChoice =
-    world.pendingRelicChoices > 0 || world.progression.pendingLevelUps > 0
+    world.pendingRelicChoices > 0 ||
+    world.pendingEndlessSkillRanks > 0 ||
+    world.progression.pendingLevelUps > 0
+}
+
+/** 승리한 동일 월드를 초기화하지 않고 무한전으로 되돌린다. */
+export function continueIntoEndless(world: World): boolean {
+  if (world.outcome !== 'victory' || world.endless) return false
+  world.endless = true
+  world.endlessStartedAt = world.time
+  world.nextEndlessEliteAt = world.time + 40
+  world.outcome = 'alive'
+  world.hostileHazards.length = 0
+  world.awaitingChoice =
+    world.pendingRelicChoices > 0 ||
+    world.pendingEndlessSkillRanks > 0 ||
+    world.progression.pendingLevelUps > 0
+  return true
 }
 
 const moveDir = vec2()

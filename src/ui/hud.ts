@@ -217,7 +217,9 @@ export class Hud {
     }
     if (world.relicsClaimed !== this.lastRelics) {
       this.lastRelics = world.relicsClaimed
-      this.runRelics.textContent = `${world.relicsClaimed}/${ELITE_SPAWN_TIMES.length}`
+      this.runRelics.textContent = world.endless
+        ? String(world.relicsClaimed)
+        : `${world.relicsClaimed}/${ELITE_SPAWN_TIMES.length}`
       runInfoChanged = true
     }
     if (runInfoChanged) {
@@ -231,9 +233,12 @@ export class Hud {
     const prog = world.progression
     const need = xpToNext(prog.level)
     // 만렙이면 Infinity가 온다. 그 경우 바를 가득 채워 "더 없음"을 보여준다.
-    this.xpFill.style.width = Number.isFinite(need)
-      ? `${Math.min(100, (prog.xp / need) * 100).toFixed(1)}%`
-      : '100%'
+    this.xpFill.style.width =
+      world.endless && !Number.isFinite(need)
+        ? `${Math.min(100, (world.endlessXp / 420) * 100).toFixed(1)}%`
+        : Number.isFinite(need)
+          ? `${Math.min(100, (prog.xp / need) * 100).toFixed(1)}%`
+          : '100%'
 
     // --- 전장 자석 ---
     // 획득 순간만 번쩍이고 사라지면 효과가 언제 끝나는지 알 수 없다.
@@ -277,14 +282,26 @@ export class Hud {
     // --- 제한 시간 ---
     // 경과 시간보다 "얼마나 남았는가"가 보스전의 의사결정에 직접 필요하다.
     // 마지막 30초에는 색과 점멸로 시선을 끌되, 보스 등장 전에는 조용히 둔다.
-    const t = Math.max(0, RUN_TIME_LIMIT - world.time)
+    const t = world.endless
+      ? Math.max(0, world.time - world.endlessStartedAt)
+      : Math.max(0, RUN_TIME_LIMIT - world.time)
     const wholeSeconds = Math.ceil(t)
     const mm = Math.floor(wholeSeconds / 60)
     const ss = wholeSeconds % 60
-    this.clock.textContent = `${mm}:${String(ss).padStart(2, '0')}`
+    this.clock.textContent =
+      `${world.endless ? '∞ ' : ''}${mm}:${String(ss).padStart(2, '0')}` +
+      `${world.runConfig.difficulty === 'hard' ? ' · HARD' : ''}`
+    this.clock.dataset.mode = world.endless
+      ? 'endless'
+      : world.runConfig.difficulty
     this.clock.dataset.phase =
       world.boss.active && t <= 30 ? 'critical' : world.boss.active ? 'boss' : 'normal'
-    this.clock.setAttribute('aria-label', `남은 시간 ${mm}분 ${ss}초`)
+    this.clock.setAttribute(
+      'aria-label',
+      world.endless
+        ? `무한전 생존 시간 ${mm}분 ${ss}초`
+        : `남은 시간 ${mm}분 ${ss}초`,
+    )
 
     // --- 웨이브 서지 ---
     // 정해진 편대가 갑자기 솟으면 억울한 스폰으로 읽힌다. 3초 예고 동안

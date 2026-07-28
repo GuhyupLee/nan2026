@@ -210,6 +210,7 @@ export function damageEnemy(
     world.boss.active = false
     world.boss.hp = 0
     world.hostileHazards.length = 0
+    world.victoryAt = world.time
     world.outcome = 'victory'
   }
   return true

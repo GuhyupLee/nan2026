@@ -1027,6 +1027,13 @@ export function hasUpgradeTrait(world: World, trait: string): boolean {
   return false
 }
 
+function isFusionContentUnlocked(world: World, fusion: UpgradeDef): boolean {
+  return (
+    !fusion.unlockId ||
+    world.runConfig.meta.unlockedUpgradeIds.includes(fusion.unlockId)
+  )
+}
+
 /**
  * 5분 안에 한 빌드가 각성→합성까지 이어지도록 선택지 한 칸의 우선순위를
  * 정한다. 진행 중인 장비를 먼저 완성하고, 각성 뒤에는 짝 장비, 마지막에는
@@ -1039,6 +1046,7 @@ export function getUpgradeRollPriority(
   if (upgrade.fusion) return upgrade.isAvailable(world) ? 3 : 0
 
   for (const fusion of FUSION_UPGRADES) {
+    if (!isFusionContentUnlocked(world, fusion)) continue
     const requirements = fusion.fusion?.requires
     if (!requirements?.includes(upgrade.id)) continue
     const partner = requirements[0] === upgrade.id ? requirements[1] : requirements[0]
@@ -1058,6 +1066,7 @@ export function getRelicRollPriority(world: World, upgrade: UpgradeDef): number 
 
   let isFusionPart = false
   for (const fusion of FUSION_UPGRADES) {
+    if (!isFusionContentUnlocked(world, fusion)) continue
     const requirements = fusion.fusion?.requires
     if (!requirements?.includes(upgrade.id)) continue
     isFusionPart = true
@@ -1203,6 +1212,7 @@ export function getRelicUpgradeBurstCount(world: World, id: string): number {
   const upgrade = getUpgrade(id)
   if (upgrade?.ranks.length === 1) return 1
   const completesRecipe = FUSION_UPGRADES.some((fusion) => {
+    if (!isFusionContentUnlocked(world, fusion)) return false
     const requirements = fusion.fusion?.requires
     if (!requirements?.includes(id)) return false
     const partner = requirements[0] === id ? requirements[1] : requirements[0]
@@ -1223,6 +1233,7 @@ export function getRelicFusionPreview(
     readRank(world.upgradesTaken, id) + getRelicUpgradeBurstCount(world, id),
   )
   return FUSION_UPGRADES.find((fusion) => {
+    if (!isFusionContentUnlocked(world, fusion)) return false
     if (world.upgradesTaken.has(fusion.id)) return false
     const requirements = fusion.fusion?.requires
     if (!requirements?.includes(id)) return false

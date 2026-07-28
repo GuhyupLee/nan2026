@@ -29,8 +29,12 @@ function createRecordRow(record: RunRecord, rank: number): HTMLTableRowElement {
   const values = [
     String(rank),
     record.score.toLocaleString('ko-KR'),
-    record.victory ? '승리' : '패배',
-    formatTime(record.time),
+    `${record.victory ? '승리' : '패배'}${
+      record.difficulty === 'hard' ? ' · H' : ''
+    }${record.endless ? ' · ∞' : ''}`,
+    record.endless && record.endlessTime !== undefined
+      ? `∞ ${formatTime(record.endlessTime)}`
+      : formatTime(record.time),
     `${record.kills}킬`,
     `Lv.${record.level}`,
     formatRecordDate(record.at),

@@ -331,7 +331,7 @@ const SPAWN_CURVE: ReadonlyArray<readonly [number, number]> = [
   [300, 95], // 5:00  보스전 내내 측면 압박은 유지한다
 ]
 
-export function targetAliveCount(time: number): number {
+export function targetAliveCount(time: number, endless = false): number {
   const c = SPAWN_CURVE
   if (time <= c[0]![0]) return c[0]![1]
   for (let i = 1; i < c.length; i++) {
@@ -342,7 +342,12 @@ export function targetAliveCount(time: number): number {
       return v0 + (v1 - v0) * k
     }
   }
-  return c[c.length - 1]![1]
+  const finalCount = c[c.length - 1]![1]
+  if (!endless || time <= RUN_TIME_LIMIT) return finalCount
+  return Math.min(
+    MAX_ENEMIES - 24,
+    finalCount + Math.floor((time - RUN_TIME_LIMIT) / 30) * 12,
+  )
 }
 
 /**
@@ -352,7 +357,7 @@ export function targetAliveCount(time: number): number {
  * 제한 시간에는 1.55배가 되도록 완만하게 선형 보간한다. 시간은 양 끝에서
  * 고정되므로 오래 진행해도 체력이 무한히 증가하지 않는다.
  */
-export function enemyHealthMultiplier(time: number): number {
+export function enemyHealthMultiplier(time: number, endless = false): number {
   if (Number.isNaN(time) || time <= 60) return 1
   if (time < BOSS_SPAWN_TIME) {
     return 1 + ((time - 60) / (BOSS_SPAWN_TIME - 60)) * 0.35
@@ -363,7 +368,8 @@ export function enemyHealthMultiplier(time: number): number {
       ((time - BOSS_SPAWN_TIME) / (RUN_TIME_LIMIT - BOSS_SPAWN_TIME)) * 0.2
     )
   }
-  return 1.55
+  if (!endless) return 1.55
+  return 1.55 + (time - RUN_TIME_LIMIT) * 0.0025
 }
 
 /**
@@ -522,6 +528,7 @@ export function spawnEnemy(
   py: number,
   type: number,
   time = 0,
+  healthScale = 1,
 ): void {
   if (pool.count >= MAX_ENEMIES) return
 
@@ -536,7 +543,7 @@ export function spawnEnemy(
   )
   const limit = ARENA_RADIUS - def.radius - 0.5
   const spawn = safeSpawnPosition(px, py, a, d, limit)
-  writeEnemy(pool, type, spawn.x, spawn.y, time, 1)
+  writeEnemy(pool, type, spawn.x, spawn.y, time, 1, healthScale)
 }
 
 /**
@@ -671,9 +678,10 @@ export function spawnElite(
   px: number,
   py: number,
   time: number,
+  healthScale = 1,
 ): boolean {
   const before = pool.count
-  spawnEnemy(pool, rng, px, py, TYPE_ELITE, time)
+  spawnEnemy(pool, rng, px, py, TYPE_ELITE, time, healthScale)
   return pool.count > before
 }
 
@@ -765,6 +773,7 @@ export function stepEnemies(
   bossSpawnedAt = BOSS_SPAWN_TIME,
   relicThreat = 0,
   bossPhaseTwoAt = -1,
+  globalSpeedMultiplier = 1,
 ): EnemyStepResult {
   // 격자는 여기서 만들지 않는다. 스킬이 stepEnemies보다 먼저 돌기 때문에
   // 여기서 재구축하면 스킬 질의가 항상 한 틱 낡은(또는 첫 틱엔 빈) 격자를 본다.
@@ -776,9 +785,11 @@ export function stepEnemies(
   // 전리품으로 두 랭크씩 강해지는 만큼 균열도 깨어난다. 보상을 먹을수록
   // 다음 웨이브가 빨라지고 아파져 파워 스파이크가 난이도를 삭제하지 않는다.
   const threatStacks = Math.max(0, Math.min(ELITE_SPAWN_TIMES.length, relicThreat))
+  const globalSpeed = Math.max(0.1, globalSpeedMultiplier)
   // The relic is a reward beat first. Its counter-pressure should be felt as a
   // slightly tighter horde, not erase the power spike the player just earned.
-  const threatSpeedMul = 1 + threatStacks * 0.005
+  const threatSpeedMul =
+    (1 + threatStacks * 0.005) * globalSpeed
   const threatDamageMul = 1 + threatStacks * 0.015
 
   for (let i = 0; i < n; i++) {
@@ -859,7 +870,8 @@ export function stepEnemies(
       // 별도 난수나 타이머 배열 없이 월드 시간만 써서 결정론적이다.
       if (isBoss) {
         // 속박·둔화가 패턴을 삭제하지 않게 최저 속도를 보장한다.
-        const mul = Math.max(0.72, speedMultiplier(pool, i, now))
+        const mul =
+          Math.max(0.72, speedMultiplier(pool, i, now)) * globalSpeed
         if (bossPhase === 'arrival' || bossPhase === 'transition') {
           targetVx = 0
           targetVy = 0
@@ -902,8 +914,10 @@ export function stepEnemies(
           }
           // 직선 도주보다 빨라야 예고를 보고 옆으로 피하는 문법이 성립한다.
           // 둔화 배수를 적용하면 최저 0.72에서 다시 플레이어보다 느려진다.
-          targetVx = pool.bossChargeDirX[i]! * BOSS_CHARGE_SPEED
-          targetVy = pool.bossChargeDirY[i]! * BOSS_CHARGE_SPEED
+          targetVx =
+            pool.bossChargeDirX[i]! * BOSS_CHARGE_SPEED * globalSpeed
+          targetVy =
+            pool.bossChargeDirY[i]! * BOSS_CHARGE_SPEED * globalSpeed
         } else {
           const recoverSpeed = def.speed * 0.28 * mul
           targetVx = dx * recoverSpeed
@@ -986,14 +1000,15 @@ export function updateSpawner(
   time: number,
   px: number,
   py: number,
+  target = targetAliveCount(time),
+  healthScale = 1,
 ): void {
-  const target = targetAliveCount(time)
   const deficit = Math.floor(target) - pool.count
   if (deficit <= 0) return
 
   const budget = Math.min(deficit, 3)
   for (let k = 0; k < budget; k++) {
-    spawnEnemy(pool, rng, px, py, rollType(rng, time), time)
+    spawnEnemy(pool, rng, px, py, rollType(rng, time), time, healthScale)
   }
 }
 

@@ -93,7 +93,7 @@ export const MELEE_XP_GAIN_MULTIPLIER = 0.56
  * 원거리는 넓은 Q/E와 관통 평타로 처치 편차가 크다. 12시드 중앙값을 기준으로
  * 보정해 특정 빌드가 조금 느려도 대표 회귀 시드는 제한 시간 안에 완주한다.
  */
-export const RANGED_XP_GAIN_MULTIPLIER = 0.54
+export const RANGED_XP_GAIN_MULTIPLIER = 0.52
 
 /** 마지막 1분에 목표 레벨보다 뒤처진 빌드만 완만하게 따라잡는다. */
 export const XP_CATCH_UP_START = 240
@@ -194,7 +194,7 @@ export function addXp(prog: Progression, amount: number, time: number): void {
   prog.xp += amount
   while (prog.level < MAX_LEVEL) {
     const need = xpToNext(prog.level)
-    if (prog.xp < need) break
+    if (prog.xp + 1e-9 < need) break
     prog.xp -= need
     prog.level += 1
     prog.pendingLevelUps += 1

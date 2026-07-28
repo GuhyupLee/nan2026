@@ -25,6 +25,7 @@ import { createInput } from './sim/types.ts'
 import type { PlayerClass, RunConfig, World } from './sim/types.ts'
 import {
   createWorld,
+  continueIntoEndless,
   drainEvents,
   resolveLevelUp,
   resolveRewardChoice,
@@ -37,6 +38,7 @@ import { showLevelUp } from './ui/levelup.ts'
 import { showMainMenu } from './ui/mainmenu.ts'
 import {
   createRunMetaSnapshot,
+  isHardModeUnlocked,
   loadMetaProgress,
 } from './ui/meta-progression.ts'
 import { showMetaProgress } from './ui/meta.ts'
@@ -251,7 +253,17 @@ function revealOutcome(now: number): void {
     }
 
     outcomeOpen = false
-    if (action === 'restart') {
+    if (action === 'endless' && continueIntoEndless(transition.world)) {
+      activeRun = true
+      running = true
+      skillBar.setVisible(true)
+      hud.setVisible(true)
+      bossBar.setVisible(false)
+      pauseButton.setVisible(true)
+      lastTime = performance.now()
+      accumulator = 0
+      releaseGameplayInput()
+    } else if (action === 'restart') {
       // 결과를 만든 정확한 시드와 클래스를 다시 넘긴다. 메뉴의 새 판 정책이
       // 달라져도 SAME SEED 재도전 계약은 이 경로에서 유지된다.
       beginRun(
@@ -622,7 +634,7 @@ async function start(): Promise<void> {
   pauseButton.setVisible(false)
   requestMenuWarmup()
   let metaProgress = loadMetaProgress()
-  await showMainMenu(
+  const difficulty = await showMainMenu(
     document.body,
     () => showSettings(document.body, audio, input),
     () => showRecords(document.body),
@@ -631,6 +643,7 @@ async function start(): Promise<void> {
       return { moonlight: metaProgress.moonlight }
     },
     metaProgress.moonlight,
+    isHardModeUnlocked(metaProgress),
   )
   // 일부 WebView는 AudioContext.resume() Promise를 사용자 제스처가 끝난 뒤에도
   // 오래 보류한다. 사운드는 best-effort 기능이므로 화면 전환을 막지 않는다.
@@ -656,6 +669,7 @@ async function start(): Promise<void> {
   metaProgress = loadMetaProgress()
   beginRun(playerClass, initialSeed, {
     meta: createRunMetaSnapshot(metaProgress),
+    difficulty,
   })
 }
 

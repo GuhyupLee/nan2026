@@ -17,6 +17,7 @@ import { pendingReward, rollUpgrades, type UpgradeCandidate } from '../sim/progr
 import { ELITE_SPAWN_TIMES } from '../sim/enemies.ts'
 import {
   MAX_SKILL_RANK,
+  MAX_ENDLESS_SKILL_RANK,
   lockedChoosableSkills,
   rankUpSkill,
   rankableSkills,
@@ -113,7 +114,8 @@ function skillCard(world: World, id: SkillId): LevelUpCard | null {
  * 지금까지 스킬은 해금된 뒤 영원히 그대로였다.
  */
 function rankCards(world: World): LevelUpCard[] {
-  const ids = rankableSkills(world.skills)
+  const maxRank = world.endless ? MAX_ENDLESS_SKILL_RANK : MAX_SKILL_RANK
+  const ids = rankableSkills(world.skills, maxRank)
   if (ids.length === 0) return []
 
   // 랭크가 낮은 것부터 보여준다. 몰아주기와 고루 찍기 둘 다 가능하되
@@ -134,7 +136,9 @@ function rankCards(world: World): LevelUpCard[] {
       slotLabel: def.key,
       tag: `스킬 강화 · Lv${next}`,
       name: `${def.name} +1`,
-      desc: `피해 +20%, 재사용 대기시간 −5% (Lv${next}/${MAX_SKILL_RANK})`,
+      desc: world.endless
+        ? `피해 +20%, 재사용 대기시간 −5% (무한 연마 Lv${next})`
+        : `피해 +20%, 재사용 대기시간 −5% (Lv${next}/${MAX_SKILL_RANK})`,
     })
   }
   return out
@@ -234,6 +238,7 @@ function buildUpgradeCards(world: World, relic = false): LevelUpCard[] {
 export function buildLevelUpCards(world: World): LevelUpCard[] {
   // 같은 틱에 레벨업이 겹쳐도 정예 보상을 먼저 연다. 레벨업 대기는 그대로 남는다.
   if (world.pendingRelicChoices > 0) return buildUpgradeCards(world, true)
+  if (world.pendingEndlessSkillRanks > 0) return rankCards(world)
 
   const reward = pendingReward(world.progression)
 
@@ -270,7 +275,11 @@ export function applyLevelUpCard(world: World, card: LevelUpCard): void {
 
   if (card.kind === 'skill-rank') {
     // id는 "rank:q" 형태다.
-    rankUpSkill(world.skills, card.id.slice(5) as SkillId)
+    rankUpSkill(
+      world.skills,
+      card.id.slice(5) as SkillId,
+      world.endless ? MAX_ENDLESS_SKILL_RANK : MAX_SKILL_RANK,
+    )
     return
   }
 

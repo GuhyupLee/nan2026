@@ -120,6 +120,8 @@ export function unlockedCount(book: SkillBook): number {
  * 스킬 4개 × 4랭크가 강화·각성 사이의 성장 박자를 채운다.
  */
 export const MAX_SKILL_RANK = 4
+/** 무한전에서는 같은 QWER을 계속 연마할 수 있다. */
+export const MAX_ENDLESS_SKILL_RANK = 99
 
 /** 랭크당 스킬 피해 증가율. 랭크 4에서 1.8배. */
 const RANK_DAMAGE_STEP = 0.2
@@ -132,9 +134,13 @@ export function skillDamageMul(book: SkillBook, id: SkillId): number {
 }
 
 /** 한 랭크 올린다. 상한에 걸리면 false. */
-export function rankUpSkill(book: SkillBook, id: SkillId): boolean {
+export function rankUpSkill(
+  book: SkillBook,
+  id: SkillId,
+  maxRank = MAX_SKILL_RANK,
+): boolean {
   const s = book[id]
-  if (!s.unlocked || s.rank >= MAX_SKILL_RANK) return false
+  if (!s.unlocked || s.rank >= maxRank) return false
   s.rank += 1
   // 쿨다운 단축은 최대 쿨다운에 즉시 반영한다. 다음 시전부터 체감된다.
   s.maxCooldown *= 1 - RANK_COOLDOWN_STEP
@@ -151,8 +157,13 @@ export function rankUpSkill(book: SkillBook, id: SkillId): boolean {
 const RANKABLE_SLOTS = ['q', 'w', 'e', 'r'] as const satisfies readonly SkillId[]
 
 /** 지금 랭크를 더 올릴 수 있는 스킬. 레벨업 카드가 이 목록에서 뽑는다. */
-export function rankableSkills(book: SkillBook): SkillId[] {
-  return RANKABLE_SLOTS.filter((id) => book[id].unlocked && book[id].rank < MAX_SKILL_RANK)
+export function rankableSkills(
+  book: SkillBook,
+  maxRank = MAX_SKILL_RANK,
+): SkillId[] {
+  return RANKABLE_SLOTS.filter(
+    (id) => book[id].unlocked && book[id].rank < maxRank,
+  )
 }
 
 /** 쿨다운 진행률 0..1. UI의 부채꼴 게이지가 이 값을 쓴다. */

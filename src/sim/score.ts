@@ -23,6 +23,10 @@ export interface ScoreBreakdown {
   victory: number
   /** 남은 시간 보너스. 패배면 0. */
   speed: number
+  /** 5분 이후 무한전 생존 점수. */
+  survival: number
+  /** 하드 모드 최종 배율. */
+  difficultyMultiplier: number
   total: number
 }
 
@@ -30,21 +34,39 @@ const POINTS_PER_KILL = 10
 const POINTS_PER_LEVEL = 50
 const VICTORY_BONUS = 2000
 const POINTS_PER_SECOND_LEFT = 50
+const POINTS_PER_ENDLESS_SECOND = 40
 
 export function computeScore(world: World): ScoreBreakdown {
   const kills = world.kills * POINTS_PER_KILL
   const level = world.progression.level * POINTS_PER_LEVEL
 
-  const won = world.outcome === 'victory'
-  const secondsLeft = won ? Math.max(0, RUN_TIME_LIMIT - world.time) : 0
-  const victory = won ? VICTORY_BONUS : 0
+  const defeatedBoss = world.victoryAt >= 0 || world.outcome === 'victory'
+  const secondsLeft = defeatedBoss
+    ? Math.max(
+        0,
+        RUN_TIME_LIMIT -
+          (world.victoryAt >= 0 ? world.victoryAt : world.time),
+      )
+    : 0
+  const victory = defeatedBoss ? VICTORY_BONUS : 0
   const speed = Math.round(secondsLeft * POINTS_PER_SECOND_LEFT)
+  const survival = world.endless
+    ? Math.round(
+        Math.max(0, world.time - world.endlessStartedAt) *
+          POINTS_PER_ENDLESS_SECOND,
+      )
+    : 0
+  const difficultyMultiplier =
+    world.runConfig.difficulty === 'hard' ? 1.5 : 1
+  const subtotal = kills + level + victory + speed + survival
 
   return {
     kills,
     level,
     victory,
     speed,
-    total: kills + level + victory + speed,
+    survival,
+    difficultyMultiplier,
+    total: Math.round(subtotal * difficultyMultiplier),
   }
 }

@@ -58,7 +58,10 @@ export interface RunMetaSnapshot {
 
 export interface RunConfig {
   meta: RunMetaSnapshot
+  difficulty: RunDifficulty
 }
+
+export type RunDifficulty = 'normal' | 'hard'
 
 export type PlayerActionKind =
   | 'attack'
@@ -299,6 +302,16 @@ export interface World {
   playerClass: PlayerClass
   /** 시작 시 고정된 메타 보정. 같은 전장 재도전과 기록 재현에 함께 보존한다. */
   runConfig: RunConfig
+  /** 보스 격파 뒤 계속 싸우기를 선택한 런. */
+  endless: boolean
+  /** 무한전이 시작된 시각과 다음 반복 정예 비트. */
+  endlessStartedAt: number
+  nextEndlessEliteAt: number
+  /** 만렙 이후 반복 스킬 강화용 XP와 대기 선택 수. */
+  endlessXp: number
+  pendingEndlessSkillRanks: number
+  /** 최초 보스 격파 시각. 무한전 점수의 승리·속도 기준으로 보존한다. */
+  victoryAt: number
   /** 결과 UI가 같은 런의 보상을 두 번 지급하지 않게 하는 외부 저장 체크포인트. */
   metaAwardedKills: number
   metaAwardedMoonlight: number

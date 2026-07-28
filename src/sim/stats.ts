@@ -132,7 +132,9 @@ export function createStats(
     markKillHeal: melee ? 0 : 4,
 
     cooldownMul: 1,
-    atkDamageMul: 1,
+    // 확장된 카드 풀에서도 원거리의 생존은 사거리와 선제 제거에서 나온다.
+    // 방어력을 올려 위험 구간을 지우지 않고 작은 화력 보정만 준다.
+    atkDamageMul: melee ? 1 : 1.03,
     atkIntervalMul: 1,
 
     flashCooldown: FLASH_COOLDOWN,

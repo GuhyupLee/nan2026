@@ -10,7 +10,8 @@ export function showMainMenu(
   onRecords: () => Promise<void> | void,
   onMeta?: () => Promise<{ moonlight: number }> | { moonlight: number },
   initialMoonlight = 0,
-): Promise<void> {
+  hardModeUnlocked = false,
+): Promise<RunDifficulty> {
   return new Promise((resolve) => {
     const root = document.createElement('div')
     root.className = 'mainmenu'
@@ -65,6 +66,28 @@ export function showMainMenu(
     rule.setAttribute('aria-hidden', 'true')
     rule.innerHTML = '<span>FIVE MINUTES</span><i></i>'
     content.appendChild(rule)
+
+    let selectedDifficulty: RunDifficulty = 'normal'
+    const difficulty = document.createElement('button')
+    difficulty.className = 'mainmenu-difficulty'
+    difficulty.type = 'button'
+    difficulty.disabled = !hardModeUnlocked
+    const renderDifficulty = (): void => {
+      const hard = selectedDifficulty === 'hard'
+      difficulty.dataset.mode = hard ? 'hard' : 'normal'
+      difficulty.setAttribute('aria-pressed', String(hard))
+      difficulty.innerHTML =
+        `<span><small>DIFFICULTY</small><b>${hard ? '하드' : '일반'}</b></span>` +
+        `<em>${
+          hardModeUnlocked
+            ? hard
+              ? '적 속도 +10% · 접촉 피해 +25% · 점수 ×1.5'
+              : '안정적인 5분 보스전'
+            : '보스 최초 격파 후 해금'
+        }</em><i aria-hidden="true">${hardModeUnlocked ? '↔' : 'LOCKED'}</i>`
+    }
+    renderDifficulty()
+    content.appendChild(difficulty)
 
     const actions = document.createElement('div')
     actions.className = 'mainmenu-actions'
@@ -122,7 +145,7 @@ export function showMainMenu(
       root.classList.add('closing')
       window.setTimeout(() => {
         root.remove()
-        resolve()
+        resolve(selectedDifficulty)
       }, 220)
     }
 
@@ -193,6 +216,12 @@ export function showMainMenu(
     }
 
     start.addEventListener('click', finish)
+    difficulty.addEventListener('click', () => {
+      if (!hardModeUnlocked || done || subviewOpen) return
+      selectedDifficulty =
+        selectedDifficulty === 'normal' ? 'hard' : 'normal'
+      renderDifficulty()
+    })
     records.addEventListener('click', () => void openRecords())
     settings.addEventListener('click', () => void openSettings())
     meta?.addEventListener('click', () => void openMeta())
@@ -201,3 +230,4 @@ export function showMainMenu(
     start.focus()
   })
 }
+import type { RunDifficulty } from '../sim/types.ts'
