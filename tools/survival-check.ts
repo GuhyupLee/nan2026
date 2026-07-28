@@ -56,8 +56,10 @@ interface Result {
   survivedSec: number
   minHpFrac: number
   dangerFrac: number
-  totalDamage: number
-  contactFrac: number
+  /** 회복까지 반영한 틱간 순 HP 감소 합계. 실제 원시 피해량과는 다르다. */
+  netHpLoss: number
+  /** 장판·돌진·접촉을 모두 포함해 틱간 HP가 순감소한 틱 비율. */
+  damageTickFrac: number
   bossProgress: number
   kills: number
   level: number
@@ -305,8 +307,8 @@ function run(cls: PlayerClass, seed: number): Result {
 
   let minHpFrac = 1
   let dangerTicks = 0
-  let hitTicks = 0
-  let totalDamage = 0
+  let damageTicks = 0
+  let netHpLoss = 0
   let previousHp = world.player.hp
   let ticks = 0
 
@@ -316,8 +318,8 @@ function run(cls: PlayerClass, seed: number): Result {
     stepWorld(world, input)
 
     if (world.player.hp < previousHp) {
-      totalDamage += previousHp - world.player.hp
-      hitTicks += 1
+      netHpLoss += previousHp - world.player.hp
+      damageTicks += 1
     }
     previousHp = world.player.hp
     const hpFraction = world.player.hp / world.stats.maxHp
@@ -342,8 +344,8 @@ function run(cls: PlayerClass, seed: number): Result {
     survivedSec: world.time,
     minHpFrac,
     dangerFrac: dangerTicks / Math.max(1, ticks),
-    totalDamage,
-    contactFrac: hitTicks / Math.max(1, ticks),
+    netHpLoss,
+    damageTickFrac: damageTicks / Math.max(1, ticks),
     bossProgress: world.boss.spawned
       ? world.outcome === 'victory'
         ? 1
@@ -377,8 +379,8 @@ function summarize(rows: Result[], cls: PlayerClass): void {
       `생존 ${median(selected.map((row) => row.survivedSec)).toFixed(0).padStart(3)}초  ` +
       `최저체력 ${(median(selected.map((row) => row.minHpFrac)) * 100).toFixed(0).padStart(3)}%  ` +
       `위험시간 ${(median(selected.map((row) => row.dangerFrac)) * 100).toFixed(0).padStart(3)}%  ` +
-      `총피해 ${String(Math.round(median(selected.map((row) => row.totalDamage)))).padStart(4)}  ` +
-      `접촉 ${(median(selected.map((row) => row.contactFrac)) * 100).toFixed(1).padStart(4)}%  ` +
+      `순HP손실 ${String(Math.round(median(selected.map((row) => row.netHpLoss)))).padStart(4)}  ` +
+      `피격틱 ${(median(selected.map((row) => row.damageTickFrac)) * 100).toFixed(1).padStart(4)}%  ` +
       `보스 ${(median(selected.map((row) => row.bossProgress)) * 100).toFixed(0).padStart(3)}%  ` +
       `킬 ${String(Math.round(median(selected.map((row) => row.kills)))).padStart(4)}  ` +
       `Lv ${String(median(selected.map((row) => row.level))).padStart(2)}  ` +
@@ -417,7 +419,7 @@ if (process.argv.includes('--verbose')) {
           `${row.survivedSec.toFixed(1).padStart(5)}s  ` +
           `boss ${(row.bossProgress * 100).toFixed(0).padStart(3)}%  ` +
           `minHP ${(row.minHpFrac * 100).toFixed(0).padStart(3)}%  ` +
-          `damage ${Math.round(row.totalDamage).toString().padStart(4)}  ` +
+          `netLoss ${Math.round(row.netHpLoss).toString().padStart(4)}  ` +
           `kills ${String(row.kills).padStart(4)}  Lv${String(row.level).padStart(2)}  ` +
           `H/M/B ${row.healPickups}/${row.magnetPickups}/${row.bombPickups}`,
       )
@@ -428,8 +430,8 @@ if (process.argv.includes('--verbose')) {
 for (const cls of ['ranged', 'melee'] as const) {
   const selected = results.filter((row) => row.cls === cls)
   const wins = selected.filter((row) => row.outcome === 'victory').length
-  if (median(selected.map((row) => row.totalDamage)) <= 0) {
-    throw new Error(`${cls}: 접촉 피해가 0이라 생존 계측이 무효입니다.`)
+  if (median(selected.map((row) => row.netHpLoss)) <= 0) {
+    throw new Error(`${cls}: 순 HP 손실이 0이라 생존 계측이 무효입니다.`)
   }
   if (median(selected.map((row) => row.bossProgress)) < 0.8) {
     throw new Error(`${cls}: 보스 진행도 중앙값이 80% 미만이라 보스 계측이 무효입니다.`)

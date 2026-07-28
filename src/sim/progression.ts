@@ -11,7 +11,7 @@ import type { PlayerClass } from './types.ts'
 
 /**
  * 비트 시트가 지정한 레벨 도달 목표 시각(초).
- * 인덱스 i = 레벨 (i+1). 즉 [1] = Lv2 = 20초.
+ * 인덱스 i = 레벨 (i+1). 즉 [1] = Lv2 = 14초.
  */
 export const TARGET_LEVEL_TIMES = [
   0, // Lv1  0:00
@@ -83,8 +83,9 @@ export const XP_FOR_NEXT = [
 ] as const
 
 /**
- * 서지까지 포함한 24시드 실측에서 두 클래스의 Lv26 중앙값이 4:51 부근에
- * 모이도록 보정했다. 요구 XP는 공통으로 유지해 카드 선택 문법은 같게 둔다.
+ * 서지까지 포함한 24시드 실측에서 두 클래스의 Lv26 중앙값이
+ * 4:52 목표 ±8초 회귀 범위에 모이도록 보정했다. 요구 XP는 공통으로
+ * 유지해 카드 선택 문법은 같게 둔다.
  */
 export const MELEE_XP_GAIN_MULTIPLIER = 0.56
 
