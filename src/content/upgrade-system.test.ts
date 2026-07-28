@@ -4,6 +4,7 @@ import {
   applyUpgrade,
   applyUpgradeBurst,
   getUpgrade,
+  getUpgradeBranchPresentation,
   getUpgradePresentation,
   getUpgradeRank,
   getRelicFusionPreview,
@@ -79,6 +80,44 @@ function candidatePool(world: World): UpgradeCandidate[] {
     attackWorld.upgradesTaken.has(upgradeTraitToken('pierce-amplification')),
     '일반 카드 III trait 토큰이 기록되지 않음',
   )
+}
+
+// 같은 강화의 I·II·III와 하나의 합성을 공유하는 각 스킬 슬롯이 서로 다른 경로명으로 읽혀야 한다.
+{
+  for (const upgrade of UPGRADES.filter((candidate) => candidate.fusion === undefined)) {
+    const rankNames = upgrade.ranks.map((rank) => rank.displayName)
+    assert(
+      new Set(rankNames).size === rankNames.length,
+      `${upgrade.id}의 랭크별 경로명이 중복됨`,
+    )
+
+    const presentations = [
+      getUpgradePresentation(upgrade, new Set()),
+      getUpgradePresentation(upgrade, new Set([upgrade.id])),
+      getUpgradePresentation(
+        upgrade,
+        new Set([upgrade.id, upgradeRankToken(upgrade.id, 2)]),
+      ),
+    ]
+    assert(
+      new Set(presentations.map((entry) => entry.name)).size === 3,
+      `${upgrade.id}의 I·II·III 카드 제목이 구분되지 않음`,
+    )
+  }
+
+  const rangedQ = getUpgradeBranchPresentation('singularity-interference', 'q')
+  const rangedW = getUpgradeBranchPresentation('singularity-interference', 'w')
+  assert(rangedQ !== null && rangedW !== null, '원거리 합성 경로 표시를 찾지 못함')
+  assert(rangedQ.name !== rangedW.name, '원거리 Q/W 합성 경로명이 동일함')
+  assert(rangedQ.name === '특이점 낙광', '원거리 Q 합성 경로명이 잘못됨')
+  assert(rangedW.name === '사건지평 견인', '원거리 W 합성 경로명이 잘못됨')
+
+  const meleeQ = getUpgradeBranchPresentation('eclipse-sword-domain', 'q')
+  const meleeR = getUpgradeBranchPresentation('eclipse-sword-domain', 'r')
+  assert(meleeQ !== null && meleeR !== null, '근거리 합성 경로 표시를 찾지 못함')
+  assert(meleeQ.name !== meleeR.name, '근거리 Q/R 합성 경로명이 동일함')
+  assert(meleeQ.name === '월식 발도', '근거리 Q 합성 경로명이 잘못됨')
+  assert(meleeR.name === '월식 난무', '근거리 R 합성 경로명이 잘못됨')
 }
 
 // 두 선행 각성이 모두 끝난 뒤에만 합성 카드가 열린다.

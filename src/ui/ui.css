@@ -1362,6 +1362,25 @@ button {
   border-color: var(--ui-crimson);
 }
 
+.skillbar .passive-slot {
+  position: absolute;
+  right: calc(100% + 0.72rem);
+  bottom: 0.4rem;
+  cursor: default;
+}
+
+.skillbar .passive-slot .glyph {
+  filter: saturate(0.9) brightness(0.82);
+}
+
+.skillbar .passive-slot[data-state='ready'] .glyph {
+  filter: saturate(1.08) brightness(1.12);
+}
+
+.skillbar .passive-slot .cdtext {
+  font-size: 0.68rem;
+}
+
 /* --------------------------------------------------------------------------
    Pause & audio settings
    -------------------------------------------------------------------------- */
@@ -3920,113 +3939,6 @@ button {
   -webkit-line-clamp: 2;
 }
 
-/* 인게임 패시브는 스킬바의 왼쪽 날개처럼 붙는다. 상태가 바뀌어도 전투
-   중앙을 덮지 않고, 모바일에서는 경험치 바 위 한 줄로 접힌다. */
-.passive-hud {
-  --passive-accent: var(--ui-cyan);
-  position: fixed;
-  left: 50%;
-  bottom: var(--ui-safe-bottom);
-  z-index: 6;
-  width: 10.8rem;
-  min-height: 3.98rem;
-  padding: 0.42rem 0.52rem;
-  display: flex;
-  align-items: center;
-  gap: 0.5rem;
-  transform: translateX(calc(-50% - 16.8rem));
-  border-block: var(--ui-hairline) solid #3f4651;
-  border-left: 2px solid var(--passive-accent);
-  color: #e7ebef;
-  background:
-    linear-gradient(90deg, color-mix(in srgb, var(--passive-accent) 9%, transparent), transparent 62%),
-    rgba(8, 11, 16, 0.9);
-  box-shadow: 0 0.28rem 0 rgba(0, 0, 0, 0.34);
-  pointer-events: none;
-}
-
-.passive-hud[data-class='melee'] {
-  --passive-accent: var(--ui-crimson);
-}
-
-.passive-emblem {
-  width: 2rem;
-  height: 2rem;
-  flex: none;
-  display: grid;
-  place-items: center;
-  border: 1px solid color-mix(in srgb, var(--passive-accent) 66%, #505966);
-  color: var(--passive-accent);
-  background: rgba(5, 8, 12, 0.86);
-  box-shadow: inset 0 0 0 0.2rem rgba(255, 255, 255, 0.025);
-}
-
-.passive-emblem span {
-  font-family: Georgia, 'Times New Roman', serif;
-  font-size: 0.82rem;
-  font-weight: 700;
-}
-
-.passive-copy {
-  min-width: 0;
-  flex: 1;
-}
-
-.passive-heading {
-  display: flex;
-  align-items: baseline;
-  justify-content: space-between;
-  gap: 0.35rem;
-}
-
-.passive-heading strong {
-  overflow: hidden;
-  color: #edf0f3;
-  font-size: 0.65rem;
-  font-weight: 800;
-  letter-spacing: 0.04em;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-
-.passive-heading b {
-  flex: none;
-  color: var(--passive-accent);
-  font-size: 0.58rem;
-  font-variant-numeric: tabular-nums;
-}
-
-.passive-copy small {
-  margin-top: 0.12rem;
-  display: block;
-  overflow: hidden;
-  color: #7f8995;
-  font-size: 0.47rem;
-  line-height: 1.35;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-
-.passive-track {
-  height: 2px;
-  margin-top: 0.32rem;
-  overflow: hidden;
-  background: #252c35;
-}
-
-.passive-fill {
-  width: 0;
-  height: 100%;
-  background: var(--passive-accent);
-  transition: width 0.1s linear;
-}
-
-.passive-hud[data-ready='true'] .passive-emblem {
-  color: #fff;
-  background: color-mix(in srgb, var(--passive-accent) 28%, #0a0e13);
-  box-shadow: 0 0 0.7rem color-mix(in srgb, var(--passive-accent) 26%, transparent);
-}
-
 .damage-vignette {
   --damage-alpha: 0;
   position: fixed;
@@ -4351,26 +4263,18 @@ button {
     right: 0.64rem;
   }
 
-  .passive-hud {
-    left: 50%;
-    bottom: calc(var(--ui-safe-bottom) + 4.85rem);
-    width: min(23rem, calc(100vw - var(--ui-safe-left) - var(--ui-safe-right) - 1rem));
-    min-height: 2.7rem;
-    padding-block: 0.3rem;
-    transform: translateX(-50%);
-  }
-
-  .passive-emblem {
-    width: 1.72rem;
-    height: 1.72rem;
+  .skillbar .passive-slot {
+    right: auto;
+    bottom: calc(100% + 0.3rem);
+    left: 0.3rem;
   }
 
   .xpbar {
-    bottom: calc(var(--ui-safe-bottom) + 7.85rem);
+    bottom: calc(var(--ui-safe-bottom) + 8.85rem);
   }
 
   #hint {
-    bottom: calc(var(--ui-safe-bottom) + 8.35rem);
+    bottom: calc(var(--ui-safe-bottom) + 9.35rem);
   }
 
   .levelup .cards {
@@ -4435,9 +4339,6 @@ button {
     padding: 0.66rem 0.68rem;
   }
 
-  .passive-copy small {
-    font-size: 9px;
-  }
 }
 
 @media (max-height: 560px) and (orientation: landscape) {
@@ -4475,9 +4376,6 @@ button {
 @media (prefers-reduced-motion: reduce) {
   .records-overlay,
   .skill-tooltip,
-  .passive-fill,
-  .passive-hud,
-  .passive-emblem,
   .damage-vignette,
   .lvcard::after {
     animation: none;

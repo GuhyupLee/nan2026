@@ -1,5 +1,5 @@
 import { getSkillDamageBreakdown, getSkillDef } from '../content/skills.ts'
-import { UPGRADES, hasUpgradeTrait } from '../content/upgrades.ts'
+import { getUpgradeBranchPresentation, hasUpgradeTrait } from '../content/upgrades.ts'
 import {
   MAX_SKILL_RANK,
   SKILL_IDS,
@@ -8,6 +8,7 @@ import {
   cooldownProgress,
   skillDamageMul,
 } from '../sim/skills.ts'
+import { effectiveAtkDamage } from '../sim/stats.ts'
 import type { PlayerClass, World } from '../sim/types.ts'
 
 /**
@@ -60,6 +61,40 @@ interface SlotView {
   wasReady: boolean
 }
 
+interface PassiveView {
+  root: HTMLDivElement
+  icon: HTMLImageElement
+  fallback: HTMLSpanElement
+  cd: HTMLDivElement
+  cdText: HTMLDivElement
+  wasReady: boolean
+}
+
+interface PassivePresentation {
+  name: string
+  tag: string
+  description: string
+  detail: string
+  actual: string
+  status: string
+  enhancement: string
+  displayValue: string
+  ready: boolean
+  progress: number
+  meterNow: number
+  meterMax: number
+  meterText: string
+}
+
+interface SlotFace {
+  icon: HTMLImageElement
+  fallback: HTMLSpanElement
+  cd: HTMLDivElement
+  cdText: HTMLDivElement
+}
+
+type TooltipView = SlotView | PassiveView
+
 export interface SkillBarHandlers {
   start: (id: SkillId) => void
   release: (id: SkillId) => void
@@ -68,6 +103,7 @@ export interface SkillBarHandlers {
 
 export class SkillBar {
   private readonly root: HTMLDivElement
+  private readonly passive: PassiveView
   private readonly slots: SlotView[] = []
   private readonly cancelPointers: Array<() => void> = []
   private readonly tooltip: HTMLDivElement
@@ -79,9 +115,14 @@ export class SkillBar {
   private readonly tooltipDamage: HTMLElement
   private readonly tooltipEnhancement: HTMLElement
   private readonly tooltipStatus: HTMLElement
-  private activeTooltip: SlotView | null = null
+  private activeTooltip: TooltipView | null = null
   private tooltipBook: SkillBook | null = null
   private tooltipWorld: World | null = null
+  private passiveWorld: World | null = null
+  private passivePresentation: PassivePresentation | null = null
+  private passiveRenderSignature = ''
+  private nextPassivePollAt = -Infinity
+  private markedEnemies = 0
   private tooltipSignature = ''
   private tooltipHideTimer = 0
   private currentClass: PlayerClass | null = null
@@ -97,6 +138,52 @@ export class SkillBar {
     this.root = document.createElement('div')
     this.root.className = 'skillbar'
 
+    const passiveRoot = document.createElement('div')
+    passiveRoot.className = 'slot passive-slot'
+    passiveRoot.dataset.kind = 'passive'
+    passiveRoot.dataset.state = 'cooling'
+    passiveRoot.setAttribute('role', 'meter')
+    passiveRoot.setAttribute('aria-valuemin', '0')
+    passiveRoot.setAttribute('aria-valuemax', '100')
+    passiveRoot.setAttribute('aria-valuenow', '0')
+    passiveRoot.setAttribute('aria-valuetext', '패시브 대기')
+    passiveRoot.setAttribute('aria-label', 'P 패시브, 전투 시작 후 상태가 표시됩니다.')
+    passiveRoot.tabIndex = 0
+    const passiveFace = appendSlotFace(passiveRoot, 'P', 'P')
+    passiveFace.icon.src = `${import.meta.env.BASE_URL}art/myeongwol-mark.webp`
+    passiveFace.icon.hidden = false
+    passiveFace.fallback.hidden = true
+    passiveFace.icon.onerror = () => {
+      passiveFace.icon.hidden = true
+      passiveFace.fallback.hidden = false
+    }
+    this.passive = {
+      root: passiveRoot,
+      ...passiveFace,
+      wasReady: false,
+    }
+    passiveRoot.addEventListener('pointerdown', (event) => {
+      event.preventDefault()
+      event.stopPropagation()
+      this.showTooltip(this.passive)
+      if (event.pointerType === 'touch') this.scheduleTooltipHide()
+    })
+    passiveRoot.addEventListener('click', (event) => {
+      event.preventDefault()
+      event.stopPropagation()
+    })
+    passiveRoot.addEventListener('pointerenter', (event) => {
+      if (event.pointerType !== 'touch') this.showTooltip(this.passive)
+    })
+    passiveRoot.addEventListener('pointerleave', (event) => {
+      if (event.pointerType !== 'touch' && document.activeElement !== passiveRoot) {
+        this.hideTooltip(this.passive)
+      }
+    })
+    passiveRoot.addEventListener('focus', () => this.showTooltip(this.passive))
+    passiveRoot.addEventListener('blur', () => this.hideTooltip(this.passive))
+    this.root.appendChild(passiveRoot)
+
     for (const m of meta) {
       const slot = document.createElement('button')
       slot.className = 'slot'
@@ -105,41 +192,12 @@ export class SkillBar {
       slot.dataset.state = 'locked'
       slot.setAttribute('aria-disabled', 'true')
 
-      const glyph = document.createElement('div')
-      glyph.className = 'glyph'
-
-      const icon = document.createElement('img')
-      icon.className = 'skill-icon'
-      icon.alt = ''
-      icon.draggable = false
-      glyph.appendChild(icon)
-
-      const fallback = document.createElement('span')
-      fallback.className = 'glyph-fallback'
-      fallback.textContent = m.glyph
-      glyph.appendChild(fallback)
-      slot.appendChild(glyph)
-
-      const key = document.createElement('div')
-      key.className = 'key'
-      key.textContent = m.key
-      slot.appendChild(key)
-
-      const cd = document.createElement('div')
-      cd.className = 'cd'
-      slot.appendChild(cd)
-
-      const cdText = document.createElement('div')
-      cdText.className = 'cdtext'
-      slot.appendChild(cdText)
+      const face = appendSlotFace(slot, m.key, m.glyph)
 
       const view: SlotView = {
         meta: m,
         root: slot,
-        icon,
-        fallback,
-        cd,
-        cdText,
+        ...face,
         wasReady: false,
       }
       let activePointerId: number | null = null
@@ -261,6 +319,7 @@ export class SkillBar {
     for (const view of this.slots) {
       view.root.setAttribute('aria-describedby', this.tooltip.id)
     }
+    this.passive.root.setAttribute('aria-describedby', this.tooltip.id)
     parent.appendChild(this.root)
     // transform이 있는 skillbar 안에 fixed 툴팁을 넣으면 좌표계가 슬롯바 기준으로
     // 바뀐다. body 형제여야 viewport 좌표와 getBoundingClientRect가 일치한다.
@@ -316,7 +375,61 @@ export class SkillBar {
       view.wasReady = ready
     }
 
+    if (world) this.updatePassive(world)
     if (this.activeTooltip) this.renderTooltip(this.activeTooltip)
+  }
+
+  private updatePassive(world: World): void {
+    if (this.passiveWorld !== world) {
+      this.passiveWorld = world
+      this.markedEnemies = 0
+      this.nextPassivePollAt = -Infinity
+      this.passive.wasReady = false
+      this.passiveRenderSignature = ''
+    }
+
+    if (world.playerClass === 'ranged' && world.time >= this.nextPassivePollAt) {
+      this.nextPassivePollAt = world.time + 0.12
+      let marked = 0
+      for (let i = 0; i < world.enemies.count; i++) {
+        if (world.enemies.markExpire[i]! > world.time) marked += 1
+      }
+      this.markedEnemies = marked
+    }
+
+    const presentation = passivePresentation(world, this.markedEnemies)
+    this.passivePresentation = presentation
+    const signature = [
+      world.playerClass,
+      presentation.name,
+      presentation.detail,
+      presentation.actual,
+      presentation.status,
+      presentation.displayValue,
+      presentation.ready,
+      Math.round(presentation.progress * 100),
+      presentation.meterNow,
+      presentation.meterMax,
+      presentation.meterText,
+    ].join('|')
+
+    if (signature !== this.passiveRenderSignature) {
+      this.passiveRenderSignature = signature
+      this.passive.root.dataset.state = presentation.ready ? 'ready' : 'cooling'
+      this.passive.cd.style.setProperty('--p', String(1 - presentation.progress))
+      this.passive.cdText.textContent = presentation.displayValue
+      this.passive.root.setAttribute('aria-valuemax', String(presentation.meterMax))
+      this.passive.root.setAttribute('aria-valuenow', String(presentation.meterNow))
+      this.passive.root.setAttribute('aria-valuetext', presentation.meterText)
+      this.passive.root.setAttribute(
+        'aria-label',
+        `P 패시브 ${presentation.name}. ${presentation.detail}. ${presentation.status}`,
+      )
+      this.passive.root.title = `${presentation.name} — ${presentation.detail}`
+    }
+
+    if (presentation.ready && !this.passive.wasReady) this.flash(this.passive)
+    this.passive.wasReady = presentation.ready
   }
 
   /** QWER 아이콘과 슬롯 강조색을 선택한 클래스에 맞춘다. */
@@ -343,7 +456,7 @@ export class SkillBar {
     if (this.activeTooltip) this.renderTooltip(this.activeTooltip)
   }
 
-  private showTooltip(view: SlotView): void {
+  private showTooltip(view: TooltipView): void {
     window.clearTimeout(this.tooltipHideTimer)
     this.activeTooltip = view
     this.tooltipSignature = ''
@@ -352,7 +465,7 @@ export class SkillBar {
     this.positionTooltip(view)
   }
 
-  private hideTooltip(view?: SlotView): void {
+  private hideTooltip(view?: TooltipView): void {
     if (view && this.activeTooltip !== view) return
     window.clearTimeout(this.tooltipHideTimer)
     this.activeTooltip = null
@@ -365,7 +478,12 @@ export class SkillBar {
     this.tooltipHideTimer = window.setTimeout(() => this.hideTooltip(), 1800)
   }
 
-  private renderTooltip(view: SlotView): void {
+  private renderTooltip(view: TooltipView): void {
+    if (!('meta' in view)) {
+      this.renderPassiveTooltip()
+      return
+    }
+
     const playerClass = this.currentClass ?? 'ranged'
     const def = getSkillDef(playerClass, view.meta.id)
     if (!def) return
@@ -410,7 +528,7 @@ export class SkillBar {
         `강화 ${runtime.rank}/${MAX_SKILL_RANK} · 랭크 피해 +${rankBonus}%` +
         (attackBonus !== 0 ? ` · 공격 강화 ${attackBonus > 0 ? '+' : ''}${attackBonus}%` : '') +
         ` · 재사용 ${formatSeconds(cooldown)}`
-      if (runtime.branch) enhancement += ` · ${describeBranch(runtime.branch)}`
+      if (runtime.branch) enhancement += ` · ${describeBranch(runtime.branch, view.meta.id)}`
     }
 
     const signature = [
@@ -445,7 +563,41 @@ export class SkillBar {
     )
   }
 
-  private positionTooltip(view: SlotView): void {
+  private renderPassiveTooltip(): void {
+    const presentation = this.passivePresentation
+    if (!presentation) return
+
+    const playerClass = this.currentClass ?? 'ranged'
+    const signature = [
+      'passive',
+      playerClass,
+      presentation.name,
+      presentation.detail,
+      presentation.actual,
+      presentation.status,
+      presentation.enhancement,
+    ].join('|')
+    if (signature === this.tooltipSignature) return
+    this.tooltipSignature = signature
+
+    this.tooltip.dataset.class = playerClass
+    this.tooltip.dataset.state = presentation.ready ? 'ready' : 'cooling'
+    this.tooltipKey.textContent = 'P'
+    this.tooltipTag.textContent = presentation.tag
+    this.tooltipName.textContent = presentation.name
+    this.tooltipDescription.textContent = presentation.description
+    this.tooltipDetail.textContent = presentation.detail
+    this.tooltipDamage.textContent = presentation.actual
+    this.tooltipDamage.hidden = presentation.actual.length === 0
+    this.tooltipStatus.textContent = presentation.status
+    this.tooltipEnhancement.textContent = presentation.enhancement
+    this.tooltip.setAttribute(
+      'aria-label',
+      `P ${presentation.name}. ${presentation.description}. ${presentation.actual}. ${presentation.enhancement}. ${presentation.status}`,
+    )
+  }
+
+  private positionTooltip(view: TooltipView): void {
     const slot = view.root.getBoundingClientRect()
     const tip = this.tooltip.getBoundingClientRect()
     const margin = 8
@@ -459,7 +611,7 @@ export class SkillBar {
     this.tooltip.style.top = `${Math.round(top)}px`
   }
 
-  private flash(view: SlotView): void {
+  private flash(view: TooltipView): void {
     view.root.classList.remove('flash')
     // 클래스를 다시 붙이기 전에 리플로우를 강제해야 애니메이션이 재생된다.
     void view.root.offsetWidth
@@ -479,6 +631,92 @@ export class SkillBar {
   }
 }
 
+function appendSlotFace(
+  root: HTMLButtonElement | HTMLDivElement,
+  keyLabel: string,
+  fallbackGlyph: string,
+): SlotFace {
+  const glyph = document.createElement('div')
+  glyph.className = 'glyph'
+
+  const icon = document.createElement('img')
+  icon.className = 'skill-icon'
+  icon.alt = ''
+  icon.draggable = false
+  icon.hidden = true
+  glyph.appendChild(icon)
+
+  const fallback = document.createElement('span')
+  fallback.className = 'glyph-fallback'
+  fallback.textContent = fallbackGlyph
+  glyph.appendChild(fallback)
+  root.appendChild(glyph)
+
+  const key = document.createElement('div')
+  key.className = 'key'
+  key.textContent = keyLabel
+  root.appendChild(key)
+
+  const cd = document.createElement('div')
+  cd.className = 'cd'
+  root.appendChild(cd)
+
+  const cdText = document.createElement('div')
+  cdText.className = 'cdtext'
+  root.appendChild(cdText)
+
+  return { icon, fallback, cd, cdText }
+}
+
+function passivePresentation(world: World, markedEnemies: number): PassivePresentation {
+  const stats = world.stats
+  if (world.playerClass === 'ranged') {
+    const marked = Math.max(0, markedEnemies)
+    const litDamage = effectiveAtkDamage(stats) + stats.markBonus
+    return {
+      name: '점등',
+      tag: '원거리 패시브',
+      description: '스킬 적중으로 적을 표식하고, 표식 대상을 향한 평타를 점등합니다.',
+      detail:
+        marked > 0
+          ? `점등 평타 ${formatValue(litDamage)} · 처치 회복 ${formatValue(stats.markKillHeal)}`
+          : `스킬 적중으로 표식 · 점등 평타 ${formatValue(litDamage)}`,
+      actual: `점등 평타 ${formatValue(litDamage)} · 처치 회복 ${formatValue(stats.markKillHeal)}`,
+      status: marked > 0 ? `표식 ${marked}체` : '표식 대기',
+      enhancement: '상시 효과 · 재사용 대기시간 없음',
+      displayValue: marked > 0 ? String(marked) : '',
+      ready: marked > 0,
+      progress: Math.min(1, marked / 8),
+      meterNow: Math.min(8, marked),
+      meterMax: 8,
+      meterText: `${marked}체 표식`,
+    }
+  }
+
+  const gauge = Math.max(0, Math.min(100, world.player.gauge))
+  const empowered = world.player.empowered
+  const swipeDamage = effectiveAtkDamage(stats) * 1.45
+  return {
+    name: empowered ? '월참' : '참흔',
+    tag: '근거리 패시브',
+    description: '근처 적을 베어 참흔을 축적하고, 가득 차면 다음 평타를 월참으로 강화합니다.',
+    detail: empowered
+      ? `다음 평타 광역 ${formatValue(swipeDamage)} · QWE 재사용 단축`
+      : `근처 적을 베어 축적 · 월참 ${formatValue(swipeDamage)}`,
+    actual: `월참 피해 ${formatValue(swipeDamage)}`,
+    status: empowered ? '월참 준비 완료' : `참흔 ${Math.round(gauge)}%`,
+    enhancement: empowered
+      ? '다음 평타 광역 · QWE 재사용 단축'
+      : '근접 공격으로 참흔 축적',
+    displayValue: empowered ? '준비' : String(Math.round(gauge)),
+    ready: empowered,
+    progress: empowered ? 1 : gauge / 100,
+    meterNow: empowered ? 100 : gauge,
+    meterMax: 100,
+    meterText: empowered ? '월참 준비 완료' : `참흔 ${Math.round(gauge)}%`,
+  }
+}
+
 function formatSeconds(value: number): string {
   if (!Number.isFinite(value)) return '—'
   return value >= 10 ? `${Math.round(value)}초` : `${Math.round(value * 10) / 10}초`
@@ -490,12 +728,9 @@ function formatValue(value: number): string {
   return Number.isInteger(rounded) ? String(rounded) : rounded.toFixed(1)
 }
 
-function describeBranch(branch: string): string {
-  for (const upgrade of UPGRADES) {
-    const rank = upgrade.ranks.find((candidate) => candidate.trait === branch)
-    if (!rank) continue
-    return `${rank.awakeningName ?? upgrade.name}: ${rank.oneLiner}`
-  }
+function describeBranch(branch: string, slot: SkillId): string {
+  const presentation = getUpgradeBranchPresentation(branch, slot)
+  if (presentation) return `${presentation.name}: ${presentation.oneLiner}`
   return '각성 효과 활성'
 }
 

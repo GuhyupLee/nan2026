@@ -21,6 +21,8 @@ export type UpgradeRarity = 'standard' | 'awakening' | 'fusion'
 
 export interface UpgradeRankDef {
   rank: UpgradeRank
+  /** 같은 강화 경로 안에서도 I·II·III를 즉시 구분하는 고유 표시명. */
+  displayName: string
   /** 카드 본문. III는 숫자 대신 바뀌는 규칙을 설명한다. */
   oneLiner: string
   /** 시뮬레이션이 소비할 수 있는 안정적인 성질 id. */
@@ -32,6 +34,8 @@ export interface UpgradeRankDef {
 export interface UpgradeFusion {
   /** 두 카드가 모두 III일 때만 합성 카드가 풀에 들어온다. */
   requires: readonly [string, string]
+  /** 하나의 합성이 여러 스킬에 연결될 때 슬롯별로 보여 줄 고유 경로명. */
+  slotDisplayNames?: Partial<Record<SkillId, string>>
 }
 
 export interface UpgradeDef {
@@ -74,6 +78,7 @@ interface UpgradeBlueprint {
 export interface UpgradePresentation {
   id: string
   name: string
+  pathName: string
   oneLiner: string
   currentRank: number
   nextRank: number
@@ -169,10 +174,11 @@ const RANGED_UPGRADES: readonly UpgradeDef[] = [
     classFilter: RANGED,
     family: 'optical-device',
     ranks: [
-      { rank: 1, oneLiner: '평타 관통 +1' },
-      { rank: 2, oneLiner: '공격 피해 +16% (평타·QWER)' },
+      { rank: 1, displayName: '초점 정렬', oneLiner: '평타 관통 +1' },
+      { rank: 2, displayName: '광량 증폭', oneLiner: '공격 피해 +16% (평타·QWER)' },
       {
         rank: 3,
+        displayName: '연쇄 집광',
         oneLiner: '관통할 때마다 다음 대상에게 더 강한 빛이 전달됩니다.',
         trait: 'pierce-amplification',
         awakeningName: '연쇄 집광',
@@ -196,10 +202,11 @@ const RANGED_UPGRADES: readonly UpgradeDef[] = [
     classFilter: RANGED,
     family: 'optical-device',
     ranks: [
-      { rank: 1, oneLiner: '평타 공격 간격 -14%' },
-      { rank: 2, oneLiner: '평타 공격 간격 -14%' },
+      { rank: 1, displayName: '고속 굴절', oneLiner: '평타 공격 간격 -14%' },
+      { rank: 2, displayName: '연속 회절', oneLiner: '평타 공격 간격 -14%' },
       {
         rank: 3,
+        displayName: '삼중 회절',
         oneLiner: '세 번째 평타가 양옆으로 갈라지는 보조 광선을 만듭니다.',
         trait: 'split-refraction',
         awakeningName: '삼중 회절',
@@ -223,10 +230,11 @@ const RANGED_UPGRADES: readonly UpgradeDef[] = [
     classFilter: RANGED,
     family: 'optical-device',
     ranks: [
-      { rank: 1, oneLiner: '평타 사거리 +22%' },
-      { rank: 2, oneLiner: '평타 사거리 +18%' },
+      { rank: 1, displayName: '원거리 개방', oneLiner: '평타 사거리 +22%' },
+      { rank: 2, displayName: '극초점 확장', oneLiner: '평타 사거리 +18%' },
       {
         rank: 3,
+        displayName: '수평선 고정',
         oneLiner: '먼 거리에서 맞힌 평타가 대상 뒤까지 초점 폭발을 일으킵니다.',
         trait: 'horizon-focus',
         awakeningName: '수평선 고정',
@@ -250,10 +258,11 @@ const RANGED_UPGRADES: readonly UpgradeDef[] = [
     classFilter: RANGED,
     family: 'optical-device',
     ranks: [
-      { rank: 1, oneLiner: '최대 체력 +24, 즉시 24 회복' },
-      { rank: 2, oneLiner: '받는 피해 -10%' },
+      { rank: 1, displayName: '생명광 충전', oneLiner: '최대 체력 +24, 즉시 24 회복' },
+      { rank: 2, displayName: '광막 경화', oneLiner: '받는 피해 -10%' },
       {
         rank: 3,
+        displayName: '비상 점등',
         oneLiner: '치명상을 한 번 막고 1.2초 동안 피해를 받지 않습니다.',
         trait: 'photon-barrier',
         awakeningName: '비상 점등',
@@ -279,10 +288,11 @@ const RANGED_UPGRADES: readonly UpgradeDef[] = [
     family: 'optical-device',
     slot: 'q',
     ranks: [
-      { rank: 1, oneLiner: 'Q 재사용 대기시간 -12%' },
-      { rank: 2, oneLiner: 'Q 재사용 대기시간 -12%' },
+      { rank: 1, displayName: '저궤도 조준', oneLiner: 'Q 재사용 대기시간 -12%' },
+      { rank: 2, displayName: '궤도 단축', oneLiner: 'Q 재사용 대기시간 -12%' },
       {
         rank: 3,
+        displayName: '귀환 궤도',
         oneLiner: '낙광이 0.55초 뒤 더 좁은 범위에 한 번 더 떨어집니다.',
         trait: 'orbital-prism',
         awakeningName: '귀환 궤도',
@@ -303,10 +313,11 @@ const RANGED_UPGRADES: readonly UpgradeDef[] = [
     family: 'optical-device',
     slot: 'w',
     ranks: [
-      { rank: 1, oneLiner: 'W 재사용 대기시간 -10%' },
-      { rank: 2, oneLiner: 'W 재사용 대기시간 -10%' },
+      { rank: 1, displayName: '인력 증폭', oneLiner: 'W 재사용 대기시간 -10%' },
+      { rank: 2, displayName: '붕괴 가속', oneLiner: 'W 재사용 대기시간 -10%' },
       {
         rank: 3,
+        displayName: '이중 붕괴',
         oneLiner: 'W 견인이 두 배 오래 이어지고 끝에서 중심 폭발을 일으킵니다.',
         trait: 'double-collapse',
         awakeningName: '이중 붕괴',
@@ -327,10 +338,11 @@ const RANGED_UPGRADES: readonly UpgradeDef[] = [
     family: 'optical-device',
     slot: 'e',
     ranks: [
-      { rank: 1, oneLiner: 'E 재사용 대기시간 -10%' },
-      { rank: 2, oneLiner: 'E 재사용 대기시간 -10%' },
+      { rank: 1, displayName: '위상 정렬', oneLiner: 'E 재사용 대기시간 -10%' },
+      { rank: 2, displayName: '통로 가속', oneLiner: 'E 재사용 대기시간 -10%' },
       {
         rank: 3,
+        displayName: '잔광 통로',
         oneLiner: 'E 투사체 경로를 잔광이 즉시 한 번 가르며 적을 점등합니다.',
         trait: 'afterimage-aperture',
         awakeningName: '잔광 통로',
@@ -351,10 +363,11 @@ const RANGED_UPGRADES: readonly UpgradeDef[] = [
     family: 'optical-device',
     slot: 'r',
     ranks: [
-      { rank: 1, oneLiner: 'R 재사용 대기시간 -8%' },
-      { rank: 2, oneLiner: 'R 재사용 대기시간 -8%' },
+      { rank: 1, displayName: '태양 정렬', oneLiner: 'R 재사용 대기시간 -8%' },
+      { rank: 2, displayName: '추적 가속', oneLiner: 'R 재사용 대기시간 -8%' },
       {
         rank: 3,
+        displayName: '태양 추적',
         oneLiner: 'R 광선이 점등된 적에게서 가장 가까운 새 대상으로 굴절됩니다.',
         trait: 'heliostat-chain',
         awakeningName: '태양 추적',
@@ -383,10 +396,11 @@ const MELEE_UPGRADES: readonly UpgradeDef[] = [
     classFilter: MELEE,
     family: 'sword-art',
     ranks: [
-      { rank: 1, oneLiner: '공격 피해 +18% (평타·QWER)' },
-      { rank: 2, oneLiner: '공격 피해 +15% (평타·QWER)' },
+      { rank: 1, displayName: '초승날 벼림', oneLiner: '공격 피해 +18% (평타·QWER)' },
+      { rank: 2, displayName: '반월 예각', oneLiner: '공격 피해 +15% (평타·QWER)' },
       {
         rank: 3,
+        displayName: '잔월',
         oneLiner: '월참이 검기를 남겨 잠시 뒤 같은 자리를 다시 베어냅니다.',
         trait: 'echoing-crescent',
         awakeningName: '잔월',
@@ -410,10 +424,11 @@ const MELEE_UPGRADES: readonly UpgradeDef[] = [
     classFilter: MELEE,
     family: 'sword-art',
     ranks: [
-      { rank: 1, oneLiner: '이동 속도 +10%' },
-      { rank: 2, oneLiner: '평타 공격 간격 -10%' },
+      { rank: 1, displayName: '유수 전진', oneLiner: '이동 속도 +10%' },
+      { rank: 2, displayName: '흐름 가속', oneLiner: '평타 공격 간격 -10%' },
       {
         rank: 3,
+        displayName: '무영보',
         oneLiner: '점멸·돌진 후 출발점의 잔상이 뒤쫓는 적을 한 차례 벱니다.',
         trait: 'afterimage-step',
         awakeningName: '무영보',
@@ -437,10 +452,11 @@ const MELEE_UPGRADES: readonly UpgradeDef[] = [
     classFilter: MELEE,
     family: 'sword-art',
     ranks: [
-      { rank: 1, oneLiner: '받는 피해 -12%' },
-      { rank: 2, oneLiner: '최대 체력 +22, 즉시 22 회복' },
+      { rank: 1, displayName: '철벽 들숨', oneLiner: '받는 피해 -12%' },
+      { rank: 2, displayName: '강체 순환', oneLiner: '최대 체력 +22, 즉시 22 회복' },
       {
         rank: 3,
+        displayName: '부동',
         oneLiner: '체력을 절반 아래로 떨어뜨릴 첫 피해를 흘리고 참흔 35를 얻습니다.',
         trait: 'perfect-guard',
         awakeningName: '부동',
@@ -465,10 +481,11 @@ const MELEE_UPGRADES: readonly UpgradeDef[] = [
     classFilter: MELEE,
     family: 'sword-art',
     ranks: [
-      { rank: 1, oneLiner: '회복(D) 회복량 +20' },
-      { rank: 2, oneLiner: '회복(D) 재사용 대기시간 -18%' },
+      { rank: 1, displayName: '혈기 충만', oneLiner: '회복(D) 회복량 +20' },
+      { rank: 2, displayName: '순환 가속', oneLiner: '회복(D) 재사용 대기시간 -18%' },
       {
         rank: 3,
+        displayName: '혈기 전환',
         oneLiner: '초과 회복이 발생하면 0.65초 동안 피해를 받지 않습니다.',
         trait: 'overflow-guard',
         awakeningName: '혈기 전환',
@@ -494,10 +511,11 @@ const MELEE_UPGRADES: readonly UpgradeDef[] = [
     family: 'sword-art',
     slot: 'q',
     ranks: [
-      { rank: 1, oneLiner: 'Q 재사용 대기시간 -12%' },
-      { rank: 2, oneLiner: 'Q 재사용 대기시간 -12%' },
+      { rank: 1, displayName: '초식 단련', oneLiner: 'Q 재사용 대기시간 -12%' },
+      { rank: 2, displayName: '납검 가속', oneLiner: 'Q 재사용 대기시간 -12%' },
       {
         rank: 3,
+        displayName: '교차 발도',
         oneLiner: 'Q를 벤 뒤 같은 경로를 거슬러 교차 참격이 되돌아옵니다.',
         trait: 'returning-draw-cut',
         awakeningName: '교차 발도',
@@ -518,10 +536,11 @@ const MELEE_UPGRADES: readonly UpgradeDef[] = [
     family: 'sword-art',
     slot: 'w',
     ranks: [
-      { rank: 1, oneLiner: 'W 재사용 대기시간 -10%' },
-      { rank: 2, oneLiner: 'W 재사용 대기시간 -10%' },
+      { rank: 1, displayName: '수월 초식', oneLiner: 'W 재사용 대기시간 -10%' },
+      { rank: 2, displayName: '유영 납도', oneLiner: 'W 재사용 대기시간 -10%' },
       {
         rank: 3,
+        displayName: '수면 회귀',
         oneLiner: 'W 착지점에서 출발점까지 귀환 검기가 되돌아갑니다.',
         trait: 'returning-sheath',
         awakeningName: '수면 회귀',
@@ -542,10 +561,11 @@ const MELEE_UPGRADES: readonly UpgradeDef[] = [
     family: 'sword-art',
     slot: 'e',
     ranks: [
-      { rank: 1, oneLiner: 'E 재사용 대기시간 -10%' },
-      { rank: 2, oneLiner: 'E 재사용 대기시간 -10%' },
+      { rank: 1, displayName: '명경 입문', oneLiner: 'E 재사용 대기시간 -10%' },
+      { rank: 2, displayName: '지수 심화', oneLiner: 'E 재사용 대기시간 -10%' },
       {
         rank: 3,
+        displayName: '수경 반격',
         oneLiner: 'E가 모은 적을 0.45초 뒤 같은 자리에서 다시 베어냅니다.',
         trait: 'mirror-counter',
         awakeningName: '수경 반격',
@@ -566,10 +586,11 @@ const MELEE_UPGRADES: readonly UpgradeDef[] = [
     family: 'sword-art',
     slot: 'r',
     ranks: [
-      { rank: 1, oneLiner: 'R 재사용 대기시간 -8%' },
-      { rank: 2, oneLiner: 'R 재사용 대기시간 -8%' },
+      { rank: 1, displayName: '월륜 전개', oneLiner: 'R 재사용 대기시간 -8%' },
+      { rank: 2, displayName: '만월 응축', oneLiner: 'R 재사용 대기시간 -8%' },
       {
         rank: 3,
+        displayName: '월하 결계',
         oneLiner: 'R의 마지막 타격이 넓은 만월 결계를 남겨 적을 연속으로 벱니다.',
         trait: 'fullmoon-domain',
         awakeningName: '월하 결계',
@@ -592,10 +613,17 @@ const FUSION_UPGRADES: readonly UpgradeDef[] = [
     classFilter: RANGED,
     family: 'fusion',
     slot: 'q',
-    fusion: { requires: ['orbit-lens', 'gravity-prism'] },
+    fusion: {
+      requires: ['orbit-lens', 'gravity-prism'],
+      slotDisplayNames: {
+        q: '특이점 낙광',
+        w: '사건지평 견인',
+      },
+    },
     ranks: [
       {
         rank: 1,
+        displayName: '특이점 중첩',
         oneLiner: '두 각성을 유지한 채 Q 지점에 W 견인장을 겹쳐 적을 가둡니다.',
         trait: 'singularity-interference',
       },
@@ -615,10 +643,17 @@ const FUSION_UPGRADES: readonly UpgradeDef[] = [
     classFilter: MELEE,
     family: 'fusion',
     slot: 'q',
-    fusion: { requires: ['iai-scroll', 'fullmoon-form'] },
+    fusion: {
+      requires: ['iai-scroll', 'fullmoon-form'],
+      slotDisplayNames: {
+        q: '월식 발도',
+        r: '월식 난무',
+      },
+    },
     ranks: [
       {
         rank: 1,
+        displayName: '월식 합일',
         oneLiner: '두 각성을 유지한 채 R의 모든 난격에 교차 발도를 더합니다.',
         trait: 'eclipse-sword-domain',
       },
@@ -733,10 +768,7 @@ export function getUpgradePresentation(
         ? '검술 유파'
         : '각성 합성'
   const rankLabel = fusion ? '합성' : `RANK ${romanRank(nextRank)}`
-  const name =
-    awakening && rankDef.awakeningName
-      ? `${upgrade.name} · ${rankDef.awakeningName}`
-      : upgrade.name
+  const name = fusion ? upgrade.name : `${upgrade.name} · ${rankDef.displayName}`
   const badges = [
     familyLabel,
     ...(upgrade.slot ? [`${upgrade.slot.toUpperCase()} 변형`] : []),
@@ -747,6 +779,7 @@ export function getUpgradePresentation(
   return {
     id: upgrade.id,
     name,
+    pathName: rankDef.displayName,
     oneLiner: rankDef.oneLiner,
     currentRank,
     nextRank,
@@ -759,6 +792,31 @@ export function getUpgradePresentation(
     ...(rankDef.trait ? { trait: rankDef.trait } : {}),
     badges,
   }
+}
+
+export interface UpgradeBranchPresentation {
+  name: string
+  oneLiner: string
+}
+
+/** 같은 fusion trait를 공유하는 Q/W 또는 Q/R도 슬롯별 고유 경로명으로 설명한다. */
+export function getUpgradeBranchPresentation(
+  branch: string,
+  slot: SkillId,
+): UpgradeBranchPresentation | null {
+  for (const upgrade of UPGRADES) {
+    const rank = upgrade.ranks.find((candidate) => candidate.trait === branch)
+    if (!rank) continue
+    return {
+      name:
+        upgrade.fusion?.slotDisplayNames?.[slot] ??
+        rank.awakeningName ??
+        rank.displayName ??
+        upgrade.name,
+      oneLiner: rank.oneLiner,
+    }
+  }
+  return null
 }
 
 /**

@@ -1,5 +1,4 @@
 import { xpToNext } from '../sim/progression.ts'
-import { effectiveAtkDamage } from '../sim/stats.ts'
 import type { World } from '../sim/types.ts'
 import { RUN_TIME_LIMIT } from '../sim/constants.ts'
 import { ELITE_SPAWN_TIMES } from '../sim/enemies.ts'
@@ -32,11 +31,6 @@ export class Hud {
   private readonly runKills: HTMLElement
   private readonly runLevel: HTMLElement
   private readonly runRelics: HTMLElement
-  private readonly passive: HTMLDivElement
-  private readonly passiveName: HTMLElement
-  private readonly passiveValue: HTMLElement
-  private readonly passiveDetail: HTMLElement
-  private readonly passiveFill: HTMLDivElement
   private readonly damageVignette: HTMLDivElement
 
   private readonly screen = { x: 0, y: 0 }
@@ -49,8 +43,6 @@ export class Hud {
   private lastHp = 0
   private pendingDamage = 0
   private damagePulse = 0
-  private markedEnemies = 0
-  private passivePollLeft = 0
   private readonly reducedMotion = window.matchMedia('(prefers-reduced-motion: reduce)')
 
   constructor(parent: HTMLElement) {
@@ -86,21 +78,6 @@ export class Hud {
     this.runRelics = this.runInfo.querySelector('[data-run-relics]')!
     parent.appendChild(this.runInfo)
 
-    this.passive = document.createElement('div')
-    this.passive.className = 'passive-hud'
-    this.passive.innerHTML =
-      `<div class="passive-emblem" aria-hidden="true"><span>P</span></div>` +
-      `<div class="passive-copy">` +
-      `<div class="passive-heading"><strong></strong><b></b></div>` +
-      `<small></small>` +
-      `<div class="passive-track"><div class="passive-fill"></div></div>` +
-      `</div>`
-    this.passiveName = this.passive.querySelector('.passive-heading strong')!
-    this.passiveValue = this.passive.querySelector('.passive-heading b')!
-    this.passiveDetail = this.passive.querySelector('.passive-copy small')!
-    this.passiveFill = this.passive.querySelector('.passive-fill')!
-    parent.appendChild(this.passive)
-
     this.damageVignette = document.createElement('div')
     this.damageVignette.className = 'damage-vignette'
     this.damageVignette.setAttribute('aria-hidden', 'true')
@@ -119,8 +96,6 @@ export class Hud {
       this.lastHp = p.hp
       this.pendingDamage = 0
       this.damagePulse = 0
-      this.passivePollLeft = 0
-      this.passive.dataset.class = world.playerClass
       this.lastKills = -1
       this.lastRelics = -1
       this.lastLevel = 0
@@ -214,42 +189,6 @@ export class Hud {
       world.boss.active && t <= 30 ? 'critical' : world.boss.active ? 'boss' : 'normal'
     this.clock.setAttribute('aria-label', `남은 시간 ${mm}분 ${ss}초`)
 
-    // --- 클래스 패시브 ---
-    if (world.playerClass === 'ranged') {
-      this.passivePollLeft -= dt
-      if (this.passivePollLeft <= 0) {
-        this.passivePollLeft = 0.12
-        let marked = 0
-        for (let i = 0; i < world.enemies.count; i++) {
-          if (world.enemies.markExpire[i]! > world.time) marked += 1
-        }
-        this.markedEnemies = marked
-      }
-      const marked = this.markedEnemies
-      const litDamage = effectiveAtkDamage(s) + s.markBonus
-      this.passiveName.textContent = '점등'
-      this.passiveValue.textContent = marked > 0 ? `${marked}체` : '대기'
-      this.passiveDetail.textContent =
-        marked > 0
-          ? `점등 평타 ${formatHudNumber(litDamage)} · 처치 회복 ${formatHudNumber(s.markKillHeal)}`
-          : `스킬 적중으로 표식 · 점등 평타 ${formatHudNumber(litDamage)}`
-      this.passiveFill.style.width = `${Math.min(100, marked * 12.5)}%`
-      this.passive.dataset.ready = String(marked > 0)
-    } else {
-      const gauge = Math.max(0, Math.min(100, p.gauge))
-      const swipeDamage = effectiveAtkDamage(s) * 1.45
-      this.passiveName.textContent = p.empowered ? '월참' : '참흔'
-      this.passiveValue.textContent = p.empowered ? '준비' : `${Math.round(gauge)}%`
-      this.passiveDetail.textContent = p.empowered
-        ? `다음 평타 광역 ${formatHudNumber(swipeDamage)} · QWE 재사용 단축`
-        : `근처 적을 베어 축적 · 월참 ${formatHudNumber(swipeDamage)}`
-      this.passiveFill.style.width = `${p.empowered ? 100 : gauge}%`
-      this.passive.dataset.ready = String(p.empowered)
-    }
-    this.passive.setAttribute(
-      'aria-label',
-      `${this.passiveName.textContent ?? ''}, ${this.passiveDetail.textContent ?? ''}`,
-    )
   }
 
   setVisible(visible: boolean): void {
@@ -258,13 +197,6 @@ export class Hud {
     this.xpBar.style.display = d
     this.clock.style.display = d
     this.runInfo.style.display = d
-    this.passive.style.display = d
     this.damageVignette.style.display = d
   }
-}
-
-function formatHudNumber(value: number): string {
-  if (!Number.isFinite(value)) return '—'
-  if (Math.abs(value - Math.round(value)) < 0.05) return String(Math.round(value))
-  return value.toFixed(1)
 }

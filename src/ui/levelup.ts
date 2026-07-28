@@ -179,10 +179,7 @@ function buildUpgradeCards(world: World, relic = false): LevelUpCard[] {
         : presentation.rarity === 'fusion'
           ? '각성 합성'
           : `${presentation.familyLabel} · ${presentation.rankLabel}`,
-      name:
-        reachesAwakening && targetDef.awakeningName
-          ? `${upgrade.name} · ${targetDef.awakeningName}`
-          : presentation.name,
+      name: upgrade.fusion ? upgrade.name : `${upgrade.name} · ${targetDef.displayName}`,
       desc: relic
         ? `${targetDef.oneLiner} · 최대 ${relicBurst}랭크를 연속 각인합니다.${
             relicFusion
