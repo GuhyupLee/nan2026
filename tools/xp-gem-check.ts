@@ -9,7 +9,6 @@ import {
   MAX_XP_GEMS,
   XP_GEM_ATTRACT_SPEED,
   XP_GEM_MAGNET_RADIUS,
-  XP_GEM_STALE_ATTRACT_AFTER,
   createXpGemPool,
   dropXpGem,
   resetXpGemPool,
@@ -41,24 +40,27 @@ function totalValue(pool: XpGemPool): number {
   assert.equal(pool.prevY[0], -2)
   assert.equal(pool.value[0], 4)
   assert.equal(pool.attracted[0], 0)
-  assert.equal(pool.age[0], 0)
   assert.equal(dropXpGem(pool, 0, 0, 0), false)
   assert.equal(pool.count, 1)
 }
 
-// A nearby gem latches, moves at the fixed speed, and keeps chasing after the
-// player leaves the original magnet radius.
+// Only a nearby gem latches and moves at the fixed speed. Once the collection
+// animation begins it finishes even if the player changes direction.
 {
   const pool = createXpGemPool()
-  dropXpGem(pool, 5, 0, 2)
-  const collectedFirst = stepXpGems(pool, 0, 0, 0.1)
+  dropXpGem(pool, XP_GEM_MAGNET_RADIUS - 0.1, 0, 2)
+  const collectedFirst = stepXpGems(pool, 0, 0, 0.02)
   assert.equal(collectedFirst, 0)
   assert.equal(pool.count, 1)
   assert.equal(pool.attracted[0], 1)
-  assert.equal(pool.prevX[0], 5)
+  approximatelyEqual(
+    pool.prevX[0]!,
+    XP_GEM_MAGNET_RADIUS - 0.1,
+    'pre-attraction position',
+  )
   approximatelyEqual(
     pool.x[0]!,
-    5 - XP_GEM_ATTRACT_SPEED * 0.1,
+    XP_GEM_MAGNET_RADIUS - 0.1 - XP_GEM_ATTRACT_SPEED * 0.02,
     'attraction displacement',
   )
 
@@ -74,17 +76,40 @@ function totalValue(pool: XpGemPool): number {
   assert.equal(outside.attracted[0], 0)
 }
 
-// A gem abandoned outside the normal magnet radius eventually latches instead
-// of deleting progression for players who kite away from a kill.
+// Time alone never pulls an off-route gem across the arena.
 {
   const pool = createXpGemPool()
   const start = XP_GEM_MAGNET_RADIUS + 10
   dropXpGem(pool, start, 0, 3)
-  stepXpGems(pool, 0, 0, XP_GEM_STALE_ATTRACT_AFTER - DT)
+  stepXpGems(pool, 0, 0, 60)
+  assert.equal(pool.attracted[0], 0)
+  assert.equal(pool.x[0], start)
+}
+
+// Collection-range upgrades expand both immediate pickup and attraction range.
+{
+  const pool = createXpGemPool()
+  const start = XP_GEM_MAGNET_RADIUS + 0.5
+  dropXpGem(pool, start, 0, 3)
+  stepXpGems(pool, 0, 0, DT)
   assert.equal(pool.attracted[0], 0)
   assert.equal(pool.x[0], start)
 
+  stepXpGems(pool, 0, 0, DT, false, 1.3)
+  assert.equal(pool.attracted[0], 1)
+  assert.ok(pool.x[0]! < start)
+}
+
+// The battlefield magnet is the only mechanic that starts attraction globally.
+{
+  const pool = createXpGemPool()
+  const start = XP_GEM_MAGNET_RADIUS + 10
+  dropXpGem(pool, start, 0, 3)
   stepXpGems(pool, 0, 0, DT)
+  assert.equal(pool.attracted[0], 0)
+  assert.equal(pool.x[0], start)
+
+  stepXpGems(pool, 0, 0, DT, true)
   assert.equal(pool.attracted[0], 1)
   assert.ok(pool.x[0]! < start)
 }
@@ -130,8 +155,7 @@ function totalValue(pool: XpGemPool): number {
   const pool = createXpGemPool(4)
   const xStorage = pool.x
   const attractedStorage = pool.attracted
-  const ageStorage = pool.age
-  dropXpGem(pool, 5, 0, 3)
+  dropXpGem(pool, XP_GEM_MAGNET_RADIUS - 0.1, 0, 3)
   stepXpGems(pool, 0, 0, 0)
   assert.equal(pool.attracted[0], 1)
 
@@ -139,11 +163,9 @@ function totalValue(pool: XpGemPool): number {
   assert.equal(pool.count, 0)
   assert.strictEqual(pool.x, xStorage)
   assert.strictEqual(pool.attracted, attractedStorage)
-  assert.strictEqual(pool.age, ageStorage)
   assert.deepEqual(Array.from(pool.x), [0, 0, 0, 0])
   assert.deepEqual(Array.from(pool.value), [0, 0, 0, 0])
   assert.deepEqual(Array.from(pool.attracted), [0, 0, 0, 0])
-  assert.deepEqual(Array.from(pool.age), [0, 0, 0, 0])
 
   dropXpGem(pool, -3, 2, 6)
   assert.equal(pool.count, 1)
@@ -151,7 +173,6 @@ function totalValue(pool: XpGemPool): number {
   assert.equal(pool.prevY[0], 2)
   assert.equal(pool.value[0], 6)
   assert.equal(pool.attracted[0], 0)
-  assert.equal(pool.age[0], 0)
 }
 
 // Enemy death creates a world drop instead of granting XP. Collection applies
@@ -215,7 +236,6 @@ function totalValue(pool: XpGemPool): number {
   assert.deepEqual(a.prevY, b.prevY)
   assert.deepEqual(a.value, b.value)
   assert.deepEqual(a.attracted, b.attracted)
-  assert.deepEqual(a.age, b.age)
 }
 
 console.log('xp-gem-check: ok')

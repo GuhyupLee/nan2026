@@ -171,10 +171,50 @@ function aimAtNearestEnemy(world: World, input: ReturnType<typeof createInput>):
 }
 
 /**
+ * Drives toward the nearest XP gem that has not started its pickup flight.
+ *
+ * The balance pilot used to stand still and depended on the old arena-wide
+ * attraction radius. Explicit collection keeps the pacing measurement aligned
+ * with the player-facing rule: floor XP is earned by moving close enough to it.
+ */
+function moveTowardNearestXpGem(
+  world: World,
+  input: ReturnType<typeof createInput>,
+): void {
+  const pool = world.xpGems
+  const px = world.player.pos.x
+  const py = world.player.pos.y
+  let nearest = -1
+  let nearestDistanceSquared = Number.POSITIVE_INFINITY
+
+  for (let i = 0; i < pool.count; i += 1) {
+    if (pool.attracted[i] !== 0) continue
+    const dx = pool.x[i]! - px
+    const dy = pool.y[i]! - py
+    const distanceSquared = dx * dx + dy * dy
+    if (distanceSquared < nearestDistanceSquared) {
+      nearest = i
+      nearestDistanceSquared = distanceSquared
+    }
+  }
+
+  if (nearest < 0 || nearestDistanceSquared <= 1e-12) {
+    input.move.x = 0
+    input.move.y = 0
+    return
+  }
+
+  const inverseDistance = 1 / Math.sqrt(nearestDistanceSquared)
+  input.move.x = (pool.x[nearest]! - px) * inverseDistance
+  input.move.y = (pool.y[nearest]! - py) * inverseDistance
+}
+
+/**
  * 5분 레벨 곡선의 표준 측정 시나리오.
  *
- * 플레이어는 가장 가까운 적을 조준하고, 해금된 QWER을 쿨마다 누른다.
- * 무적은 생존 운을 제거할 뿐 공격·스폰·XP 판정에는 손대지 않는다.
+ * 플레이어는 가까운 바닥 XP를 회수하면서 가장 가까운 적을 조준하고,
+ * 해금된 QWER을 쿨마다 누른다. 무적은 생존 운을 제거할 뿐
+ * 공격·스폰·XP 판정에는 손대지 않는다.
  */
 export function runBalanceScenario(
   playerClass: PlayerClass,
@@ -214,6 +254,7 @@ export function runBalanceScenario(
     }
 
     aimAtNearestEnemy(world, input)
+    moveTowardNearestXpGem(world, input)
     input.skillsPressed = useQwer ? QWER_MASK : 0
     stepWorld(world, input)
 

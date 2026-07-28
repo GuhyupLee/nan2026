@@ -43,6 +43,8 @@ import {
 
 const SEEDS = [1, 5, 11, 17, 23, 31, 47, 59, 71, 89, 101, 127] as const
 const QWER = ['q', 'w', 'e', 'r'] as const satisfies readonly SkillId[]
+const XP_GEM_SEEK_RADIUS = 10
+const XP_GEM_SEEK_WEIGHT = 1
 
 interface PilotState {
   nextSkill: number
@@ -176,6 +178,31 @@ function pilot(
       moveX += dx * inverse
       moveY += dy * inverse
       crowd += 1
+    }
+  }
+
+  // Floor XP is an intentional movement objective. Only route toward a nearby
+  // idle gem while no enemy or boss currently demands an evasive response.
+  if (crowd === 0 && boss < 0) {
+    const gemPool = world.xpGems
+    let nearestGem = -1
+    let nearestGemDistanceSq = XP_GEM_SEEK_RADIUS * XP_GEM_SEEK_RADIUS
+    for (let i = 0; i < gemPool.count; i++) {
+      if (gemPool.attracted[i] !== 0) continue
+      const dx = gemPool.x[i]! - px
+      const dy = gemPool.y[i]! - py
+      const distanceSq = dx * dx + dy * dy
+      if (distanceSq < nearestGemDistanceSq) {
+        nearestGem = i
+        nearestGemDistanceSq = distanceSq
+      }
+    }
+    if (nearestGem >= 0 && nearestGemDistanceSq > 1e-12) {
+      const inverseDistance = 1 / Math.sqrt(nearestGemDistanceSq)
+      moveX +=
+        (gemPool.x[nearestGem]! - px) * inverseDistance * XP_GEM_SEEK_WEIGHT
+      moveY +=
+        (gemPool.y[nearestGem]! - py) * inverseDistance * XP_GEM_SEEK_WEIGHT
     }
   }
 

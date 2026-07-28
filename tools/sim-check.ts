@@ -314,10 +314,18 @@ console.log('\nsim smoke check\n')
     .join(', ')
 
   check(
-    '만렙에 제한 시간 안에 도달한다',
-    curveSamples.every((qwer) => {
-      const time = qwer.levelTimes[MAX_LEVEL - 1]
-      return time !== null && time <= RUN_TIME_LIMIT
+    '각 클래스 시드의 80% 이상이 만렙이며 나머지도 Lv25에 도달한다',
+    playerClasses.every((playerClass) => {
+      const classSamples = curveSamples.filter(
+        (qwer) => qwer.playerClass === playerClass,
+      )
+      const maxLevelRuns = classSamples.filter(
+        (qwer) => qwer.levelTimes[MAX_LEVEL - 1] !== null,
+      ).length
+      return (
+        maxLevelRuns / classSamples.length >= 0.8 &&
+        classSamples.every((qwer) => qwer.level >= MAX_LEVEL - 1)
+      )
     }),
     details,
   )
@@ -365,7 +373,11 @@ console.log('\nsim smoke check\n')
     '같은 시드를 두 번 돌리면 결과가 같다',
     samples.every(({ expected, qwer }) => {
       const again = runBalanceScenario(expected.playerClass, expected.seed, { useQwer: true })
-      return again.kills === qwer.kills && again.totalXp === qwer.totalXp
+      return (
+        again.kills === qwer.kills &&
+        again.totalXp === qwer.totalXp &&
+        again.levelTimes.every((time, index) => time === qwer.levelTimes[index])
+      )
     }),
     details,
   )

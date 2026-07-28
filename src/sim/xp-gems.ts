@@ -10,11 +10,9 @@ export const MAX_XP_GEMS = 384
 /** Distance at which a gem is collected immediately. */
 export const XP_GEM_PICKUP_RADIUS = 1.2
 /** Distance at which a gem starts following the player. */
-export const XP_GEM_MAGNET_RADIUS = 16
+export const XP_GEM_MAGNET_RADIUS = 2.5
 /** Movement speed of an attracted gem in world units per second. */
 export const XP_GEM_ATTRACT_SPEED = 24
-/** Off-route XP eventually comes home so kiting never deletes progression. */
-export const XP_GEM_STALE_ATTRACT_AFTER = 20
 
 /**
  * Renderer-facing XP gem state.
@@ -32,8 +30,6 @@ export interface XpGemPool {
   /** 가장 최근 step에서 합쳐 먹은 실제 보석 개수. */
   collectedCount: number
   attracted: Uint8Array
-  /** Seconds since drop; used only for the forgiving stale-gem latch. */
-  age: Float32Array
 }
 
 export function createXpGemPool(capacity = MAX_XP_GEMS): XpGemPool {
@@ -47,7 +43,6 @@ export function createXpGemPool(capacity = MAX_XP_GEMS): XpGemPool {
     value: new Float32Array(size),
     collectedCount: 0,
     attracted: new Uint8Array(size),
-    age: new Float32Array(size),
   }
 }
 
@@ -63,7 +58,6 @@ export function resetXpGemPool(pool: XpGemPool): void {
   pool.prevY.fill(0)
   pool.value.fill(0)
   pool.attracted.fill(0)
-  pool.age.fill(0)
 }
 
 /**
@@ -97,7 +91,6 @@ export function dropXpGem(
     pool.prevY[i] = y
     pool.value[i] = value
     pool.attracted[i] = 0
-    pool.age[i] = 0
     return true
   }
 
@@ -131,10 +124,13 @@ export function stepXpGems(
   pickupRadiusMultiplier = 1,
 ): number {
   pool.collectedCount = 0
-  const pickupRadius =
-    XP_GEM_PICKUP_RADIUS * Math.max(0.1, pickupRadiusMultiplier)
+  const pickupRadiusScale = Number.isFinite(pickupRadiusMultiplier)
+    ? Math.max(0.1, pickupRadiusMultiplier)
+    : 1
+  const pickupRadius = XP_GEM_PICKUP_RADIUS * pickupRadiusScale
   const pickupRadiusSquared = pickupRadius * pickupRadius
-  const magnetRadiusSquared = XP_GEM_MAGNET_RADIUS * XP_GEM_MAGNET_RADIUS
+  const magnetRadius = XP_GEM_MAGNET_RADIUS * pickupRadiusScale
+  const magnetRadiusSquared = magnetRadius * magnetRadius
   const elapsed = Number.isFinite(dt) && dt > 0 ? dt : 0
   const travel = XP_GEM_ATTRACT_SPEED * elapsed
   let collected = 0
@@ -144,7 +140,6 @@ export function stepXpGems(
     const y = pool.y[i]!
     pool.prevX[i] = x
     pool.prevY[i] = y
-    pool.age[i] = pool.age[i]! + elapsed
 
     const dx = playerX - x
     const dy = playerY - y
@@ -158,9 +153,7 @@ export function stepXpGems(
 
     if (
       pool.attracted[i] === 0 &&
-      (forceAttract ||
-        pool.age[i]! >= XP_GEM_STALE_ATTRACT_AFTER ||
-        distanceSquared <= magnetRadiusSquared)
+      (forceAttract || distanceSquared <= magnetRadiusSquared)
     ) {
       pool.attracted[i] = 1
     }
@@ -191,7 +184,6 @@ function removeXpGem(pool: XpGemPool, index: number): void {
     pool.prevY[index] = pool.prevY[last]!
     pool.value[index] = pool.value[last]!
     pool.attracted[index] = pool.attracted[last]!
-    pool.age[index] = pool.age[last]!
   }
   pool.count = last
 }
