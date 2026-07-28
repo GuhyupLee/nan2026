@@ -129,6 +129,10 @@ export class Renderer {
   private shadowMapSize = 2048
   /** 연속 resize에서도 모바일 후처리 tier가 high로 되돌아가지 않게 보존한다. */
   private constrained = false
+  /** 중요 전투 비트에서만 잠깐 올라갔다 지수적으로 1로 복귀하는 블룸 배수. */
+  private feedbackBloom = 1
+  /** 새 월드 첫 프레임을 정예 등장으로 오인하지 않기 위한 직전 비트 인덱스. */
+  private lastEliteBeatIndex = -1
 
   constructor(container: HTMLElement, arenaRadius: number) {
     this.container = container
@@ -405,6 +409,9 @@ export class Renderer {
       this.skillFx.reset()
       this.impactParticles.reset()
       this.xpGemRenderer.reset()
+      this.feedbackBloom = 1
+      this.post.setBloomBoost(1)
+      this.lastEliteBeatIndex = world.eliteBeatIndex
       this.actionFacingUntil = -Infinity
     }
 
@@ -446,6 +453,9 @@ export class Renderer {
     // 숫자까지 멈춰서 타격감이 아니라 프레임 드랍으로 읽힌다.
     this.impact.update(now, dt)
     this.consumeFeedback(world, px, pz)
+    this.feedbackBloom +=
+      (1 - this.feedbackBloom) * (1 - Math.exp(-7.5 * dt))
+    this.post.setBloomBoost(this.feedbackBloom)
 
     this.lightRig.position.set(px, 0, pz)
 
@@ -483,15 +493,29 @@ export class Renderer {
         this.impact.shake(0.9, 1.1, 12)
         this.impact.requestHitstop(0.9, 0.12)
         this.post.flash(0xffffff, 0.5, 0.6)
+        this.pulseBloom(2.45)
+      } else if (d.type === TYPE_ELITE) {
+        this.impact.shake(0.52, 0.46, 9)
+        this.impact.requestHitstop(0.5, 0.055)
+        this.post.flash(0xe4bd70, 0.17, 0.3)
+        this.pulseBloom(1.78)
       } else if (d.type === 2) {
         this.impact.shake(0.2, 0.24)
       }
     }
 
+    if (world.eliteBeatIndex > this.lastEliteBeatIndex) {
+      this.impact.shake(0.36, 0.42, 8)
+      this.post.flash(0xd9a85f, 0.13, 0.28)
+      this.pulseBloom(1.52)
+    }
+    this.lastEliteBeatIndex = world.eliteBeatIndex
+
     for (let i = 0; i < world.casts.length; i++) {
       if (world.casts[i]!.slot !== 'r') continue
       this.impact.shake(0.5, 0.5, 15)
       this.post.flash(world.playerClass === 'melee' ? 0xff5a6e : 0x4dd0ff, 0.22, 0.35)
+      this.pulseBloom(1.9)
     }
 
     // 접촉 피해는 이벤트가 아니라 틱마다 쌓이는 연속량이다(적 1마리 초당 3~4).
@@ -520,6 +544,13 @@ export class Renderer {
     // 경험치 숫자는 뺐다. 한 판에 수백 마리가 죽는데 킬마다 숫자가 뜨면
     // 화면이 숫자로 덮이고, 어차피 HUD의 경험치 바가 같은 정보를 이미 준다.
     // 데미지 숫자만 남겨야 그게 신호로 읽힌다.
+  }
+
+  /** 접근성 설정을 지키면서 더 강한 동시 피크만 보존한다. */
+  private pulseBloom(boost: number): void {
+    const motionScale = this.reducedMotion.matches ? 0.35 : this.constrained ? 0.78 : 1
+    const accessibleBoost = 1 + (boost - 1) * motionScale
+    this.feedbackBloom = Math.max(this.feedbackBloom, accessibleBoost)
   }
 
   /**
