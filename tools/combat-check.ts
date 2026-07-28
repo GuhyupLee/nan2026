@@ -5,15 +5,36 @@ import {
 } from '../src/content/skills.ts'
 import { PLAYER_ACTION_BUFFER_WINDOW } from '../src/sim/actions.ts'
 import { playerActionTiming } from '../src/sim/action-timing.ts'
+import {
+  BOSS_PHASE_TWO_KNOCKBACK_RADIUS,
+  BOSS_PHASE_TWO_THRESHOLD,
+  BOSS_PHASE_TWO_TRANSITION_DURATION,
+  BOSS_PHASE_ZONE_DAMAGE,
+  BOSS_PHASE_ZONE_PREDICTION_SECONDS,
+  BOSS_PHASE_ZONE_RADIUS,
+  BOSS_PHASE_ZONE_WARNING_DURATION,
+  BOSS_RECOVER_BLAST_DAMAGE,
+  BOSS_RECOVER_BLAST_RADIUS,
+  BOSS_RECOVER_BLAST_WARNING_DURATION,
+  stepBossEncounter,
+  triggerBossPhaseTwo,
+} from '../src/sim/boss.ts'
 import { DT } from '../src/sim/constants.ts'
+import { damageEnemy } from '../src/sim/damage.ts'
 import {
   BOSS_CHARGE_AT,
   BOSS_CHARGE_SPEED,
+  BOSS_CYCLE_TIME,
   BOSS_INTRO_DURATION,
+  BOSS_MAX_HP,
   BOSS_RECOVER_AT,
   BOSS_WINDUP_AT,
   TYPE_BOSS,
+  TYPE_BRUTE,
+  TYPE_ELITE,
   TYPE_WALKER,
+  bossCycleIndex,
+  bossCycleTime,
   bossPhaseAt,
   createEnemyHash,
   createEnemyPool,
@@ -547,4 +568,385 @@ function stepBoss(
   assert.equal(dodgeDamage, 0, `side-step remains a valid answer, damage=${dodgeDamage}`)
 }
 
-console.log('Combat check passed: retarget, buffer, QWER scaling, awakenings, boss threat')
+function setupBossWorld(seed = 4500): { world: World; bossIndex: number } {
+  const world = createWorld(seed, 'ranged')
+  world.spawnEnabled = false
+  world.player.attackCooldown = Number.POSITIVE_INFINITY
+  assert.equal(
+    spawnBoss(world.enemies, world.rng, world.player.pos.x, world.player.pos.y),
+    true,
+  )
+  const bossIndex = world.enemies.count - 1
+  world.enemies.x[bossIndex] = 0
+  world.enemies.y[bossIndex] = 0
+  world.enemies.prevX[bossIndex] = 0
+  world.enemies.prevY[bossIndex] = 0
+  world.enemies.vx[bossIndex] = 0
+  world.enemies.vy[bossIndex] = 0
+  world.boss.spawned = true
+  world.boss.spawnedAt = 0
+  world.boss.active = true
+  world.boss.hp = BOSS_MAX_HP
+  assert.equal(world.enemies.hp[bossIndex], BOSS_MAX_HP)
+  return { world, bossIndex }
+}
+
+function addTypedTarget(
+  world: World,
+  type: number,
+  x: number,
+  y: number,
+): number {
+  spawnEnemy(
+    world.enemies,
+    world.rng,
+    world.player.pos.x,
+    world.player.pos.y,
+    type,
+    world.time,
+  )
+  const i = world.enemies.count - 1
+  world.enemies.x[i] = x
+  world.enemies.y[i] = y
+  world.enemies.prevX[i] = x
+  world.enemies.prevY[i] = y
+  return i
+}
+
+function startPhaseTwoForHazardTest(
+  world: World,
+  phaseTwoAt = 0,
+): void {
+  world.boss.phaseTwoAt = phaseTwoAt
+  world.boss.invulnerableUntil =
+    phaseTwoAt + BOSS_PHASE_TWO_TRANSITION_DURATION
+  world.boss.hazardCycle = -1
+  world.boss.recoverBlastCycle = -1
+  world.boss.nextHazardVolley = 0
+  world.boss.lastHazardHitVolley = -1
+  world.boss.hazardDetonations = 0
+  world.hostileHazards.length = 0
+  world.time = phaseTwoAt + BOSS_PHASE_TWO_TRANSITION_DURATION
+  world.tick = Math.round(world.time / DT)
+}
+
+{
+  assert.equal(BOSS_PHASE_TWO_THRESHOLD, 1300)
+  assert.equal(BOSS_PHASE_TWO_THRESHOLD, BOSS_MAX_HP / 2)
+
+  const { world, bossIndex } = setupBossWorld()
+  world.time = 50
+  world.tick = Math.round(world.time / DT)
+  world.enemies.vx[bossIndex] = 7
+  world.enemies.vy[bossIndex] = -3
+  world.enemies.pushVx[bossIndex] = 4
+  world.enemies.pushVy[bossIndex] = 2
+  world.enemies.bossChargeDirX[bossIndex] = 1
+  world.enemies.bossChargeDirY[bossIndex] = 0.5
+  world.enemies.bossChargeCycle[bossIndex] = 6
+
+  assert.equal(damageEnemy(world, bossIndex, BOSS_MAX_HP * 4), false)
+  assert.equal(world.enemies.hp[bossIndex], BOSS_PHASE_TWO_THRESHOLD)
+  assert.equal(world.boss.hp, BOSS_PHASE_TWO_THRESHOLD)
+  assert.equal(world.boss.phaseTwoAt, 50)
+  assert.equal(
+    world.boss.invulnerableUntil,
+    50 + BOSS_PHASE_TWO_TRANSITION_DURATION,
+  )
+  assert.equal(bossPhaseAt(50, 0, world.boss.phaseTwoAt), 'transition')
+  assert.notEqual(bossPhaseAt(49, 0, world.boss.phaseTwoAt), 'transition')
+  assert.equal(world.enemies.vx[bossIndex], 0)
+  assert.equal(world.enemies.vy[bossIndex], 0)
+  assert.equal(world.enemies.pushVx[bossIndex], 0)
+  assert.equal(world.enemies.pushVy[bossIndex], 0)
+  assert.equal(world.enemies.bossChargeCycle[bossIndex], -1)
+  assert.deepEqual(
+    world.rings.filter((ring) => ring.kind === 5),
+    [
+      {
+        x: 0,
+        y: 0,
+        radius: BOSS_PHASE_TWO_KNOCKBACK_RADIUS,
+        kind: 5,
+      },
+    ],
+  )
+
+  const transitionAt = world.boss.phaseTwoAt
+  const hpAtGate = world.enemies.hp[bossIndex]
+  world.time = world.boss.invulnerableUntil - DT
+  assert.equal(damageEnemy(world, bossIndex, 100), false)
+  assert.equal(world.enemies.hp[bossIndex], hpAtGate)
+  assert.equal(world.boss.phaseTwoAt, transitionAt)
+  assert.equal(triggerBossPhaseTwo(world, bossIndex), false)
+  assert.equal(world.rings.filter((ring) => ring.kind === 5).length, 1)
+
+  world.time = world.boss.invulnerableUntil
+  assert.equal(
+    bossPhaseAt(world.time, world.boss.spawnedAt, world.boss.phaseTwoAt),
+    'orbit',
+  )
+  assert.equal(
+    bossCycleTime(world.time, world.boss.spawnedAt, world.boss.phaseTwoAt),
+    0,
+  )
+  assert.equal(
+    bossCycleIndex(world.time, world.boss.spawnedAt, world.boss.phaseTwoAt),
+    0,
+  )
+  damageEnemy(world, bossIndex, 100)
+  assert.equal(world.enemies.hp[bossIndex], hpAtGate - 100)
+  assert.equal(world.boss.phaseTwoAt, transitionAt)
+  assert.equal(
+    bossCycleIndex(
+      world.time + BOSS_CYCLE_TIME,
+      world.boss.spawnedAt,
+      world.boss.phaseTwoAt,
+    ),
+    1,
+  )
+
+  const inactive = createWorld(4501)
+  inactive.spawnEnabled = false
+  spawnBoss(inactive.enemies, inactive.rng, 0, 0)
+  const inactiveBoss = inactive.enemies.count - 1
+  assert.equal(inactive.boss.active, false)
+  assert.equal(damageEnemy(inactive, inactiveBoss, BOSS_MAX_HP), true)
+  assert.equal(inactive.enemies.hp[inactiveBoss], 0)
+  assert.equal(inactive.boss.phaseTwoAt, -1)
+}
+
+{
+  const { world, bossIndex } = setupBossWorld(4510)
+  world.enemies.x[bossIndex] = 2
+  world.enemies.y[bossIndex] = -1
+  const walker = addTypedTarget(world, TYPE_WALKER, 5, -1)
+  const bruteOnBoss = addTypedTarget(world, TYPE_BRUTE, 2, -1)
+  const outside = addTypedTarget(
+    world,
+    TYPE_WALKER,
+    2 + BOSS_PHASE_TWO_KNOCKBACK_RADIUS + 0.01,
+    -1,
+  )
+  const elite = addTypedTarget(world, TYPE_ELITE, 4, -1)
+
+  assert.equal(triggerBossPhaseTwo(world, bossIndex), true)
+  assert.ok(
+    Math.hypot(
+      world.enemies.pushVx[walker]!,
+      world.enemies.pushVy[walker]!,
+    ) > 0,
+  )
+  assert.ok(
+    Math.hypot(
+      world.enemies.pushVx[bruteOnBoss]!,
+      world.enemies.pushVy[bruteOnBoss]!,
+    ) > 0,
+  )
+  assert.equal(world.enemies.pushVx[outside], 0)
+  assert.equal(world.enemies.pushVy[outside], 0)
+  assert.equal(world.enemies.pushVx[elite], 0)
+  assert.equal(world.enemies.pushVy[elite], 0)
+}
+
+{
+  const { world } = setupBossWorld(4520)
+  startPhaseTwoForHazardTest(world)
+  world.player.pos.x = 23
+  world.player.pos.y = 0
+  world.player.vel.x = 20
+  world.player.vel.y = 0
+
+  assert.equal(stepBossEncounter(world), 0)
+  assert.equal(world.hostileHazards.length, 2)
+  const [current, predicted] = world.hostileHazards
+  assert.equal(current?.kind, 'phase-zone')
+  assert.equal(predicted?.kind, 'phase-zone')
+  assert.equal(current?.x, 23)
+  assert.equal(current?.radius, BOSS_PHASE_ZONE_RADIUS)
+  assert.equal(current?.damage, BOSS_PHASE_ZONE_DAMAGE)
+  assert.equal(
+    current?.detonateAt,
+    world.time + BOSS_PHASE_ZONE_WARNING_DURATION,
+  )
+  assert.equal(current?.volley, predicted?.volley)
+  assert.equal(
+    predicted?.x,
+    world.arenaRadius - BOSS_PHASE_ZONE_RADIUS,
+  )
+  assert.ok(
+    Math.abs(
+      23 +
+        world.player.vel.x * BOSS_PHASE_ZONE_PREDICTION_SECONDS -
+        predicted!.x,
+    ) > 0,
+  )
+  assert.ok(
+    Math.hypot(predicted!.x, predicted!.y) <=
+      world.arenaRadius - BOSS_PHASE_ZONE_RADIUS + 1e-9,
+  )
+  assert.equal(world.boss.nextHazardVolley, 1)
+  assert.equal(stepBossEncounter(world), 0)
+  assert.equal(world.hostileHazards.length, 2)
+}
+
+{
+  const { world } = setupBossWorld(4530)
+  startPhaseTwoForHazardTest(world)
+  world.player.pos.x = 0
+  world.player.pos.y = 0
+  world.player.vel.x = 0
+  world.player.vel.y = 0
+
+  stepBossEncounter(world)
+  assert.equal(world.hostileHazards.length, 2)
+  assert.equal(world.boss.hazardDetonations, 0)
+  world.time = world.hostileHazards[0]!.detonateAt
+  assert.equal(stepBossEncounter(world), BOSS_PHASE_ZONE_DAMAGE)
+  assert.equal(world.hostileHazards.length, 0)
+  assert.equal(world.boss.hazardDetonations, 1)
+  assert.equal(stepBossEncounter(world), 0)
+  assert.equal(world.boss.hazardDetonations, 1)
+}
+
+{
+  const { world, bossIndex } = setupBossWorld(4540)
+  startPhaseTwoForHazardTest(world)
+  const patternStart =
+    world.boss.phaseTwoAt + BOSS_PHASE_TWO_TRANSITION_DURATION
+  world.time = patternStart + BOSS_RECOVER_AT
+  world.tick = Math.round(world.time / DT)
+  world.boss.hazardCycle = 0
+  world.enemies.x[bossIndex] = 10
+  world.enemies.y[bossIndex] = -4
+  world.enemies.prevX[bossIndex] = 10
+  world.enemies.prevY[bossIndex] = -4
+  world.enemies.vx[bossIndex] = 18
+  world.enemies.vy[bossIndex] = 3
+
+  stepWorld(world, fixedInput(0, 0))
+  const blast = world.hostileHazards.find(
+    (hazard) => hazard.kind === 'charge-end',
+  )
+  assert.ok(blast)
+  assert.equal(blast.x, 10)
+  assert.equal(blast.y, -4)
+  assert.equal(blast.radius, BOSS_RECOVER_BLAST_RADIUS)
+  assert.equal(blast.damage, BOSS_RECOVER_BLAST_DAMAGE)
+  assert.ok(
+    Math.abs(
+      blast.detonateAt -
+        blast.telegraphAt -
+        BOSS_RECOVER_BLAST_WARNING_DURATION,
+    ) < 1e-9,
+  )
+  assert.equal(
+    world.hostileHazards.filter((hazard) => hazard.kind === 'charge-end')
+      .length,
+    1,
+  )
+
+  world.player.pos.x = blast.x
+  world.player.pos.y = blast.y
+  world.player.vel.x = 0
+  world.player.vel.y = 0
+  world.boss.hazardCycle = 1
+  world.time = blast.detonateAt
+  assert.equal(stepBossEncounter(world), BOSS_RECOVER_BLAST_DAMAGE)
+  assert.equal(
+    world.hostileHazards.some((hazard) => hazard.kind === 'charge-end'),
+    false,
+  )
+  assert.equal(world.boss.hazardDetonations, 1)
+}
+
+{
+  const left = setupBossWorld(4550).world
+  const right = setupBossWorld(4550).world
+  startPhaseTwoForHazardTest(left)
+  startPhaseTwoForHazardTest(right)
+  const rngBefore = [
+    left.rng.state(),
+    left.choiceRng.state(),
+    left.pickupRng.state(),
+  ]
+
+  const firstTick = Math.round(left.time / DT)
+  const lastTick = firstTick + Math.round(16 / DT)
+  for (let tick = firstTick; tick <= lastTick; tick += 1) {
+    const time = tick * DT
+    const x = Math.sin(tick * 0.017) * 20
+    const y = Math.cos(tick * 0.013) * 18
+    const vx = Math.cos(tick * 0.017) * 7.5
+    const vy = -Math.sin(tick * 0.013) * 6.25
+    for (const world of [left, right]) {
+      world.tick = tick
+      world.time = time
+      world.player.pos.x = x
+      world.player.pos.y = y
+      world.player.vel.x = vx
+      world.player.vel.y = vy
+    }
+    const leftDamage = stepBossEncounter(left)
+    const rightDamage = stepBossEncounter(right)
+    assert.equal(leftDamage, rightDamage)
+    assert.deepEqual(left.hostileHazards, right.hostileHazards)
+    assert.deepEqual(left.boss, right.boss)
+  }
+  assert.deepEqual(
+    [
+      left.rng.state(),
+      left.choiceRng.state(),
+      left.pickupRng.state(),
+    ],
+    rngBefore,
+  )
+  assert.deepEqual(
+    [
+      right.rng.state(),
+      right.choiceRng.state(),
+      right.pickupRng.state(),
+    ],
+    rngBefore,
+  )
+}
+
+{
+  const { world } = setupBossWorld(4560)
+  startPhaseTwoForHazardTest(world)
+  world.time = 2.5
+  world.tick = Math.round(world.time / DT)
+  world.boss.hazardCycle = bossCycleIndex(
+    world.time,
+    world.boss.spawnedAt,
+    world.boss.phaseTwoAt,
+  )
+  world.enemies.x[0] = 20
+  world.enemies.y[0] = 0
+  world.player.hp = world.stats.maxHp
+  world.hostileHazards.push({
+    kind: 'phase-zone',
+    x: world.player.pos.x,
+    y: world.player.pos.y,
+    radius: BOSS_PHASE_ZONE_RADIUS,
+    damage: BOSS_PHASE_ZONE_DAMAGE,
+    telegraphAt: world.time - BOSS_PHASE_ZONE_WARNING_DURATION,
+    detonateAt: world.time,
+    volley: 99,
+  })
+  world.boss.nextHazardVolley = 100
+
+  const hpBefore = world.player.hp
+  stepWorld(world, fixedInput(0, 0))
+  assert.ok(
+    Math.abs(
+      world.player.hp -
+        (hpBefore - BOSS_PHASE_ZONE_DAMAGE * world.stats.damageTakenMul),
+    ) < 1e-9,
+  )
+  assert.equal(world.boss.hazardDetonations, 1)
+}
+
+console.log(
+  'Combat check passed: retarget, buffer, QWER scaling, awakenings, boss threat + phase 2',
+)

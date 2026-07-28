@@ -1,4 +1,8 @@
 import { tryDropBattlefieldPickup } from './battlefield-pickups.ts'
+import {
+  BOSS_PHASE_TWO_THRESHOLD,
+  triggerBossPhaseTwo,
+} from './boss.ts'
 import { ENEMY_TYPES, removeEnemy, TYPE_BOSS, TYPE_ELITE } from './enemies.ts'
 import { dropRelic } from './rewards.ts'
 import type { World } from './types.ts'
@@ -78,17 +82,48 @@ export function damageEnemy(
   if (pool.hp[i]! <= 0) return false
   if (!(amount > 0)) return false
 
+  const enemyType = pool.type[i]!
+  const isBoss = enemyType === TYPE_BOSS
+  const isElite = enemyType === TYPE_ELITE
+  if (
+    isBoss &&
+    world.boss.active &&
+    world.boss.phaseTwoAt >= 0 &&
+    world.time < world.boss.invulnerableUntil
+  ) {
+    return false
+  }
+
   const hpBefore = pool.hp[i]!
-  const applied = Math.min(hpBefore, Math.max(0, amount))
+  let applied = Math.min(hpBefore, Math.max(0, amount))
+  if (
+    isBoss &&
+    world.boss.active &&
+    world.boss.phaseTwoAt < 0
+  ) {
+    const thresholdHp = BOSS_PHASE_TWO_THRESHOLD
+    if (hpBefore >= thresholdHp && hpBefore - applied <= thresholdHp) {
+      // 첫 50% 타격은 정확히 문턱에서 멈춘다. 한 번에 남은 체력을 모두
+      // 날리는 공격도 전환 연출과 2페이즈 패턴을 건너뛸 수 없다.
+      applied = Math.max(0, hpBefore - thresholdHp)
+    }
+  }
   pool.hp[i] = hpBefore - applied
   pool.flash[i] = 0.08
   pool.hpVisibleUntil[i] = Math.max(
     pool.hpVisibleUntil[i]!,
     world.time + HP_BAR_REVEAL_DURATION,
   )
-  const isBoss = pool.type[i] === TYPE_BOSS
-  const isElite = pool.type[i] === TYPE_ELITE
-  if (isBoss) world.boss.hp = Math.max(0, pool.hp[i]!)
+  if (isBoss) {
+    world.boss.hp = Math.max(0, pool.hp[i]!)
+    if (
+      world.boss.active &&
+      world.boss.phaseTwoAt < 0 &&
+      pool.hp[i]! <= BOSS_PHASE_TWO_THRESHOLD
+    ) {
+      triggerBossPhaseTwo(world, i)
+    }
+  }
 
   if (applied > 0) {
     pushDamageFeedback(world, {
@@ -149,6 +184,7 @@ export function damageEnemy(
   if (isBoss) {
     world.boss.active = false
     world.boss.hp = 0
+    world.hostileHazards.length = 0
     world.outcome = 'victory'
   }
   return true

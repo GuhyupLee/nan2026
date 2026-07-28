@@ -425,7 +425,11 @@ export class CombatReadabilityFx {
       return
     }
 
-    const phase = bossPhaseAt(world.time, world.boss.spawnedAt)
+    const phase = bossPhaseAt(
+      world.time,
+      world.boss.spawnedAt,
+      world.boss.phaseTwoAt,
+    )
     if (phase !== 'windup' && phase !== 'charge') {
       this.chargeMesh.visible = false
       return
@@ -443,7 +447,11 @@ export class CombatReadabilityFx {
     const nz = dz / directionLength
     const x = lerp(pool.prevX[boss]!, pool.x[boss]!, alpha)
     const z = lerp(pool.prevY[boss]!, pool.y[boss]!, alpha)
-    const cycle = bossCycleTime(world.time, world.boss.spawnedAt)
+    const cycle = bossCycleTime(
+      world.time,
+      world.boss.spawnedAt,
+      world.boss.phaseTwoAt,
+    )
     const arenaLimit = world.arenaRadius - ENEMY_TYPES[TYPE_BOSS]!.radius
     const along = x * nx + z * nz
     const discriminant = Math.max(0, along * along - (x * x + z * z - arenaLimit * arenaLimit))

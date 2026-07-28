@@ -28,6 +28,7 @@ import {
   BOSS_CHARGE_AT,
   BOSS_INTRO_DURATION,
   BOSS_MAX_HP,
+  BOSS_PHASE_TWO_TRANSITION_DURATION,
   BOSS_RECOVER_AT,
   BOSS_SPAWN_TIME,
   BOSS_WINDUP_AT,
@@ -1341,9 +1342,13 @@ console.log('\nsim smoke check\n')
     Math.abs(w.boss.hp - BOSS_MAX_HP / 2) < 1e-3,
     `hp=${w.boss.hp}`,
   )
+  w.tick = Math.round(
+    (w.boss.phaseTwoAt + BOSS_PHASE_TWO_TRANSITION_DURATION) / DT,
+  )
+  w.time = w.tick * DT
   damageEnemy(w, bossIndex, BOSS_MAX_HP)
   check(
-    '보스 처치 즉시 victory가 되고 보스바가 비활성화된다',
+    '2페이즈 전환 무적 종료 뒤 처치하면 victory와 보스바가 즉시 동기화된다',
     w.outcome === 'victory' && !w.boss.active && w.boss.hp === 0,
     `outcome=${w.outcome} active=${w.boss.active}`,
   )

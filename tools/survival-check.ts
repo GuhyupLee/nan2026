@@ -193,7 +193,11 @@ function pilot(
   // 보스는 예고 방향을 고정한 뒤 직선 돌진한다. 같은 선으로 달리면 잡히고,
   // 옆으로 한 걸음 비키면 피할 수 있다는 실제 전투 문법을 봇도 따른다.
   if (boss >= 0 && world.boss.spawnedAt >= 0) {
-    const phase = bossPhaseAt(world.time, world.boss.spawnedAt)
+    const phase = bossPhaseAt(
+      world.time,
+      world.boss.spawnedAt,
+      world.boss.phaseTwoAt,
+    )
     if (phase === 'windup' || phase === 'charge') {
       let chargeX = pool.bossChargeDirX[boss]!
       let chargeY = pool.bossChargeDirY[boss]!

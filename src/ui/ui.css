@@ -604,6 +604,26 @@ body.pickup-buff-active #hint:not(.hidden) {
   border-color: #96596d;
 }
 
+.bossbar[data-stage='2'] .boss-track {
+  border-color: #a95a88;
+  box-shadow:
+    0 3px 0 rgba(0, 0, 0, 0.42),
+    0 0 0.8rem rgba(202, 75, 137, 0.14);
+}
+
+.bossbar[data-stage='2'] .boss-fill {
+  background: linear-gradient(90deg, #b33773, #e66577 62%, #f3a064);
+}
+
+.bossbar[data-phase='transition'] .boss-track {
+  border-color: #f08a9f;
+  animation: boss-phase-shift-track 0.24s ease-in-out infinite alternate;
+}
+
+.bossbar[data-phase='transition'] .boss-phase {
+  color: #ffd6df;
+}
+
 .bossbar[data-phase='charge'] .boss-fill {
   background: var(--ui-warning);
 }
@@ -623,6 +643,14 @@ body.pickup-buff-active #hint:not(.hidden) {
 @keyframes boss-warning {
   to {
     box-shadow: 0 0 1rem rgba(255, 157, 84, 0.5);
+  }
+}
+
+@keyframes boss-phase-shift-track {
+  to {
+    box-shadow:
+      0 3px 0 rgba(0, 0, 0, 0.42),
+      0 0 1.25rem rgba(246, 82, 133, 0.72);
   }
 }
 
@@ -682,6 +710,34 @@ body.pickup-buff-active #hint:not(.hidden) {
 
 .boss-arrival.play {
   animation: boss-arrival 1.6s ease-out both;
+}
+
+.boss-phase-shift {
+  color: #ffe8ed;
+}
+
+.boss-phase-shift.play {
+  animation-duration: 1.2s;
+}
+
+.boss-phase-shift::before {
+  background: linear-gradient(90deg, transparent, #ff5e8c, #d77cff, transparent);
+  box-shadow: 0 0 2rem rgba(223, 81, 151, 0.48);
+}
+
+.boss-phase-shift span {
+  color: #ef81ab;
+}
+
+.boss-phase-shift strong {
+  color: #fff0f4;
+  text-shadow:
+    0 2px 10px #000,
+    0 0 1.4rem rgba(255, 94, 140, 0.54);
+}
+
+.boss-phase-shift small {
+  color: #e3b8c7;
 }
 
 @keyframes boss-arrival {
@@ -3035,6 +3091,7 @@ body.pickup-buff-active #hint:not(.hidden) {
   .clock,
   .bossbar .boss-fill,
   .bossbar[data-phase='windup'] .boss-track,
+  .bossbar[data-phase='transition'] .boss-track,
   .boss-arrival,
   .levelup,
   .lvcard,

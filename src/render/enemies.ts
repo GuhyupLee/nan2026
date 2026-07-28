@@ -284,6 +284,7 @@ export class EnemyRenderer {
   private readonly axisY = new THREE.Vector3(0, 1, 0)
   private readonly color = new THREE.Color()
   private readonly white = new THREE.Color(0xffffff)
+  private readonly phaseTwoColor = new THREE.Color(0xff4f86)
 
   constructor(scene: THREE.Scene) {
     for (let t = 0; t < ENEMY_TYPES.length; t++) {
@@ -379,10 +380,18 @@ export class EnemyRenderer {
       if (isBoss) {
         // 일정한 자전 위에 돌진 직전의 빠른 떨림을 더한다. 월드 시간을 써서
         // 프레임률과 무관하고, 피격 플래시와 겹쳐도 실루엣이 무너지지 않는다.
-        const phase = bossPhaseAt(world.time, world.boss.spawnedAt)
+        const phase = bossPhaseAt(
+          world.time,
+          world.boss.spawnedAt,
+          world.boss.phaseTwoAt,
+        )
+        const transitioning = phase === 'transition'
         const charging = phase === 'windup' || phase === 'charge'
-        const spin = world.time * (charging ? 2.8 : 1.15)
-        const pulse = 1 + Math.sin(world.time * (charging ? 8.5 : 3.8)) * (charging ? 0.1 : 0.055)
+        const spin = world.time * (transitioning ? 4.6 : charging ? 2.8 : 1.15)
+        const pulse =
+          1 +
+          Math.sin(world.time * (transitioning ? 13 : charging ? 8.5 : 3.8)) *
+            (transitioning ? 0.14 : charging ? 0.1 : 0.055)
         this.q.setFromAxisAngle(this.axisY, spin)
         if (phase === 'arrival') {
           const t = Math.max(
@@ -431,6 +440,11 @@ export class EnemyRenderer {
       const f = pool.flash[i]!
       this.color.copy(batch.baseColor)
       if (isBoss) {
+        if (world.boss.phaseTwoAt >= 0) {
+          const phaseTwoPulse =
+            0.28 + (Math.sin(world.time * 5.6) * 0.5 + 0.5) * 0.18
+          this.color.lerp(this.phaseTwoColor, phaseTwoPulse)
+        }
         const pulseLight = 0.1 + (Math.sin(world.time * 4.4) * 0.5 + 0.5) * 0.12
         this.color.lerp(this.white, pulseLight)
       }

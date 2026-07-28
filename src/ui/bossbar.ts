@@ -17,8 +17,10 @@ export class BossBar {
   private readonly fill: HTMLDivElement
   private readonly phase: HTMLDivElement
   private readonly arrival: HTMLDivElement
+  private readonly phaseShift: HTMLDivElement
   private enabled = false
   private wasActive = false
+  private wasPhaseTwo = false
 
   constructor(parent: HTMLElement) {
     this.root = document.createElement('div')
@@ -48,6 +50,17 @@ export class BossBar {
       `<strong>${ENEMY_TYPES[TYPE_BOSS]!.name}</strong>` +
       `<small>최종 목표 · 제한 시간 안에 처치</small>`
     parent.appendChild(this.arrival)
+
+    this.phaseShift = document.createElement('div')
+    this.phaseShift.className = 'boss-arrival boss-phase-shift'
+    this.phaseShift.hidden = true
+    this.phaseShift.setAttribute('role', 'status')
+    this.phaseShift.setAttribute('aria-live', 'assertive')
+    this.phaseShift.innerHTML =
+      `<span>ECLIPSE BREAK</span>` +
+      `<strong>PHASE 2</strong>` +
+      `<small>예측 균열 활성화 · 붉은 원에서 이탈</small>`
+    parent.appendChild(this.phaseShift)
   }
 
   update(world: World): void {
@@ -56,21 +69,29 @@ export class BossBar {
     this.root.hidden = !visible
     if (!visible) {
       this.arrival.hidden = true
+      this.phaseShift.hidden = true
       this.wasActive = boss.active
+      this.wasPhaseTwo = boss.phaseTwoAt >= 0
       return
     }
 
     const ratio =
       boss.maxHp > 0 ? Math.max(0, Math.min(1, boss.hp / boss.maxHp)) : 0
     const percent = Math.ceil(ratio * 100)
-    const bossPhase = bossPhaseAt(world.time, boss.spawnedAt)
+    const phaseTwo = boss.phaseTwoAt >= 0
+    const bossPhase = bossPhaseAt(world.time, boss.spawnedAt, boss.phaseTwoAt)
 
     this.fill.style.width = `${(ratio * 100).toFixed(2)}%`
-    this.phase.textContent = `${phaseLabel(bossPhase)} · ${percent}%`
+    this.phase.textContent =
+      `PHASE ${phaseTwo ? '2' : '1'} · ${phaseLabel(bossPhase)} · ${percent}%`
     this.root.dataset.phase = bossPhase
+    this.root.dataset.stage = phaseTwo ? '2' : '1'
     this.root.setAttribute('aria-valuenow', String(Math.max(0, boss.hp)))
     this.root.setAttribute('aria-valuemax', String(boss.maxHp))
-    this.root.setAttribute('aria-valuetext', `${percent}%`)
+    this.root.setAttribute(
+      'aria-valuetext',
+      `페이즈 ${phaseTwo ? '2' : '1'}, ${phaseLabel(bossPhase)}, 체력 ${percent}%`,
+    )
 
     const arriving = bossPhase === 'arrival'
     this.arrival.hidden = !arriving
@@ -80,7 +101,15 @@ export class BossBar {
       void this.arrival.offsetWidth
       this.arrival.classList.add('play')
     }
+    const transitioning = bossPhase === 'transition'
+    this.phaseShift.hidden = !transitioning
+    if (transitioning && !this.wasPhaseTwo) {
+      this.phaseShift.classList.remove('play')
+      void this.phaseShift.offsetWidth
+      this.phaseShift.classList.add('play')
+    }
     this.wasActive = boss.active
+    this.wasPhaseTwo = phaseTwo
   }
 
   setVisible(visible: boolean): void {
@@ -88,13 +117,16 @@ export class BossBar {
     if (!visible) {
       this.root.hidden = true
       this.arrival.hidden = true
+      this.phaseShift.hidden = true
       this.wasActive = false
+      this.wasPhaseTwo = false
     }
   }
 
   dispose(): void {
     this.root.remove()
     this.arrival.remove()
+    this.phaseShift.remove()
   }
 }
 
@@ -102,6 +134,8 @@ function phaseLabel(phase: BossPhase): string {
   switch (phase) {
     case 'arrival':
       return '균열 개방'
+    case 'transition':
+      return '월식 전환'
     case 'orbit':
       return '선회'
     case 'windup':

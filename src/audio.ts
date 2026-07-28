@@ -16,6 +16,7 @@ type SoundGroup =
   | 'death'
   | 'level'
   | 'boss'
+  | 'hazard'
   | 'surge'
   | 'outcome'
   | 'ui'
@@ -59,6 +60,7 @@ export class GameAudio {
     death: 0,
     level: 0,
     boss: 0,
+    hazard: 0,
     surge: 0,
     outcome: 0,
     ui: 0,
@@ -68,6 +70,9 @@ export class GameAudio {
   private lastTick = -1
   private lastLevel = 1
   private lastBossActive = false
+  private lastBossPhaseTwoAt = -1
+  private lastBossHazardVolley = 0
+  private lastBossHazardDetonations = 0
   private lastSurgeWarningIndex = 0
   private lastSurgeBeatIndex = 0
   private lastOutcome: World['outcome'] = 'alive'
@@ -127,6 +132,16 @@ export class GameAudio {
     const newTick = world.tick !== this.lastTick
     const levelled = !newWorld && world.progression.level > this.lastLevel
     const bossAppeared = !newWorld && world.boss.active && !this.lastBossActive
+    const bossShifted =
+      !newWorld &&
+      world.boss.phaseTwoAt >= 0 &&
+      this.lastBossPhaseTwoAt < 0
+    const bossHazardWarned =
+      !newWorld &&
+      world.boss.nextHazardVolley > this.lastBossHazardVolley
+    const bossHazardDetonated =
+      !newWorld &&
+      world.boss.hazardDetonations > this.lastBossHazardDetonations
     const surgeWarned =
       !newWorld && world.surgeWarningIndex > this.lastSurgeWarningIndex
     const surgeStarted =
@@ -138,6 +153,9 @@ export class GameAudio {
     this.lastTick = world.tick
     this.lastLevel = world.progression.level
     this.lastBossActive = world.boss.active
+    this.lastBossPhaseTwoAt = world.boss.phaseTwoAt
+    this.lastBossHazardVolley = world.boss.nextHazardVolley
+    this.lastBossHazardDetonations = world.boss.hazardDetonations
     this.lastSurgeWarningIndex = world.surgeWarningIndex
     this.lastSurgeBeatIndex = world.surgeBeatIndex
     this.lastOutcome = world.outcome
@@ -150,6 +168,13 @@ export class GameAudio {
 
     if (levelled && this.allow('level', 0.22)) this.levelUp()
     if (bossAppeared && this.allow('boss', 0.8)) this.bossArrival()
+    if (bossShifted && this.allow('boss', 0.8)) this.bossPhaseTwo()
+    if (bossHazardWarned && this.allow('hazard', 0.24)) {
+      this.bossHazardWarning()
+    }
+    if (bossHazardDetonated && this.allow('hazard', 0.18)) {
+      this.bossHazardImpact()
+    }
     if (surgeWarned && this.allow('surge', 0.8)) this.surgeWarning()
     if (surgeStarted && this.allow('surge', 0.8)) this.surgeImpact()
     if (outcomeChanged && this.allow('outcome', 0.8)) this.outcome(world.outcome)
@@ -197,6 +222,9 @@ export class GameAudio {
     this.lastTick = -1
     this.lastLevel = 1
     this.lastBossActive = false
+    this.lastBossPhaseTwoAt = -1
+    this.lastBossHazardVolley = 0
+    this.lastBossHazardDetonations = 0
     this.lastSurgeWarningIndex = 0
     this.lastSurgeBeatIndex = 0
     this.lastOutcome = 'alive'
@@ -414,6 +442,23 @@ export class GameAudio {
     this.tone(62, 0.65, 0.085, 'sawtooth', 42)
     this.tone(93, 0.55, 0.055, 'triangle', 62, 0.08)
     this.noise(0.42, 0.055, 520, 0.02)
+  }
+
+  private bossPhaseTwo(): void {
+    this.tone(74, 0.55, 0.085, 'sawtooth', 38)
+    this.tone(148, 0.42, 0.055, 'square', 296, 0.04)
+    this.tone(444, 0.34, 0.045, 'triangle', 222, 0.13)
+    this.noise(0.36, 0.055, 680, 0.02)
+  }
+
+  private bossHazardWarning(): void {
+    this.tone(520, 0.11, 0.035, 'square', 350)
+    this.tone(350, 0.13, 0.03, 'triangle', 235, 0.1)
+  }
+
+  private bossHazardImpact(): void {
+    this.tone(96, 0.24, 0.055, 'sawtooth', 48)
+    this.noise(0.16, 0.035, 920)
   }
 
   private surgeWarning(): void {

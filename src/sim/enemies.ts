@@ -110,22 +110,48 @@ export const BOSS_RECOVER_AT = 6.35
 export const BOSS_CHARGE_SPEED = 24
 /** 직선 돌진에 맞은 실수가 일반 선회 접촉과 같은 값으로 끝나지 않게 한다. */
 export const BOSS_CHARGE_DAMAGE_MUL = 3.5
+/** 체력 절반에서 패턴 시계를 다시 시작하기 전 보스가 멈춰 있는 시간. */
+export const BOSS_PHASE_TWO_TRANSITION_DURATION = 1.2
 /** 적과 플레이어의 몸 반경 밖으로 인정하는 접촉 여유. 돌진 예고 폭도 공유한다. */
 export const ENEMY_CONTACT_REACH = 0.35
 
-export type BossPhase = 'arrival' | 'orbit' | 'windup' | 'charge' | 'recover'
+export type BossPhase =
+  | 'arrival'
+  | 'transition'
+  | 'orbit'
+  | 'windup'
+  | 'charge'
+  | 'recover'
 
-export function bossCycleTime(now: number, spawnedAt = BOSS_SPAWN_TIME): number {
-  const introTicks = Math.round(BOSS_INTRO_DURATION / DT)
+function bossPatternStart(spawnedAt: number, phaseTwoAt: number): number {
+  return phaseTwoAt >= 0
+    ? phaseTwoAt + BOSS_PHASE_TWO_TRANSITION_DURATION
+    : spawnedAt + BOSS_INTRO_DURATION
+}
+
+export function bossCycleTime(
+  now: number,
+  spawnedAt = BOSS_SPAWN_TIME,
+  phaseTwoAt = -1,
+): number {
   const cycleTicks = Math.round(BOSS_CYCLE_TIME / DT)
-  const elapsedTicks = Math.max(0, Math.round((now - spawnedAt) / DT) - introTicks)
+  const elapsedTicks = Math.max(
+    0,
+    Math.round((now - bossPatternStart(spawnedAt, phaseTwoAt)) / DT),
+  )
   return (elapsedTicks % cycleTicks) * DT
 }
 
-function bossCycleIndex(now: number, spawnedAt: number): number {
-  const introTicks = Math.round(BOSS_INTRO_DURATION / DT)
+export function bossCycleIndex(
+  now: number,
+  spawnedAt = BOSS_SPAWN_TIME,
+  phaseTwoAt = -1,
+): number {
   const cycleTicks = Math.round(BOSS_CYCLE_TIME / DT)
-  const elapsedTicks = Math.max(0, Math.round((now - spawnedAt) / DT) - introTicks)
+  const elapsedTicks = Math.max(
+    0,
+    Math.round((now - bossPatternStart(spawnedAt, phaseTwoAt)) / DT),
+  )
   return Math.floor(elapsedTicks / cycleTicks)
 }
 
@@ -135,10 +161,28 @@ function bossCycleIndex(now: number, spawnedAt: number): number {
  * 별도 타이머나 난수를 소비하지 않고 고정 월드 시간만 사용하므로, 같은 시드와
  * 입력으로 재생하면 돌진 예고와 돌진 시작 틱까지 정확히 일치한다.
  */
-export function bossPhaseAt(now: number, spawnedAt = BOSS_SPAWN_TIME): BossPhase {
+export function bossPhaseAt(
+  now: number,
+  spawnedAt = BOSS_SPAWN_TIME,
+  phaseTwoAt = -1,
+): BossPhase {
+  const phaseTwoElapsedTicks = Math.round((now - phaseTwoAt) / DT)
+  if (
+    phaseTwoAt >= 0 &&
+    phaseTwoElapsedTicks >= 0 &&
+    phaseTwoElapsedTicks <
+      Math.round(BOSS_PHASE_TWO_TRANSITION_DURATION / DT)
+  ) {
+    return 'transition'
+  }
   const elapsedTicks = Math.max(0, Math.round((now - spawnedAt) / DT))
-  if (elapsedTicks < Math.round(BOSS_INTRO_DURATION / DT)) return 'arrival'
-  const cycle = bossCycleTime(now, spawnedAt)
+  if (
+    phaseTwoAt < 0 &&
+    elapsedTicks < Math.round(BOSS_INTRO_DURATION / DT)
+  ) {
+    return 'arrival'
+  }
+  const cycle = bossCycleTime(now, spawnedAt, phaseTwoAt)
   if (cycle < BOSS_WINDUP_AT) return 'orbit'
   if (cycle < BOSS_CHARGE_AT) return 'windup'
   if (cycle < BOSS_RECOVER_AT) return 'charge'
@@ -721,6 +765,7 @@ export function stepEnemies(
   now: number,
   bossSpawnedAt = BOSS_SPAWN_TIME,
   relicThreat = 0,
+  bossPhaseTwoAt = -1,
 ): EnemyStepResult {
   // 격자는 여기서 만들지 않는다. 스킬이 stepEnemies보다 먼저 돌기 때문에
   // 여기서 재구축하면 스킬 질의가 항상 한 틱 낡은(또는 첫 틱엔 빈) 격자를 본다.
@@ -748,7 +793,9 @@ export function stepEnemies(
     const type = pool.type[i]!
     const def = ENEMY_TYPES[type]!
     const isBoss = type === TYPE_BOSS
-    const bossPhase = isBoss ? bossPhaseAt(now, bossSpawnedAt) : null
+    const bossPhase = isBoss
+      ? bossPhaseAt(now, bossSpawnedAt, bossPhaseTwoAt)
+      : null
     const ex = pool.x[i]!
     const ey = pool.y[i]!
 
@@ -814,7 +861,7 @@ export function stepEnemies(
       if (isBoss) {
         // 속박·둔화가 패턴을 삭제하지 않게 최저 속도를 보장한다.
         const mul = Math.max(0.72, speedMultiplier(pool, i, now))
-        if (bossPhase === 'arrival') {
+        if (bossPhase === 'arrival' || bossPhase === 'transition') {
           targetVx = 0
           targetVy = 0
         } else if (bossPhase === 'orbit') {
@@ -823,7 +870,11 @@ export function stepEnemies(
           targetVx = (dx * pursue - dy * orbit) * def.speed * mul + sx * SEPARATION * 0.35
           targetVy = (dy * pursue + dx * orbit) * def.speed * mul + sy * SEPARATION * 0.35
         } else if (bossPhase === 'windup') {
-          const cycle = bossCycleIndex(now, bossSpawnedAt)
+          const cycle = bossCycleIndex(
+            now,
+            bossSpawnedAt,
+            bossPhaseTwoAt,
+          )
           if (pool.bossChargeCycle[i] !== cycle) {
             let chargeX = dx
             let chargeY = dy
@@ -840,7 +891,11 @@ export function stepEnemies(
           targetVx = pool.bossChargeDirX[i]! * 0.02
           targetVy = pool.bossChargeDirY[i]! * 0.02
         } else if (bossPhase === 'charge') {
-          const cycle = bossCycleIndex(now, bossSpawnedAt)
+          const cycle = bossCycleIndex(
+            now,
+            bossSpawnedAt,
+            bossPhaseTwoAt,
+          )
           if (pool.bossChargeCycle[i] !== cycle) {
             pool.bossChargeDirX[i] = dl > 1e-6 ? dx : 1
             pool.bossChargeDirY[i] = dl > 1e-6 ? dy : 0
@@ -894,7 +949,11 @@ export function stepEnemies(
     // 실제로 반경 안에 들어오는 건 한두 마리뿐이다. 계측상 접촉 시간이 전체의
     // 2%였다. 조금의 여유 사거리를 줘야 "둘러싸였다"가 피해로 이어진다.
     const touch = def.radius + playerRadius + ENEMY_CONTACT_REACH
-    if (bossPhase !== 'arrival' && cdx * cdx + cdy * cdy < touch * touch) {
+    if (
+      bossPhase !== 'arrival' &&
+      bossPhase !== 'transition' &&
+      cdx * cdx + cdy * cdy < touch * touch
+    ) {
       const chargeDamageMul =
         isBoss && bossPhase === 'charge' ? BOSS_CHARGE_DAMAGE_MUL : 1
       const rewardThreatMul = isBoss ? 1 : threatDamageMul

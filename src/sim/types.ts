@@ -217,6 +217,38 @@ export interface BossState {
   hp: number
   /** 보스 최대 체력. 등장 전에도 UI가 레이아웃을 준비할 수 있게 고정값을 둔다. */
   maxHp: number
+  /** 체력이 처음 절반에 닿아 2페이즈 전환을 시작한 시각. -1이면 아직 1페이즈다. */
+  phaseTwoAt: number
+  /** 전환 연출 동안 보스가 피해를 받지 않는 마지막 시각. */
+  invulnerableUntil: number
+  /** 마지막으로 2원 장판을 예약한 2페이즈 패턴 주기. */
+  hazardCycle: number
+  /** 마지막으로 돌진 종점 폭발을 예약한 2페이즈 패턴 주기. */
+  recoverBlastCycle: number
+  /** 적대 장판 묶음에 부여할 다음 고유 번호. */
+  nextHazardVolley: number
+  /** 같은 묶음의 겹친 장판이 플레이어를 두 번 때리지 않게 하는 마지막 번호. */
+  lastHazardHitVolley: number
+  /** 적중 여부와 무관하게 실제 발화한 장판 묶음 수. 오디오 one-shot 기준값. */
+  hazardDetonations: number
+}
+
+export type BossHazardKind = 'phase-zone' | 'charge-end'
+
+/** 보스가 예고 뒤 플레이어에게 피해를 주는 작은 고정 용량 장판. */
+export interface BossHazard {
+  kind: BossHazardKind
+  x: number
+  y: number
+  radius: number
+  /** 방어력 배수를 적용하기 전 원시 피해. */
+  damage: number
+  /** 예고가 처음 전장에 나타난 시각. */
+  telegraphAt: number
+  /** 판정이 한 번 발생하고 배열에서 사라질 시각. */
+  detonateAt: number
+  /** 같은 번호의 장판은 겹쳐도 플레이어에게 한 번만 피해를 준다. */
+  volley: number
 }
 
 export interface World {
@@ -264,6 +296,8 @@ export interface World {
   battlefieldPickups: BattlefieldPickupPool
   enemyHash: SpatialHash
   boss: BossState
+  /** 보스의 예고형 적대 장판. 수명이 짧은 소형 객체 배열이다. */
+  hostileHazards: BossHazard[]
   /** 다음에 등장할 정예 비트의 인덱스. 지정 비트는 각각 한 번만 소비한다. */
   eliteBeatIndex: number
   /** 다음에 실제로 등장할 고정 서지 비트의 인덱스. */

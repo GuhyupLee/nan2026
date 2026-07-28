@@ -7,6 +7,7 @@ import {
   startVrmPreload,
 } from './render/vrm-rig.ts'
 import { ARENA_RADIUS, DT, MAX_TICKS_PER_FRAME } from './sim/constants.ts'
+import { BOSS_PHASE_TWO_THRESHOLD } from './sim/boss.ts'
 import { BOSS_SPAWN_TIME, spawnBoss } from './sim/enemies.ts'
 import {
   BATTLEFIELD_MAGNET_DURATION,
@@ -478,22 +479,33 @@ function beginRun(playerClass: PlayerClass): void {
       world.pendingRelicChoices = 1
       world.relicsClaimed = 1
       world.awaitingChoice = true
-    } else if (qa === 'boss') {
-      // 보스 등장부터 예고선까지 5.4초만 기다리면 되는 시각 검수 진입점.
+    } else if (qa === 'boss' || qa === 'boss-p2') {
+      // P1은 등장부터 돌진선, P2는 첫 평타부터 전환·예측 장판을 검수한다.
       // 프로덕션 빌드에서는 이 분기 전체가 제거된다.
       world.tick = Math.round(BOSS_SPAWN_TIME / DT)
       world.time = world.tick * DT
       world.spawnEnabled = false
       if (spawnBoss(world.enemies, world.rng, world.player.pos.x, world.player.pos.y)) {
         const boss = world.enemies.count - 1
-        world.enemies.x[boss] = 8
+        const bossX =
+          qa === 'boss-p2' && world.playerClass === 'melee' ? 2.6 : 8
+        world.enemies.x[boss] = bossX
         world.enemies.y[boss] = 0
-        world.enemies.prevX[boss] = 8
+        world.enemies.prevX[boss] = bossX
         world.enemies.prevY[boss] = 0
         world.boss.spawned = true
         world.boss.spawnedAt = world.time
         world.boss.active = true
-        world.boss.hp = world.boss.maxHp
+        if (qa === 'boss-p2') {
+          const readyHp = BOSS_PHASE_TWO_THRESHOLD + 1
+          world.enemies.hp[boss] = readyHp
+          world.boss.hp = readyHp
+          world.player.invulnUntil = Number.POSITIVE_INFINITY
+          world.lastAim.x = bossX
+          world.lastAim.y = 0
+        } else {
+          world.boss.hp = world.boss.maxHp
+        }
       }
     } else if (qa === 'pickups') {
       // 세 픽업의 월드 실루엣과 자석 지속 HUD를 한 화면에서 검수한다.

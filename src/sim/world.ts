@@ -21,6 +21,7 @@ import {
   createBattlefieldPickupPool,
   stepBattlefieldPickups,
 } from './battlefield-pickups.ts'
+import { stepBossEncounter } from './boss.ts'
 import { stepAutoAttack } from './combat.ts'
 import { damageEnemy, sweepDead } from './damage.ts'
 import { stepGauge, stepKits } from './kits.ts'
@@ -113,7 +114,15 @@ export function createWorld(seed: number, playerClass: PlayerClass = 'ranged'): 
       active: false,
       hp: 0,
       maxHp: BOSS_MAX_HP,
+      phaseTwoAt: -1,
+      invulnerableUntil: -1,
+      hazardCycle: -1,
+      recoverBlastCycle: -1,
+      nextHazardVolley: 0,
+      lastHazardHitVolley: -1,
+      hazardDetonations: 0,
     },
+    hostileHazards: [],
     eliteBeatIndex: 0,
     surgeBeatIndex: 0,
     surgeWarningIndex: 0,
@@ -212,6 +221,9 @@ export function stepWorld(world: World, input: Input): void {
     updateSpawner(world.enemies, world.rng, world.time, p.pos.x, p.pos.y)
   }
 
+  // 돌진 recover 첫 틱에 적 이동이 시작되기 전에 종점 장판을 고정한다.
+  // 보스 장판 피해는 아래의 기존 플레이어 방어 관문에 접촉 피해와 합산된다.
+  const bossHazardDamage = stepBossEncounter(world)
   const res = stepEnemies(
     world.enemies,
     world.enemyHash,
@@ -221,11 +233,13 @@ export function stepWorld(world: World, input: Input): void {
     world.time,
     world.boss.spawnedAt,
     world.relicsClaimed,
+    world.boss.phaseTwoAt,
   )
   // 무적 중에는 접촉 피해를 받지 않는다. 대시·궁극기가 성립하는 근거다.
-  if (res.contactDamage > 0 && world.time >= p.invulnUntil) {
+  const rawPlayerDamage = res.contactDamage + bossHazardDamage
+  if (rawPlayerDamage > 0 && world.time >= p.invulnUntil) {
     // 클래스별 피해 감소를 여기 한 곳에서만 적용한다.
-    let incoming = res.contactDamage * world.stats.damageTakenMul
+    let incoming = rawPlayerDamage * world.stats.damageTakenMul
 
     const photonSpent = 'state:photon-barrier:spent'
     if (

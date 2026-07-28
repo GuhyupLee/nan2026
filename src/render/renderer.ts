@@ -142,6 +142,8 @@ export class Renderer {
   /** 새 월드 첫 프레임을 정예 등장으로 오인하지 않기 위한 직전 비트 인덱스. */
   private lastEliteBeatIndex = -1
   private lastSurgeBeatIndex = -1
+  private lastBossPhaseTwoAt = -1
+  private lastBossHazardDetonations = -1
   /** Persistent simulation counters need renderer-side baselines for one-shot feedback. */
   private lastHealPickupActivations = -1
   private lastMagnetPickupActivations = -1
@@ -428,6 +430,8 @@ export class Renderer {
       this.post.setBloomBoost(1)
       this.lastEliteBeatIndex = world.eliteBeatIndex
       this.lastSurgeBeatIndex = world.surgeBeatIndex
+      this.lastBossPhaseTwoAt = world.boss.phaseTwoAt
+      this.lastBossHazardDetonations = world.boss.hazardDetonations
       this.lastHealPickupActivations =
         world.battlefieldPickups.healActivations
       this.lastMagnetPickupActivations =
@@ -556,6 +560,23 @@ export class Renderer {
       this.pulseBloom(1.62)
     }
     this.lastSurgeBeatIndex = world.surgeBeatIndex
+
+    if (
+      world.boss.phaseTwoAt >= 0 &&
+      this.lastBossPhaseTwoAt < 0
+    ) {
+      this.impact.shake(0.86, 0.82, 11)
+      this.impact.requestHitstop(0.72, 0.075)
+      this.post.flash(0xff4f86, 0.34, 0.5)
+      this.pulseBloom(2.2)
+    }
+    this.lastBossPhaseTwoAt = world.boss.phaseTwoAt
+
+    if (world.boss.hazardDetonations > this.lastBossHazardDetonations) {
+      this.post.flash(0xff654f, 0.11, 0.2)
+      this.pulseBloom(1.48)
+    }
+    this.lastBossHazardDetonations = world.boss.hazardDetonations
 
     for (let i = 0; i < world.casts.length; i++) {
       if (world.casts[i]!.slot !== 'r') continue

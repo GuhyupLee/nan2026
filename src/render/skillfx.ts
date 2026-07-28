@@ -65,13 +65,15 @@ const HEX_SILVER = 0xeaf2ff
 const HEX_JADE = 0x7df0a0
 const HEX_VIOLET = 0x8f6cff
 
-/** RingEvent.kind 순서: 0=점멸 1=회복 2=폭발/궁 3=참격 4=적대 서지. */
+/** RingEvent.kind 순서: 0=점멸 1=회복 2=폭발/궁 3=참격 4=서지 5=균열 6=돌진 폭발. */
 const RING_HEX = [
   0x8fe6ff,
   HEX_JADE,
   0xffe6a3,
   HEX_CRIMSON,
   0xff7a35,
+  0xff4f86,
+  0xffa146,
 ] as const
 const RING_GAIN = [
   GAIN_CYAN,
@@ -79,12 +81,14 @@ const RING_GAIN = [
   GAIN_GOLD,
   GAIN_CRIMSON,
   1.85,
+  2.05,
+  1.9,
 ] as const
 
 /** Zone.kind 순서: 0=빛기둥(시안) 1=둔화장판(보라). */
 const ZONE_HEX = [HEX_CYAN, HEX_VIOLET] as const
-/** PendingBlast.kind 순서: 0=폭발(시안) 1=참격(크림슨). */
-const BLAST_HEX = [HEX_CYAN, HEX_CRIMSON] as const
+/** 0=플레이어 폭발 1=참격 2=보스 예측 균열 3=보스 돌진 종점. */
+const BLAST_HEX = [HEX_CYAN, HEX_CRIMSON, 0xff4f86, 0xffa146] as const
 
 const COLOR = new THREE.Color()
 
@@ -104,9 +108,10 @@ const CAP_SLASHES = 20
 const CAP_RINGS = 28
 const CAP_DECALS = 14
 const CAP_FLARES = 56
-/** sim의 MAX_ZONES / MAX_BLASTS와 같다(zones.ts:53-54). 넘칠 수가 없다. */
+/** sim의 MAX_ZONES와 같다. */
 const CAP_ZONES = 12
-const CAP_TELEGRAPHS = 12
+/** 플레이어 폭발 12개에 보스의 예약 텔레그래프를 손실 없이 더한다. */
+const CAP_TELEGRAPHS = 18
 
 /** kits.ts가 쓰는 지연 폭발 예고 시간. 전 스킬 공통 상수다. */
 const BLAST_WARNING = 0.3
@@ -278,11 +283,10 @@ interface FlareFx extends FxLife {
 /**
  * 폭발 추적 슬롯.
  *
- * sim에는 "터졌다" 이벤트가 없다 — PendingBlast는 배열에서 splice로 사라질
- * 뿐이다(zones.ts:73). RingEvent(kind 2/3)가 같이 나오지만 그 kind는 참격
- * 계열 링과 구분이 안 돼서 그을음 데칼을 붙일 근거로 못 쓴다. 그래서
- * world.blasts를 프레임 간 비교해 "사라진 것 = 터진 것"으로 직접 검출한다.
- * blast는 발화 외의 경로로 제거되지 않으므로 이 추론은 정확하다.
+ * sim에는 "터졌다" 이벤트가 없다 — 플레이어 폭발과 보스 적대 장판은
+ * 발화 시각에 배열에서 사라질 뿐이다. 그래서 두 배열을 프레임 간 비교해
+ * "사라진 것 = 터진 것"으로 직접 검출한다. 보스 격파로 취소된 적대 장판만
+ * active 상태를 확인해 예외로 버린다.
  */
 interface BlastTrack {
   x: number
@@ -1563,51 +1567,79 @@ export class SkillFx {
 
     for (let i = 0; i < world.blasts.length; i++) {
       const b = world.blasts[i]!
-      let slot: BlastTrack | null = null
-      for (const t of this.tracked) {
-        // z(=b.y)까지 봐야 한다. x와 fireAt만 비교했더니, 같은 틱에 x가 같고
-        // z만 다른 폭발 두 개가 서로의 슬롯을 덮어써서 아직 안 터진 자리에
-        // 그을음·섬광·화면흔들림이 헛발동했다. 지금 sim의 pushBlast 호출부는
-        // 클래스당 하나씩이라 도달하지 않지만, 이 추적의 근거가 "위치 동일성"인데
-        // 좌표를 절반만 보는 건 스킬 하나만 추가돼도 무너진다.
-        if (
-          t.used &&
-          Math.abs(t.x - b.x) < 1e-4 &&
-          Math.abs(t.z - b.y) < 1e-4 &&
-          Math.abs(t.fireAt - b.fireAt) < 1e-4
-        ) {
-          slot = t
-          break
-        }
-      }
-      if (!slot) {
-        for (const t of this.tracked) {
-          if (!t.used) {
-            slot = t
-            break
-          }
-        }
-      }
-      if (!slot) continue
-      slot.x = b.x
-      slot.z = b.y
-      slot.radius = b.radius
-      slot.kind = b.kind
-      slot.fireAt = b.fireAt
-      slot.used = true
-      slot.seen = true
+      this.markTrackedBlast(b.x, b.y, b.radius, b.kind, b.fireAt)
+    }
+
+    for (let i = 0; i < world.hostileHazards.length; i++) {
+      const hazard = world.hostileHazards[i]!
+      const kind = hazard.kind === 'phase-zone' ? 2 : 3
+      this.markTrackedBlast(
+        hazard.x,
+        hazard.y,
+        hazard.radius,
+        kind,
+        hazard.detonateAt,
+      )
     }
 
     for (const t of this.tracked) {
       if (!t.used || t.seen) continue
       t.used = false
+      // 보스 격파는 남은 적대 장판을 취소한다. 배열에서 사라졌다는 이유만으로
+      // 승리 연출 위에 가짜 폭발을 만들지 않는다.
+      if (t.kind >= 2 && !world.boss.active) continue
       this.detonate(t.x, t.z, t.radius, t.kind)
     }
   }
 
+  private markTrackedBlast(
+    x: number,
+    z: number,
+    radius: number,
+    kind: number,
+    fireAt: number,
+  ): void {
+    let slot: BlastTrack | null = null
+    for (const t of this.tracked) {
+      // 좌표·종류·발화 시각을 모두 비교한다. 같은 volley의 두 원이 완전히
+      // 겹치면 하나로 합쳐지고, 다른 종류의 폭발은 같은 자리에서도 보존된다.
+      if (
+        t.used &&
+        t.kind === kind &&
+        Math.abs(t.x - x) < 1e-4 &&
+        Math.abs(t.z - z) < 1e-4 &&
+        Math.abs(t.fireAt - fireAt) < 1e-4
+      ) {
+        slot = t
+        break
+      }
+    }
+    if (!slot) {
+      for (const t of this.tracked) {
+        if (!t.used) {
+          slot = t
+          break
+        }
+      }
+    }
+    if (!slot) return
+    slot.x = x
+    slot.z = z
+    slot.radius = radius
+    slot.kind = kind
+    slot.fireAt = fireAt
+    slot.used = true
+    slot.seen = true
+  }
+
   private detonate(x: number, z: number, radius: number, kind: number): void {
     const hex = BLAST_HEX[kind] ?? HEX_CYAN
-    const gain = kind === 1 ? GAIN_CRIMSON : GAIN_GOLD
+    const gain =
+      kind === 1
+        ? GAIN_CRIMSON
+        : kind >= 2
+          ? 1.95
+          : GAIN_GOLD
 
     const d = this.decals.acquire()
     d.x = x
@@ -1982,6 +2014,42 @@ export class SkillFx {
       )
       this.teleParam[o4 + 2] = b.kind
       this.teleParam[o4 + 3] = seedFrom(b.x, b.y)
+      this.teleColor[o3] = COLOR.r
+      this.teleColor[o3 + 1] = COLOR.g
+      this.teleColor[o3 + 2] = COLOR.b
+      n++
+    }
+
+    for (
+      let i = 0;
+      i < world.hostileHazards.length && n < CAP_TELEGRAPHS;
+      i++
+    ) {
+      const hazard = world.hostileHazards[i]!
+      const kind = hazard.kind === 'phase-zone' ? 2 : 3
+      const hex = BLAST_HEX[kind]!
+      COLOR.set(hex).multiplyScalar(kind === 2 ? 2.05 : 1.9)
+
+      const o3 = n * 3
+      const o4 = n * 4
+      const warningDuration = Math.max(
+        1e-4,
+        hazard.detonateAt - hazard.telegraphAt,
+      )
+      this.teleCenter[o3] = hazard.x
+      this.teleCenter[o3 + 1] = 0.048
+      this.teleCenter[o3 + 2] = hazard.y
+      this.teleParam[o4] = hazard.radius
+      this.teleParam[o4 + 1] = THREE.MathUtils.clamp(
+        1 - (hazard.detonateAt - world.time) / warningDuration,
+        0,
+        1,
+      )
+      this.teleParam[o4 + 2] = kind
+      this.teleParam[o4 + 3] = seedFrom(
+        hazard.x + hazard.volley * 0.013,
+        hazard.y - hazard.volley * 0.017,
+      )
       this.teleColor[o3] = COLOR.r
       this.teleColor[o3 + 1] = COLOR.g
       this.teleColor[o3 + 2] = COLOR.b
