@@ -101,6 +101,7 @@ export function showMainMenu(
     const finish = (): void => {
       if (done || subviewOpen) return
       done = true
+      window.removeEventListener('keydown', onNumberShortcut)
       root.classList.add('closing')
       window.setTimeout(() => {
         root.remove()
@@ -130,9 +131,34 @@ export function showMainMenu(
       }
     }
 
+    const onNumberShortcut = (event: KeyboardEvent): void => {
+      if (
+        done ||
+        subviewOpen ||
+        event.repeat ||
+        event.altKey ||
+        event.ctrlKey ||
+        event.metaKey
+      ) {
+        return
+      }
+
+      if (event.code === 'Digit1' || event.code === 'Numpad1') {
+        event.preventDefault()
+        finish()
+      } else if (event.code === 'Digit2' || event.code === 'Numpad2') {
+        event.preventDefault()
+        void openRecords()
+      } else if (event.code === 'Digit3' || event.code === 'Numpad3') {
+        event.preventDefault()
+        void openSettings()
+      }
+    }
+
     start.addEventListener('click', finish)
     records.addEventListener('click', () => void openRecords())
     settings.addEventListener('click', () => void openSettings())
+    window.addEventListener('keydown', onNumberShortcut)
     parent.appendChild(root)
     start.focus()
   })
