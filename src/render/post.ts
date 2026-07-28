@@ -4,6 +4,7 @@ import { OutputPass } from 'three/examples/jsm/postprocessing/OutputPass.js'
 import { RenderPass } from 'three/examples/jsm/postprocessing/RenderPass.js'
 import { ShaderPass } from 'three/examples/jsm/postprocessing/ShaderPass.js'
 import { UnrealBloomPass } from 'three/examples/jsm/postprocessing/UnrealBloomPass.js'
+import { FXAAShader } from 'three/examples/jsm/shaders/FXAAShader.js'
 
 /**
  * 후처리 스택.
@@ -136,6 +137,7 @@ export class PostFx {
   private composer: EffectComposer
   private readonly bloom: UnrealBloomPass
   private readonly grade: ShaderPass
+  private readonly fxaa: ShaderPass
   private quality: PostQuality = 'high'
 
   /** 화면 틴트의 남은 시간과 총 길이. 절대 시각을 안 쓰는 이유는 오버레이로
@@ -148,6 +150,7 @@ export class PostFx {
   private width = 1
   private height = 1
   private pixelRatio = 1
+  private composerPixelRatio = 1
   private readonly reducedMotion = window.matchMedia('(prefers-reduced-motion: reduce)')
 
   constructor(gl: THREE.WebGLRenderer, scene: THREE.Scene, camera: THREE.Camera) {
@@ -170,6 +173,12 @@ export class PostFx {
     this.grade = new ShaderPass(GRADE_SHADER)
     this.composer.addPass(this.grade)
 
+    // WebGLRenderer의 antialias 옵션은 기본 프레임버퍼에만 적용된다. 실제 장면은
+    // EffectComposer의 비멀티샘플 렌더 타겟으로 그리므로 전투 실루엣의 AA가
+    // 사라진다. grade 뒤의 한 번짜리 FXAA로 그 경로를 복구한다.
+    this.fxaa = new ShaderPass(FXAAShader)
+    this.composer.addPass(this.fxaa)
+
     // 반드시 마지막. 렌더러의 ACESFilmic + sRGB가 여기서 적용된다.
     this.composer.addPass(new OutputPass())
   }
@@ -184,15 +193,10 @@ export class PostFx {
     this.height = Math.max(1, Math.floor(h))
     this.pixelRatio = Math.max(0.5, pixelRatio)
 
-    this.composer.setPixelRatio(this.pixelRatio)
+    this.composerPixelRatio = this.resolveComposerPixelRatio()
+    this.composer.setPixelRatio(this.composerPixelRatio)
     this.composer.setSize(this.width, this.height)
-    // 블룸은 자체 밉 체인을 CSS 픽셀이 아니라 실제 버퍼 크기로 잡아야
-    // 고DPI에서 번짐 반경이 절반으로 줄지 않는다.
-    this.bloom.setSize(this.width * this.pixelRatio, this.height * this.pixelRatio)
-    this.grade.uniforms.uResolution.value.set(
-      this.width * this.pixelRatio,
-      this.height * this.pixelRatio,
-    )
+    this.updateResolutionUniforms()
   }
 
   /**
@@ -203,12 +207,26 @@ export class PostFx {
    */
   setQuality(q: PostQuality): void {
     this.quality = q
+    this.fxaa.enabled = q !== 'off'
     if (q === 'off') return
-    // 'low'는 해상도를 반으로 떨어뜨리는 대신 블룸만 약하게 한다. 블룸의
-    // 비용은 밉 체인 크기에 비례하므로 픽셀 비율을 낮추는 게 가장 크게 먹는다.
-    this.composer.setPixelRatio(q === 'low' ? Math.min(1, this.pixelRatio) : this.pixelRatio)
+    // 'low'는 composer만 CSS 픽셀 해상도로 제한한다. WebGLRenderer의 DPR은
+    // DOM 투영과 일치하도록 그대로 두고, 후처리 체인만 가볍게 만든다.
+    this.composerPixelRatio = this.resolveComposerPixelRatio()
+    this.composer.setPixelRatio(this.composerPixelRatio)
+    this.updateResolutionUniforms()
     this.bloom.strength = (q === 'low' ? BLOOM.strength * 0.75 : BLOOM.strength) * this.bloomBoost
     this.grade.uniforms.uAberration.value = q === 'low' ? 0 : 1.6
+  }
+
+  private resolveComposerPixelRatio(): number {
+    return this.quality === 'low' ? Math.min(1, this.pixelRatio) : this.pixelRatio
+  }
+
+  private updateResolutionUniforms(): void {
+    const renderWidth = Math.max(1, this.width * this.composerPixelRatio)
+    const renderHeight = Math.max(1, this.height * this.composerPixelRatio)
+    this.grade.uniforms.uResolution.value.set(renderWidth, renderHeight)
+    this.fxaa.uniforms.resolution.value.set(1 / renderWidth, 1 / renderHeight)
   }
 
   /**

@@ -122,6 +122,8 @@ export class Renderer {
   private cameraDistanceScale = 1
   private pixelRatio = 0
   private shadowMapSize = 2048
+  /** 연속 resize에서도 모바일 후처리 tier가 high로 되돌아가지 않게 보존한다. */
+  private constrained = false
 
   constructor(container: HTMLElement, arenaRadius: number) {
     this.container = container
@@ -254,7 +256,7 @@ export class Renderer {
       this.gl.setSize(w, h, false)
       // gl.setSize 뒤여야 한다. 앞에서 부르면 첫 프레임이 이전 크기로 나간다.
       this.post.setSize(w, h, this.gl.getPixelRatio())
-      this.post.setQuality(qualityChanged && this.pixelRatio <= 1.35 ? 'low' : 'high')
+      this.post.setQuality(this.constrained ? 'low' : 'high')
     }
     if (sizeChanged || framingChanged) {
       this.camera.aspect = aspect
@@ -507,13 +509,14 @@ export class Renderer {
    * 화면 회전과 DPR 변경도 같은 resize 경로에서 즉시 반영된다.
    */
   private updateRenderQuality(width: number, height: number): boolean {
-    const constrained =
+    const nextConstrained =
       this.coarsePointer.matches || width <= 900 || Math.min(width, height) <= 700
-    const nextPixelRatio = Math.min(window.devicePixelRatio || 1, constrained ? 1.35 : 2)
-    const nextShadowMapSize = constrained ? 1024 : 2048
-    this.impact.setShakeScale(constrained ? 0.6 : 1)
-    this.skillFx.setQuality(constrained ? 0.45 : 1)
-    let changed = false
+    const nextPixelRatio = Math.min(window.devicePixelRatio || 1, nextConstrained ? 1.35 : 2)
+    const nextShadowMapSize = nextConstrained ? 1024 : 2048
+    this.impact.setShakeScale(nextConstrained ? 0.6 : 1)
+    this.skillFx.setQuality(nextConstrained ? 0.45 : 1)
+    let changed = nextConstrained !== this.constrained
+    this.constrained = nextConstrained
 
     if (Math.abs(nextPixelRatio - this.pixelRatio) > 0.01) {
       this.pixelRatio = nextPixelRatio
