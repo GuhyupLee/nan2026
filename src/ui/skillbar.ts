@@ -50,6 +50,9 @@ export const DEFAULT_SLOTS: SlotMeta[] = [
   { id: 'f', key: 'F', kind: 'summoner', glyph: '⚡', name: '점멸' },
 ]
 
+const TOUCH_TOOLTIP_HOLD_MS = 500
+const TOUCH_TOOLTIP_MOVE_TOLERANCE = 10
+
 interface SlotView {
   meta: SlotMeta
   root: HTMLButtonElement
@@ -162,11 +165,82 @@ export class SkillBar {
       ...passiveFace,
       wasReady: false,
     }
+    let passivePointerId: number | null = null
+    let passiveLongPressTimer = 0
+    let passiveLongPressTriggered = false
+    let passiveStartX = 0
+    let passiveStartY = 0
+
+    const clearPassiveLongPressTimer = (): void => {
+      window.clearTimeout(passiveLongPressTimer)
+      passiveLongPressTimer = 0
+    }
+
+    const clearPassivePointer = (hideLongPress: boolean): void => {
+      clearPassiveLongPressTimer()
+      if (passivePointerId === null) return
+      const pointerId = passivePointerId
+      const didLongPress = passiveLongPressTriggered
+      passivePointerId = null
+      passiveLongPressTriggered = false
+      if (passiveRoot.hasPointerCapture(pointerId)) {
+        passiveRoot.releasePointerCapture(pointerId)
+      }
+      if (hideLongPress && didLongPress) this.hideTooltip(this.passive)
+    }
+    this.cancelPointers.push(() => clearPassivePointer(true))
+
     passiveRoot.addEventListener('pointerdown', (event) => {
       event.preventDefault()
       event.stopPropagation()
-      this.showTooltip(this.passive)
-      if (event.pointerType === 'touch') this.scheduleTooltipHide()
+      if (event.pointerType !== 'touch') {
+        this.showTooltip(this.passive)
+        return
+      }
+      if (passivePointerId !== null) return
+
+      this.hideTooltip()
+      passivePointerId = event.pointerId
+      passiveLongPressTriggered = false
+      passiveStartX = event.clientX
+      passiveStartY = event.clientY
+      passiveRoot.setPointerCapture(event.pointerId)
+      const pointerId = event.pointerId
+      passiveLongPressTimer = window.setTimeout(() => {
+        passiveLongPressTimer = 0
+        if (passivePointerId !== pointerId) return
+        passiveLongPressTriggered = true
+        this.showTooltip(this.passive)
+      }, TOUCH_TOOLTIP_HOLD_MS)
+    })
+    passiveRoot.addEventListener('pointermove', (event) => {
+      if (event.pointerId !== passivePointerId) return
+      if (
+        Math.hypot(event.clientX - passiveStartX, event.clientY - passiveStartY) <=
+        TOUCH_TOOLTIP_MOVE_TOLERANCE
+      ) {
+        return
+      }
+      event.preventDefault()
+      event.stopPropagation()
+      clearPassivePointer(true)
+    })
+    passiveRoot.addEventListener('pointerup', (event) => {
+      if (event.pointerId !== passivePointerId) return
+      event.preventDefault()
+      event.stopPropagation()
+      const didLongPress = passiveLongPressTriggered
+      clearPassivePointer(false)
+      if (didLongPress) this.scheduleTooltipHide()
+    })
+    passiveRoot.addEventListener('pointercancel', (event) => {
+      if (event.pointerId !== passivePointerId) return
+      event.preventDefault()
+      event.stopPropagation()
+      clearPassivePointer(true)
+    })
+    passiveRoot.addEventListener('lostpointercapture', (event) => {
+      if (event.pointerId === passivePointerId) clearPassivePointer(true)
     })
     passiveRoot.addEventListener('click', (event) => {
       event.preventDefault()
@@ -176,11 +250,17 @@ export class SkillBar {
       if (event.pointerType !== 'touch') this.showTooltip(this.passive)
     })
     passiveRoot.addEventListener('pointerleave', (event) => {
+      if (event.pointerType === 'touch' && event.pointerId === passivePointerId) {
+        clearPassivePointer(true)
+        return
+      }
       if (event.pointerType !== 'touch' && document.activeElement !== passiveRoot) {
         this.hideTooltip(this.passive)
       }
     })
-    passiveRoot.addEventListener('focus', () => this.showTooltip(this.passive))
+    passiveRoot.addEventListener('focus', () => {
+      if (passivePointerId === null) this.showTooltip(this.passive)
+    })
     passiveRoot.addEventListener('blur', () => this.hideTooltip(this.passive))
     this.root.appendChild(passiveRoot)
 
@@ -201,40 +281,103 @@ export class SkillBar {
         wasReady: false,
       }
       let activePointerId: number | null = null
+      let activePointerIsTouch = false
+      let pointerCanCast = false
+      let pointerCastStarted = false
+      let longPressTimer = 0
+      let longPressTriggered = false
+      let touchStartX = 0
+      let touchStartY = 0
+
+      const clearLongPressTimer = (): void => {
+        window.clearTimeout(longPressTimer)
+        longPressTimer = 0
+      }
+
+      const beginPointerCast = (): void => {
+        if (pointerCastStarted || !pointerCanCast) return
+        pointerCastStarted = true
+        slot.dataset.targeting = 'true'
+        handlers.start(m.id)
+      }
 
       const clearPointer = (cancel: boolean): void => {
+        clearLongPressTimer()
         if (activePointerId === null) return
         const pointerId = activePointerId
+        const didStartCast = pointerCastStarted
+        const didLongPress = longPressTriggered
         activePointerId = null
+        activePointerIsTouch = false
+        pointerCanCast = false
+        pointerCastStarted = false
+        longPressTriggered = false
         delete slot.dataset.targeting
         if (slot.hasPointerCapture(pointerId)) {
           slot.releasePointerCapture(pointerId)
         }
-        if (cancel) handlers.cancel(m.id)
+        if (cancel && didStartCast) handlers.cancel(m.id)
+        if (cancel && didLongPress) this.hideTooltip(view)
       }
       this.cancelPointers.push(() => clearPointer(true))
 
       slot.addEventListener('pointerdown', (e) => {
         e.preventDefault()
         e.stopPropagation()
-        if (e.pointerType === 'touch') this.showTooltip(view)
-        if (slot.dataset.state !== 'ready' || activePointerId !== null) {
-          if (e.pointerType === 'touch') this.scheduleTooltipHide()
+        if (activePointerId !== null) return
+
+        const isTouch = e.pointerType === 'touch'
+        const canCast = slot.dataset.state === 'ready'
+        if (!isTouch && !canCast) return
+
+        activePointerId = e.pointerId
+        activePointerIsTouch = isTouch
+        pointerCanCast = canCast
+        pointerCastStarted = false
+        longPressTriggered = false
+        slot.setPointerCapture(e.pointerId)
+
+        if (!isTouch) {
+          beginPointerCast()
           return
         }
-        activePointerId = e.pointerId
-        slot.setPointerCapture(e.pointerId)
-        slot.dataset.targeting = 'true'
-        handlers.start(m.id)
+
+        this.hideTooltip()
+        touchStartX = e.clientX
+        touchStartY = e.clientY
+        const pointerId = e.pointerId
+        longPressTimer = window.setTimeout(() => {
+          longPressTimer = 0
+          if (
+            activePointerId !== pointerId ||
+            !activePointerIsTouch ||
+            pointerCastStarted
+          ) {
+            return
+          }
+          longPressTriggered = true
+          this.showTooltip(view)
+        }, TOUCH_TOOLTIP_HOLD_MS)
       })
 
       slot.addEventListener('pointerup', (e) => {
         if (e.pointerId !== activePointerId) return
         e.preventDefault()
         e.stopPropagation()
+        const wasTouch = activePointerIsTouch
+        const canCast = pointerCanCast
+        const didStartCast = pointerCastStarted
+        const didLongPress = longPressTriggered
         clearPointer(false)
-        handlers.release(m.id)
-        if (e.pointerType === 'touch') this.scheduleTooltipHide()
+
+        if (didLongPress) {
+          this.scheduleTooltipHide()
+          return
+        }
+        if (!canCast) return
+
+        if (wasTouch && !didStartCast) handlers.start(m.id)
+        if (wasTouch || didStartCast) handlers.release(m.id)
       })
 
       const cancelPointer = (e: PointerEvent): void => {
@@ -247,9 +390,7 @@ export class SkillBar {
       slot.addEventListener('pointerleave', cancelPointer)
       slot.addEventListener('lostpointercapture', (e) => {
         if (e.pointerId !== activePointerId) return
-        activePointerId = null
-        delete slot.dataset.targeting
-        handlers.cancel(m.id)
+        clearPointer(true)
       })
       // 터치는 브라우저의 암시적 포인터 캡처 때문에 pointerleave가 생략될 수
       // 있다. 캡처 중에도 좌표를 직접 검사해 버튼 밖 드래그를 취소한다.
@@ -263,6 +404,21 @@ export class SkillBar {
           e.clientY > bounds.bottom
         ) {
           cancelPointer(e)
+          return
+        }
+        if (
+          activePointerIsTouch &&
+          Math.hypot(e.clientX - touchStartX, e.clientY - touchStartY) >
+            TOUCH_TOOLTIP_MOVE_TOLERANCE
+        ) {
+          e.preventDefault()
+          e.stopPropagation()
+          if (longPressTriggered) {
+            clearPointer(true)
+            return
+          }
+          clearLongPressTimer()
+          beginPointerCast()
         }
       })
 
@@ -284,7 +440,9 @@ export class SkillBar {
           this.hideTooltip(view)
         }
       })
-      slot.addEventListener('focus', () => this.showTooltip(view))
+      slot.addEventListener('focus', () => {
+        if (!activePointerIsTouch) this.showTooltip(view)
+      })
       slot.addEventListener('blur', () => this.hideTooltip(view))
 
       this.root.appendChild(slot)
@@ -620,10 +778,14 @@ export class SkillBar {
 
   setVisible(visible: boolean): void {
     this.root.style.display = visible ? '' : 'none'
-    if (!visible) this.hideTooltip()
+    if (!visible) {
+      this.cancelTargeting()
+      this.hideTooltip()
+    }
   }
 
   dispose(): void {
+    this.cancelTargeting()
     window.clearTimeout(this.tooltipHideTimer)
     window.removeEventListener('keydown', this.onEscape)
     this.tooltip.remove()
