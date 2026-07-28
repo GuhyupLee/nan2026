@@ -112,6 +112,22 @@ let choiceOpen = false
 
 /** 결과 화면이 매 프레임 중복으로 쌓이지 않게 막는다. */
 let outcomeOpen = false
+type FinalOutcome = Exclude<World['outcome'], 'alive'>
+
+interface OutcomeTransition {
+  readonly runId: number
+  readonly world: World
+  readonly result: FinalOutcome
+  readonly restartClass: PlayerClass
+  revealAt: number
+  hiddenAt: number | null
+}
+
+const OUTCOME_REVEAL_DELAY_MS = 900
+const REDUCED_MOTION_OUTCOME_REVEAL_DELAY_MS = 280
+const reducedMotion = window.matchMedia('(prefers-reduced-motion: reduce)')
+let runId = 0
+let outcomeTransition: OutcomeTransition | null = null
 let pauseOpen = false
 let activeRun = false
 
@@ -132,6 +148,94 @@ let menuWarmupFramesLeft = 0
 
 function requestMenuWarmup(): void {
   menuWarmupFramesLeft = Math.max(menuWarmupFramesLeft, MENU_WARMUP_FRAMES)
+}
+
+/**
+ * 결말 판정은 고정 틱에서 이미 끝났다. 이후에는 시뮬·입력·HUD만 즉시 잠그고,
+ * 보스 사망 플래시·히트스톱·카메라 셰이크 같은 실시간 렌더 효과만 마무리한다.
+ */
+function beginOutcomeTransition(now: number): void {
+  if (
+    !running ||
+    world.outcome === 'alive' ||
+    outcomeTransition !== null ||
+    outcomeOpen
+  ) {
+    return
+  }
+
+  const revealDelay = reducedMotion.matches
+    ? REDUCED_MOTION_OUTCOME_REVEAL_DELAY_MS
+    : OUTCOME_REVEAL_DELAY_MS
+
+  running = false
+  outcomeTransition = {
+    runId,
+    world,
+    result: world.outcome,
+    restartClass: world.playerClass,
+    revealAt: now + revealDelay,
+    hiddenAt: document.hidden ? now : null,
+  }
+  choiceOpen = false
+  pauseOpen = false
+  accumulator = 0
+  releaseGameplayInput()
+  hint.classList.add('hidden')
+  skillBar.setVisible(false)
+  hud.setVisible(false)
+  bossBar.setVisible(false)
+  pauseButton.setVisible(false)
+}
+
+/**
+ * 결과창은 전환을 시작한 동일한 런에 한 번만 연다.
+ * 오래된 Promise가 재시작된 월드를 다시 덮지 못하도록 runId와 World 참조를 함께 본다.
+ */
+function revealOutcome(now: number): void {
+  const transition = outcomeTransition
+  if (
+    transition === null ||
+    transition.hiddenAt !== null ||
+    now < transition.revealAt
+  ) {
+    return
+  }
+
+  if (
+    transition.runId !== runId ||
+    transition.world !== world ||
+    world.outcome === 'alive' ||
+    !activeRun
+  ) {
+    outcomeTransition = null
+    return
+  }
+
+  outcomeTransition = null
+  activeRun = false
+  outcomeOpen = true
+
+  void showOutcome(
+    document.body,
+    transition.result,
+    transition.world,
+  ).then((action) => {
+    if (
+      !outcomeOpen ||
+      transition.runId !== runId ||
+      transition.world !== world
+    ) {
+      return
+    }
+
+    outcomeOpen = false
+    if (action === 'restart') {
+      beginRun(transition.restartClass)
+    } else {
+      void start()
+    }
+  })
 }
 
 // 스탯 표시용
@@ -193,15 +297,25 @@ function frame(now: number): void {
       stepWorld(world, simInput)
       accumulator -= DT
       ticks += 1
+      if (world.outcome !== 'alive') {
+        beginOutcomeTransition(now)
+        break
+      }
     }
   } else {
     accumulator = 0
   }
 
+  // 외부 QA 훅 등으로 틱 사이에 outcome이 바뀐 경우도 같은 경로로 잠근다.
+  if (running && world.outcome !== 'alive') beginOutcomeTransition(now)
+
+  // 결말 전환은 accumulator를 비운 뒤에도 마지막 고정 틱의 정확한 착지 포즈를
+  // 보여줘야 한다. 평상시에는 기존의 한 틱 지연 보간을 그대로 유지한다.
+  const renderAlpha = outcomeTransition === null ? accumulator / DT : 1
   renderer.setTargeting(
     world,
     activeRun && running && !world.awaitingChoice ? input.targetingSkill : null,
-    accumulator / DT,
+    renderAlpha,
   )
 
   // 전면 불투명 오버레이 뒤에서는 평상시 3D를 쉬되, 메뉴·캐릭터 선택에 들어간
@@ -210,7 +324,7 @@ function frame(now: number): void {
   // 일시정지·레벨업은 activeRun=true인 반투명 오버레이라 계속 그린다.
   const warmingMenu = !activeRun && menuWarmupFramesLeft > 0
   if (activeRun || warmingMenu) {
-    renderer.render(world, accumulator / DT)
+    renderer.render(world, renderAlpha)
     if (warmingMenu) menuWarmupFramesLeft -= 1
   }
   skillBar.update(world.skills, world.playerClass, world)
@@ -223,30 +337,7 @@ function frame(now: number): void {
 
   // 결과는 레벨업보다 먼저 처리한다. 같은 틱에 사망과 XP 획득이 겹쳐도
   // 레벨업 카드가 결과 화면 위에 뜨면 안 된다.
-  if (running && world.outcome !== 'alive' && !outcomeOpen) {
-    running = false
-    activeRun = false
-    outcomeOpen = true
-    choiceOpen = false
-    pauseOpen = false
-    accumulator = 0
-    releaseGameplayInput()
-    hint.classList.add('hidden')
-    skillBar.setVisible(false)
-    hud.setVisible(false)
-    bossBar.setVisible(false)
-    pauseButton.setVisible(false)
-
-    const result = world.outcome
-    const restartClass = world.playerClass
-    void showOutcome(document.body, result, world).then((action) => {
-      if (action === 'restart') {
-        beginRun(restartClass)
-      } else {
-        void start()
-      }
-    })
-  }
+  revealOutcome(now)
 
   // 레벨업 카드. 시뮬은 awaitingChoice 동안 한 틱도 진행하지 않으므로
   // 여기서 화면을 띄우지 않으면 게임이 영영 멈춘다.
@@ -333,9 +424,11 @@ async function pauseRun(): Promise<void> {
 
 /** 선택된 캐릭터와 고정 시드로 새 판을 즉시 시작한다. */
 function beginRun(playerClass: PlayerClass): void {
+  runId += 1
   running = false
   activeRun = true
   menuWarmupFramesLeft = 0
+  outcomeTransition = null
   world = createWorld(seed, playerClass)
   choiceOpen = false
   outcomeOpen = false
@@ -399,6 +492,9 @@ function beginRun(playerClass: PlayerClass): void {
 
 /** 첫 프레임이 나온 뒤 캐릭터 선택을 띄우고, 고르면 판을 시작한다. */
 async function start(): Promise<void> {
+  runId += 1
+  outcomeTransition = null
+  outcomeOpen = false
   activeRun = false
   pauseButton.setVisible(false)
   requestMenuWarmup()
@@ -469,6 +565,19 @@ window.addEventListener('keydown', (event) => {
 
 // 모바일에서 앱을 내렸다 돌아왔을 때 전투가 진행돼 있지 않게 한다.
 document.addEventListener('visibilitychange', () => {
+  const transition = outcomeTransition
+  if (transition !== null) {
+    const now = performance.now()
+    if (document.hidden) {
+      transition.hiddenAt ??= now
+    } else if (transition.hiddenAt !== null) {
+      transition.revealAt += now - transition.hiddenAt
+      transition.hiddenAt = null
+      lastTime = now
+    }
+    return
+  }
+
   if (document.hidden && activeRun && running && !choiceOpen && !outcomeOpen) {
     void pauseRun()
   }
