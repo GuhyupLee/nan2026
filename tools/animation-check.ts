@@ -306,6 +306,22 @@ for (const animation of json.animations) {
     )
   }
 
+  for (let index = 0; index < phases.length; index += 1) {
+    const phase: { stage: VrmActionStage; time: number } = phases[index]!
+    const keyframe = motion.keyframes[index]!
+    assert.equal(phase.stage, keyframe.stage)
+    assert.ok(Math.abs(phase.time - keyframe.time) < 1e-6)
+    for (const bone of Object.keys(keyframe.rotations) as VrmBoneName[]) {
+      const expected = new Quaternion().setFromEuler(
+        new Euler(...keyframe.rotations[bone], 'XYZ'),
+      )
+      assert.ok(
+        quaternionDistance(quaternionAt(animation, bone, phase.time), expected) < 1e-5,
+        `${animation.name} ${phase.stage} ${bone} matches animation-data`,
+      )
+    }
+  }
+
   if (action !== 'attack' && action !== 'empowered') {
     const expectedImpact = playerActionTiming(cls, action).impact
     const contact = phases.find(({ stage }) => stage === 'contact')!
@@ -378,6 +394,52 @@ for (const animation of json.animations) {
       assert.ok(
         axisRange[axis]! > 0.025,
         `${animation.name} animates ${group} on ${'XYZ'[axis]} axis`,
+      )
+    }
+  }
+}
+
+const QWER = ['q', 'w', 'e', 'r'] as const satisfies readonly CharacterAction[]
+const IDENTITY_BONES = [
+  'hips',
+  'spine',
+  'chest',
+  'head',
+  'leftUpperArm',
+  'rightUpperArm',
+  'leftHand',
+  'rightHand',
+  'leftUpperLeg',
+  'rightUpperLeg',
+] as const satisfies readonly VrmBoneName[]
+
+for (const cls of ['ranged', 'melee'] as const) {
+  for (let firstIndex = 0; firstIndex < QWER.length; firstIndex += 1) {
+    for (let secondIndex = firstIndex + 1; secondIndex < QWER.length; secondIndex += 1) {
+      const first = QWER[firstIndex]!
+      const second = QWER[secondIndex]!
+      const firstAnimation = json.animations.find(
+        ({ name }) => name === `${cls}.${first}`,
+      )!
+      const secondAnimation = json.animations.find(
+        ({ name }) => name === `${cls}.${second}`,
+      )!
+      const firstContact = VRM_ACTION_MOTIONS[cls][first].keyframes.find(
+        ({ stage }) => stage === 'contact',
+      )!
+      const secondContact = VRM_ACTION_MOTIONS[cls][second].keyframes.find(
+        ({ stage }) => stage === 'contact',
+      )!
+      let silhouetteDistance = 0
+      for (const bone of IDENTITY_BONES) {
+        silhouetteDistance += quaternionDistance(
+          quaternionAt(firstAnimation, bone, firstContact.time),
+          quaternionAt(secondAnimation, bone, secondContact.time),
+        )
+      }
+      assert.ok(
+        silhouetteDistance > 3,
+        `${cls} ${first.toUpperCase()}/${second.toUpperCase()} contact silhouettes are distinct`,
       )
     }
   }
