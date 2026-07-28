@@ -211,9 +211,9 @@ console.log('\nsim smoke check\n')
     TARGET_LEVEL_TIMES[MAX_LEVEL - 1]! < RUN_TIME_LIMIT,
     `${TARGET_LEVEL_TIMES[MAX_LEVEL - 1]}s`,
   )
-  // 상한을 20에서 26으로 올렸다. 적 밀도를 100→165로 올리면서 XP 수입이 늘어
+  // 상한을 20에서 26으로 올렸다. 적 밀도 상한을 100→135로 올리면서 XP 수입이 늘어
   // 두 클래스 모두 5분 안에 옛 상한을 치고 남았고, 남는 수입을 **선택 횟수**로
-  // 돌리는 편이 뱀서라이크의 도파민 리듬에 맞는다(레벨업 간격 17초 → 12초).
+  // 돌리는 편이 뱀서라이크의 도파민 리듬에 맞는다.
   check('최대 레벨은 26이다', MAX_LEVEL === 26, `MAX_LEVEL=${MAX_LEVEL}`)
   check(
     'XP 단계 수가 레벨 수와 맞는다',
@@ -224,7 +224,7 @@ console.log('\nsim smoke check\n')
     '요구 XP는 단조 증가하지 않아도 되지만 전부 양수다',
     XP_FOR_NEXT.every((xp) => xp > 0),
   )
-  // 근접이 원거리보다 1.85배 많이 죽이도록 밸런스가 바뀌어 보정 배율을 다시 잡았다.
+  // 클래스마다 자동 공격·QWER의 처치율이 달라 같은 목표 곡선에 맞춘 보정값이다.
   check(
     '클래스 XP 보정 배율이 0과 1 사이다',
     MELEE_XP_GAIN_MULTIPLIER > 0 &&
@@ -369,7 +369,7 @@ console.log('\nsim smoke check\n')
   )
 }
 
-// --- Lv2~20은 모두 실제 선택 ---
+// --- Lv2~26은 모두 실제 보상 ---
 {
   const w = createWorld(13)
   w.spawnEnabled = false
@@ -382,7 +382,7 @@ console.log('\nsim smoke check\n')
     pendingReward(w.progression) === 'skill-rank',
   )
   check(
-    'Lv2~20의 모든 레벨에 보상이 지정되어 있다',
+    'Lv2~26의 모든 레벨에 보상이 지정되어 있다',
     Array.from({ length: MAX_LEVEL - 1 }, (_, i) => LEVEL_REWARDS[i + 2]).every(Boolean),
   )
   check(
