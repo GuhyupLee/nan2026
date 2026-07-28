@@ -262,9 +262,13 @@ export class SkillBar {
       if (passivePointerId === null) this.showTooltip(this.passive)
     })
     passiveRoot.addEventListener('blur', () => this.hideTooltip(this.passive))
-    this.root.appendChild(passiveRoot)
-
+    let passiveInserted = false
     for (const m of meta) {
+      if (!passiveInserted && m.kind === 'summoner') {
+        this.root.appendChild(passiveRoot)
+        passiveInserted = true
+      }
+
       const slot = document.createElement('button')
       slot.className = 'slot'
       slot.type = 'button'
@@ -448,6 +452,7 @@ export class SkillBar {
       this.root.appendChild(slot)
       this.slots.push(view)
     }
+    if (!passiveInserted) this.root.appendChild(passiveRoot)
 
     this.tooltip = document.createElement('div')
     this.tooltip.id = 'skillbar-tooltip'

@@ -1817,9 +1817,11 @@ body.pickup-buff-active #hint:not(.hidden) {
 }
 
 .skillbar .passive-slot {
-  position: absolute;
-  right: calc(100% + 0.72rem);
-  bottom: 0.4rem;
+  position: relative;
+  right: auto;
+  bottom: auto;
+  left: auto;
+  margin-left: 0.42rem;
   cursor: default;
 }
 
@@ -3461,6 +3463,10 @@ body.pickup-buff-active #hint:not(.hidden) {
     margin-left: 0.2rem;
   }
 
+  .skillbar .passive-slot {
+    margin-left: 0.2rem;
+  }
+
   .xpbar {
     bottom: calc(var(--ui-safe-bottom) + 4.42rem);
   }
@@ -3565,7 +3571,7 @@ body.pickup-buff-active #hint:not(.hidden) {
   }
 }
 
-@media (pointer: coarse) and (max-width: 319px) {
+@media (pointer: coarse) and (max-width: 380px) {
   .skillbar {
     gap: 1px;
     padding: 3px 2px 4px;
@@ -3584,6 +3590,7 @@ body.pickup-buff-active #hint:not(.hidden) {
     min-height: 44px;
   }
 
+  .skillbar .passive-slot,
   .skillbar .slot:not([data-kind='summoner']) + .slot[data-kind='summoner'] {
     margin-left: 0;
   }
@@ -5480,9 +5487,7 @@ body.pickup-buff-active #hint:not(.hidden) {
   }
 
   .skillbar .passive-slot {
-    right: auto;
-    bottom: calc(100% + 0.3rem);
-    left: 0.3rem;
+    margin-left: 0.2rem;
   }
 
   .xpbar {
