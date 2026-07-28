@@ -35,6 +35,9 @@ const statsEl = document.getElementById('stats')!
 const coarsePointer = window.matchMedia('(pointer: coarse)').matches
 const useVrmModels = shouldUseVrmModels()
 
+// 성능 계측은 개발 빌드에서만 보인다. 상용 HUD와 같은 좌상단을 차지하지 않는다.
+statsEl.hidden = !import.meta.env.DEV
+
 if (coarsePointer) {
   hint.textContent = '전장을 밀어 이동 · 스킬 버튼 터치'
 }

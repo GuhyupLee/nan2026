@@ -3,6 +3,7 @@ import * as THREE from 'three'
 import { pickAutoAttackTarget } from '../sim/combat.ts'
 import {
   BOSS_CHARGE_AT,
+  BOSS_CHARGE_SPEED,
   BOSS_RECOVER_AT,
   BOSS_WINDUP_AT,
   ENEMY_CONTACT_REACH,
@@ -18,7 +19,8 @@ import { lerp } from '../sim/vec.ts'
 
 const MAX_HEALTH_BARS = 32
 const MAX_TARGET_RINGS = 8
-const MAX_CHARGE_DISTANCE = 42
+const MAX_CHARGE_DISTANCE =
+  BOSS_CHARGE_SPEED * (BOSS_RECOVER_AT - BOSS_CHARGE_AT)
 
 const RANGED_TARGET = new THREE.Color(0x62d9f7)
 const MELEE_TARGET = new THREE.Color(0xff6578)
@@ -403,11 +405,24 @@ export class CombatReadabilityFx {
     const nz = dz / directionLength
     const x = lerp(pool.prevX[boss]!, pool.x[boss]!, alpha)
     const z = lerp(pool.prevY[boss]!, pool.y[boss]!, alpha)
-    const arenaLimit = world.arenaRadius - ENEMY_TYPES[TYPE_BOSS]!.radius * 0.35
+    const cycle = bossCycleTime(world.time, world.boss.spawnedAt)
+    const arenaLimit = world.arenaRadius - ENEMY_TYPES[TYPE_BOSS]!.radius
     const along = x * nx + z * nz
     const discriminant = Math.max(0, along * along - (x * x + z * z - arenaLimit * arenaLimit))
-    const exitDistance = Math.max(0.4, -along + Math.sqrt(discriminant))
-    const length = Math.min(MAX_CHARGE_DISTANCE, exitDistance)
+    const exitDistance = Math.max(0, -along + Math.sqrt(discriminant))
+    const remainingChargeTime =
+      phase === 'charge'
+        ? Math.max(0, BOSS_RECOVER_AT - cycle)
+        : BOSS_RECOVER_AT - BOSS_CHARGE_AT
+    const travelDistance = Math.min(
+      MAX_CHARGE_DISTANCE,
+      BOSS_CHARGE_SPEED * remainingChargeTime,
+    )
+    const length = Math.min(travelDistance, exitDistance)
+    if (length <= 0.05) {
+      this.chargeMesh.visible = false
+      return
+    }
     const width =
       2 *
       (ENEMY_TYPES[TYPE_BOSS]!.radius + world.stats.radius + ENEMY_CONTACT_REACH)
@@ -419,7 +434,6 @@ export class CombatReadabilityFx {
     this.chargeMesh.scale.set(length, 1, width)
     this.chargeMesh.visible = true
 
-    const cycle = bossCycleTime(world.time, world.boss.spawnedAt)
     const progress =
       phase === 'charge'
         ? 1

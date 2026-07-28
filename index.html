@@ -155,7 +155,7 @@
 
       #stats {
         position: fixed;
-        top: var(--ui-safe-top);
+        top: calc(var(--ui-safe-top) + 3.2rem);
         left: var(--ui-safe-left);
         font-variant-numeric: tabular-nums;
         font-size: 0.58rem;
@@ -202,7 +202,7 @@
   </head>
   <body>
     <div id="app"></div>
-    <div id="stats"></div>
+    <div id="stats" hidden></div>
     <div id="hint" class="hidden">화면을 누른 채 움직이세요</div>
     <div id="boot">
       <h1>명월</h1>
