@@ -558,6 +558,68 @@ button {
   outline-offset: 3px;
 }
 
+.levelup.resolving {
+  background: rgba(5, 7, 10, 0.96);
+}
+
+.levelup.resolving .banner {
+  opacity: 0.48;
+  transition: opacity 0.14s ease;
+}
+
+.levelup.resolving .lvcard {
+  pointer-events: none;
+}
+
+.levelup.resolving .lvcard.rejected {
+  opacity: 0.24;
+  transform: translateY(0.28rem) scale(0.965);
+  filter: saturate(0.45);
+  transition:
+    opacity 0.12s ease,
+    transform 0.16s ease,
+    filter 0.12s ease;
+}
+
+.levelup.resolving .lvcard.selected {
+  z-index: 1;
+  border-color: var(--accent);
+  background:
+    radial-gradient(circle at 50% 18%, color-mix(in srgb, var(--accent) 22%, transparent), transparent 48%),
+    #18212b;
+  box-shadow:
+    0 0 0 1px color-mix(in srgb, var(--accent) 58%, transparent),
+    0 0 2.6rem color-mix(in srgb, var(--accent) 26%, transparent);
+  animation: levelup-confirm 0.19s cubic-bezier(0.2, 0.72, 0.2, 1) both;
+}
+
+.levelup.resolving .lvcard.selected::before {
+  content: '';
+  position: absolute;
+  inset: -35% -70%;
+  z-index: 2;
+  background: linear-gradient(
+    105deg,
+    transparent 42%,
+    color-mix(in srgb, var(--accent) 62%, white) 50%,
+    transparent 58%
+  );
+  opacity: 0.48;
+  pointer-events: none;
+  animation: levelup-confirm-sheen 0.24s ease-out both;
+}
+
+@keyframes levelup-confirm {
+  0% { transform: translateY(-0.28rem) scale(1); }
+  46% { transform: translateY(-0.45rem) scale(1.035); }
+  100% { transform: translateY(-0.32rem) scale(1.012); }
+}
+
+@keyframes levelup-confirm-sheen {
+  from { transform: translateX(-30%); }
+  to { transform: translateX(30%); }
+}
+
 .lvcard[data-kind='unlock'] {
   border-top: 2px solid var(--accent);
   background: #131a22;
@@ -4458,6 +4520,7 @@ button {
   .skill-tooltip,
   .damage-vignette,
   .lvcard::after,
+  .levelup.resolving .lvcard.selected::before,
   .cast-mode-option,
   .settings-volume input[type='range'] {
     animation: none;

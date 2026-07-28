@@ -273,6 +273,8 @@ export function showLevelUp(parent: HTMLElement, world: World): Promise<void> {
   const isRank = cards[0]!.kind === 'skill-rank'
   const isRelic = cards[0]!.kind === 'relic-upgrade'
   const single = cards.length === 1
+  const reducedMotion = window.matchMedia('(prefers-reduced-motion: reduce)').matches
+  const confirmationMs = reducedMotion ? 45 : isRelic ? 260 : 190
 
   return new Promise((resolve) => {
     const root = document.createElement('div')
@@ -311,15 +313,25 @@ export function showLevelUp(parent: HTMLElement, world: World): Promise<void> {
     root.appendChild(list)
 
     let done = false
+    const cardElements: HTMLButtonElement[] = []
     let releaseFocusTrap = (): void => {}
-    const pick = (card: LevelUpCard): void => {
+    const pick = (card: LevelUpCard, selected: HTMLButtonElement): void => {
       if (done) return
       done = true
       window.removeEventListener('keydown', onKey)
       releaseFocusTrap()
+      root.setAttribute('aria-busy', 'true')
+      root.classList.add('resolving')
+      for (const candidate of cardElements) {
+        candidate.disabled = true
+        candidate.classList.toggle('selected', candidate === selected)
+        candidate.classList.toggle('rejected', candidate !== selected)
+      }
       applyLevelUpCard(world, card)
-      root.remove()
-      resolve()
+      window.setTimeout(() => {
+        root.remove()
+        resolve()
+      }, confirmationMs)
     }
 
     cards.forEach((card, i) => {
@@ -359,18 +371,21 @@ export function showLevelUp(parent: HTMLElement, world: World): Promise<void> {
         `<h3>${card.name}</h3>` +
         `<p>${card.desc}</p>`
 
-      el.addEventListener('click', () => pick(card))
+      el.addEventListener('click', () => pick(card, el))
+      cardElements.push(el)
       list.appendChild(el)
     })
 
     const onKey = (e: KeyboardEvent): void => {
       // 카드가 1장뿐이면 아무 키로나 넘어간다 — 확인 화면에서 막히지 않게.
       if (single && (e.key === 'Enter' || e.key === ' ' || e.key === '1')) {
-        pick(cards[0]!)
+        pick(cards[0]!, cardElements[0]!)
         return
       }
       const n = Number.parseInt(e.key, 10)
-      if (Number.isFinite(n) && n >= 1 && n <= cards.length) pick(cards[n - 1]!)
+      if (Number.isFinite(n) && n >= 1 && n <= cards.length) {
+        pick(cards[n - 1]!, cardElements[n - 1]!)
+      }
     }
     window.addEventListener('keydown', onKey)
 
