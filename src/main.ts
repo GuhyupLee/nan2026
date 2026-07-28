@@ -414,7 +414,9 @@ async function pauseRun(): Promise<void> {
   accumulator = 0
   releaseGameplayInput()
   pauseButton.setVisible(false)
-  await audio.unlock()
+  // 일부 WebView는 AudioContext.resume()을 오래 보류한다. 오디오는 best-effort로 열고
+  // 일시정지 UI와 시뮬레이션 상태 전환은 절대 그 Promise를 기다리지 않는다.
+  void audio.unlock()
   audio.ui('pause')
 
   const action = await showPause(document.body, audio, input)
@@ -432,7 +434,7 @@ async function pauseRun(): Promise<void> {
   }
 
   if (!activeRun || world.outcome !== 'alive') return
-  await audio.unlock()
+  void audio.unlock()
   lastTime = performance.now()
   accumulator = 0
   releaseGameplayInput()
