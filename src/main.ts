@@ -26,6 +26,7 @@ import { showOutcome } from './ui/outcome.ts'
 import { PauseButton, showPause, showSettings } from './ui/pause.ts'
 import { showRecords } from './ui/record-viewer.ts'
 import { DEFAULT_SLOTS, SkillBar, assertSlotsCoverAllSkills } from './ui/skillbar.ts'
+import './ui/fonts.generated.css'
 import './ui/ui.css'
 
 const app = document.getElementById('app')!

@@ -2860,7 +2860,7 @@ button {
 
 .mainmenu h1 {
   color: var(--menu-paper);
-  font-family: 'Noto Serif KR', 'Nanum Myeongjo', 'Batang', serif;
+  font-family: 'Noto Serif KR Variable', 'Noto Serif KR', 'Nanum Myeongjo', 'Batang', serif;
   font-size: clamp(5.2rem, 9.6vw, 10.2rem);
   font-weight: 800;
   line-height: 0.82;
@@ -2882,7 +2882,7 @@ button {
 .mainmenu-tagline {
   margin-top: 1.15rem;
   color: rgba(230, 224, 211, 0.88);
-  font-family: 'Noto Serif KR', 'Nanum Myeongjo', 'Batang', serif;
+  font-family: 'Noto Serif KR Variable', 'Noto Serif KR', 'Nanum Myeongjo', 'Batang', serif;
   font-size: max(12px, clamp(0.78rem, 1vw, 0.94rem));
   font-weight: 500;
   line-height: 1.6;
@@ -3029,7 +3029,7 @@ button {
 .mainmenu-edition {
   margin-top: 0.75rem;
   color: rgba(230, 224, 211, 0.42);
-  font-family: 'Noto Serif KR', 'Nanum Myeongjo', 'Batang', serif;
+  font-family: 'Noto Serif KR Variable', 'Noto Serif KR', 'Nanum Myeongjo', 'Batang', serif;
   font-size: 0.52rem;
   letter-spacing: 0.18em;
 }
@@ -3090,7 +3090,7 @@ button {
 
 .charselect .title h2 {
   color: var(--select-paper);
-  font-family: 'Noto Serif KR', 'Nanum Myeongjo', 'Batang', serif;
+  font-family: 'Noto Serif KR Variable', 'Noto Serif KR', 'Nanum Myeongjo', 'Batang', serif;
   font-size: clamp(1.5rem, 2.2vw, 2.2rem);
   font-weight: 700;
   line-height: 1.05;
@@ -3107,7 +3107,7 @@ button {
 .charselect .title p {
   margin-top: 0.38rem;
   color: var(--select-dim);
-  font-family: 'Noto Serif KR', 'Nanum Myeongjo', 'Batang', serif;
+  font-family: 'Noto Serif KR Variable', 'Noto Serif KR', 'Nanum Myeongjo', 'Batang', serif;
   font-size: max(11px, 0.66rem);
   font-weight: 500;
   letter-spacing: 0.08em;
@@ -3261,7 +3261,7 @@ button {
 .charcard h3 {
   margin-top: 0.42rem;
   color: var(--select-paper);
-  font-family: 'Noto Serif KR', 'Nanum Myeongjo', 'Batang', serif;
+  font-family: 'Noto Serif KR Variable', 'Noto Serif KR', 'Nanum Myeongjo', 'Batang', serif;
   font-size: clamp(2rem, 3.5vw, 3.4rem);
   font-weight: 750;
   line-height: 0.95;
@@ -3272,7 +3272,7 @@ button {
 .charcard .epithet {
   margin-top: 0.38rem;
   color: rgba(228, 222, 210, 0.78);
-  font-family: 'Noto Serif KR', 'Nanum Myeongjo', 'Batang', serif;
+  font-family: 'Noto Serif KR Variable', 'Noto Serif KR', 'Nanum Myeongjo', 'Batang', serif;
   font-size: max(11px, clamp(0.65rem, 1vw, 0.78rem));
   font-weight: 500;
   letter-spacing: 0.1em;
