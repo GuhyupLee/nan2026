@@ -4373,11 +4373,93 @@ button {
   }
 }
 
+/* --------------------------------------------------------------------------
+   전투 판독성 하한
+
+   rem만 쓰면 720p 기준 6~9px까지 내려가므로, 전투 중 즉시 읽어야 하는 정보와
+   조작 안내에는 물리 픽셀 하한을 둔다. 장식성 보조문구도 같은 명도 하한을
+   공유해 디스플레이마다 사라지는 텍스트가 없게 한다.
+   -------------------------------------------------------------------------- */
+
+:root {
+  --ui-faint: #8a94a2;
+}
+
+.floatbar .lv,
+.run-info small,
+.skillbar .slot .key,
+.bossbar .boss-phase {
+  font-size: max(9px, 0.55rem);
+}
+
+.run-info b,
+.bossbar .boss-name,
+.pause-label,
+#hint {
+  font-size: max(11px, 0.68rem);
+}
+
+.clock {
+  font-size: max(13px, 0.92rem);
+}
+
+.skillbar .slot .cdtext {
+  font-size: max(12px, 0.82rem);
+}
+
+.xpbar {
+  height: max(6px, 0.38rem);
+  box-shadow: 0 0 0.5rem rgba(86, 199, 232, 0.14);
+}
+
+.charselect .footnote,
+.mainmenu-action .action-copy small,
+.mainmenu-edition,
+.record-class th,
+.record-empty,
+.scoreboard .records .rank,
+.outcome .note,
+.settings-copy small,
+.cast-mode-copy small {
+  color: #8a94a2;
+}
+
+.charselect .footnote,
+.mainmenu-edition,
+.record-class th,
+.outcome .note,
+.settings-copy small,
+.cast-mode-copy small {
+  font-size: max(10px, 0.58rem);
+}
+
+.mainmenu-action .action-copy small,
+.record-empty {
+  font-size: max(10px, 0.66rem);
+}
+
+.settings-volume input[type='range'] {
+  height: 44px;
+}
+
+.settings-volume input[type='range']::-webkit-slider-thumb {
+  width: 22px;
+  height: 28px;
+  margin-top: -12px;
+}
+
+.settings-volume input[type='range']::-moz-range-thumb {
+  width: 20px;
+  height: 26px;
+}
+
 @media (prefers-reduced-motion: reduce) {
   .records-overlay,
   .skill-tooltip,
   .damage-vignette,
-  .lvcard::after {
+  .lvcard::after,
+  .cast-mode-option,
+  .settings-volume input[type='range'] {
     animation: none;
     transition: none;
   }
