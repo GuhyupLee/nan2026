@@ -14,6 +14,7 @@ import {
   createCharacterRig,
 } from './characters.ts'
 import { EnemyRenderer } from './enemies.ts'
+import { ImpactParticles } from './impact-particles.ts'
 import { ImpactFx } from './impact.ts'
 import { PostFx } from './post.ts'
 import { SkillFx } from './skillfx.ts'
@@ -101,6 +102,7 @@ export class Renderer {
   private readonly resizeObserver: ResizeObserver
   private readonly post: PostFx
   private readonly impact: ImpactFx
+  private readonly impactParticles: ImpactParticles
   private readonly skillFx: SkillFx
   private weaponTrail: WeaponTrail
   /**
@@ -158,9 +160,12 @@ export class Renderer {
     this.enemyRenderer = new EnemyRenderer(this.scene)
     this.combatReadability = new CombatReadabilityFx(this.scene)
     this.impact = new ImpactFx(this.scene)
+    this.impactParticles = new ImpactParticles(this.scene)
     // 스킬 이펙트가 타격 연출을 직접 만들지 않고 훅으로 위임한다.
     // 두 모듈이 서로를 몰라야 각각 따로 갈아끼울 수 있다.
     this.skillFx = new SkillFx(this.scene, {
+      onImpact: (x, z, angle, color) =>
+        this.impactParticles.burst(x, z, angle, color),
       onShake: (strength) => this.impact.shake(strength, 0.26),
     })
     this.weaponTrail = new WeaponTrail(this.scene, { color: TRAIL_COLOR[this.charClass] })
@@ -395,6 +400,7 @@ export class Renderer {
     if (this.renderedWorld !== world) {
       this.renderedWorld = world
       this.skillFx.reset()
+      this.impactParticles.reset()
       this.actionFacingUntil = -Infinity
     }
 
@@ -428,6 +434,8 @@ export class Renderer {
 
     this.enemyRenderer.update(world, visualAlpha, dt)
     this.combatReadability.update(world, visualAlpha)
+    // 훅이 같은 프레임의 벽시계를 birth time으로 쓰도록 SkillFx보다 먼저 갱신한다.
+    this.impactParticles.update(now)
     this.skillFx.update(world, visualAlpha, now, dt)
     // 히트스톱으로 스케일한 dt를 주면 안 된다 — 화면이 멈춘 동안 흔들림과
     // 숫자까지 멈춰서 타격감이 아니라 프레임 드랍으로 읽힌다.
@@ -519,6 +527,7 @@ export class Renderer {
     const nextPixelRatio = Math.min(window.devicePixelRatio || 1, nextConstrained ? 1.35 : 2)
     const nextShadowMapSize = nextConstrained ? 1024 : 2048
     this.impact.setShakeScale(nextConstrained ? 0.6 : 1)
+    this.impactParticles.setQuality(nextConstrained ? 0.45 : 1)
     this.skillFx.setQuality(nextConstrained ? 0.45 : 1)
     let changed = nextConstrained !== this.constrained
     this.constrained = nextConstrained
@@ -659,6 +668,7 @@ export class Renderer {
     this.enemyRenderer.dispose()
     this.combatReadability.dispose()
     this.skillFx.dispose()
+    this.impactParticles.dispose()
     this.impact.dispose()
     this.post.dispose()
     this.sun.shadow.map?.dispose()
