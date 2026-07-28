@@ -2,6 +2,11 @@ import { computeScore } from '../sim/score.ts'
 import type { World } from '../sim/types.ts'
 import { trapFocus } from './focus-trap.ts'
 import { formatTime, loadRecords, saveRecord, type RunRecord } from './records.ts'
+import {
+  createRunBuildSummary,
+  getRunBuildPresentation,
+  type RunBuildPresentation,
+} from './run-build.ts'
 
 export type GameOutcome = Exclude<World['outcome'], 'alive'>
 export type OutcomeAction = 'restart' | 'menu'
@@ -42,6 +47,72 @@ function scoreRow(label: string, value: number, muted = false): string {
   return (
     `<div class="row${muted ? ' muted' : ''}">` +
     `<span>${label}</span><b>${value.toLocaleString('ko-KR')}</b></div>`
+  )
+}
+
+function escapeHtml(value: string): string {
+  return value
+    .replaceAll('&', '&amp;')
+    .replaceAll('<', '&lt;')
+    .replaceAll('>', '&gt;')
+    .replaceAll('"', '&quot;')
+    .replaceAll("'", '&#039;')
+}
+
+function skillPips(rank: number): string {
+  let pips = ''
+  for (let value = 1; value <= 4; value += 1) {
+    pips += `<i data-filled="${value <= rank}" aria-hidden="true"></i>`
+  }
+  return pips
+}
+
+function evolutionList(label: string, names: string[], kind: 'awakening' | 'fusion'): string {
+  const value = names.length > 0 ? names.map(escapeHtml).join(' · ') : '미완성'
+  return (
+    `<div class="build-evolution" data-kind="${kind}">` +
+    `<span>${label}</span><strong>${value}</strong></div>`
+  )
+}
+
+function buildManifest(
+  build: ReturnType<typeof createRunBuildSummary>,
+  view: RunBuildPresentation,
+): string {
+  const skills = view.skills
+    .map((skill) => {
+      const state = skill.unlocked ? `RANK ${skill.rank}` : 'LOCKED'
+      const path = skill.unlocked ? skill.branchName ?? '기본식' : '미해금'
+      return (
+        `<div class="build-skill" data-evolution="${skill.evolution}">` +
+        `<div class="build-skill-heading">` +
+        `<b>${skill.id.toUpperCase()}</b><span>${state}</span></div>` +
+        `<div class="build-skill-pips" role="img" aria-label="${skill.id.toUpperCase()} 강화 ${skill.rank}/4">` +
+        skillPips(skill.rank) +
+        `</div>` +
+        `<small>${escapeHtml(path)}</small>` +
+        `</div>`
+      )
+    })
+    .join('')
+
+  return (
+    `<section class="build-manifest" aria-labelledby="build-manifest-title">` +
+    `<header><div>` +
+    `<span>BUILD MANIFEST</span>` +
+    `<h3 id="build-manifest-title">최종 전투 설계</h3>` +
+    `</div><code>#${view.battlefieldCode}</code></header>` +
+    `<div class="build-skills">${skills}</div>` +
+    `<div class="build-counters">` +
+    `<div><span>각성</span><strong>${view.awakeningNames.length}</strong></div>` +
+    `<div data-kind="fusion"><span>융합</span><strong>${view.fusionNames.length}</strong></div>` +
+    `<div data-kind="seals"><span>월식 인장</span><strong>${build.seals}</strong></div>` +
+    `</div>` +
+    `<div class="build-evolutions">` +
+    evolutionList('AWAKENING', view.awakeningNames, 'awakening') +
+    evolutionList('FUSION', view.fusionNames, 'fusion') +
+    `</div>` +
+    `</section>`
   )
 }
 
@@ -88,9 +159,13 @@ export function showOutcome(
     root.appendChild(panel)
 
     // --- 점수와 기록 ---
+    let retryBattlefieldCode: string | null = null
     if (world) {
       const s = computeScore(world)
       const at = Date.now()
+      const build = createRunBuildSummary(world)
+      const buildView = getRunBuildPresentation(build)
+      retryBattlefieldCode = buildView.battlefieldCode
       const { records, isBest } = saveRecord(world.playerClass, {
         score: s.total,
         kills: world.kills,
@@ -98,11 +173,14 @@ export function showOutcome(
         time: world.time,
         victory: outcome === 'victory',
         at,
+        build,
       })
 
       const score = document.createElement('div')
       score.className = 'scoreboard'
       score.innerHTML =
+        `<div class="run-report">` +
+        `<section class="score-summary" aria-label="전투 성과">` +
         `<div class="total${isBest ? ' best' : ''}">` +
         `<span class="label">${isBest ? '최고 기록 갱신' : '점수'}</span>` +
         `<strong>${s.total.toLocaleString('ko-KR')}</strong>` +
@@ -113,7 +191,10 @@ export function showOutcome(
         scoreRow('보스 처치', s.victory, true) +
         scoreRow(`남은 시간 ${formatTime(Math.max(0, 300 - world.time))}`, s.speed, true) +
         `</div>` +
-        recordsTable(records, at)
+        recordsTable(records, at) +
+        `</section>` +
+        buildManifest(build, buildView) +
+        `</div>`
       panel.appendChild(score)
     } else {
       // world 없이 부르는 경로가 남아 있어도 결과 화면 자체는 떠야 한다.
@@ -133,9 +214,15 @@ export function showOutcome(
     const restart = document.createElement('button')
     restart.className = 'restart'
     restart.type = 'button'
-    restart.innerHTML =
-      `<span>같은 캐릭터로 재시작</span>` +
-      `<small>ENTER 또는 SPACE</small>`
+    if (retryBattlefieldCode) {
+      restart.innerHTML =
+        `<span>같은 전장 재도전</span>` +
+        `<small>SAME SEED · #${retryBattlefieldCode}</small>`
+    } else {
+      restart.innerHTML =
+        `<span>같은 캐릭터로 재시작</span>` +
+        `<small>ENTER 또는 SPACE</small>`
+    }
     actions.appendChild(restart)
 
     const menu = document.createElement('button')
@@ -148,7 +235,9 @@ export function showOutcome(
 
     const note = document.createElement('div')
     note.className = 'note'
-    note.textContent = '재시작은 같은 캐릭터 · 같은 시드'
+    note.textContent = world
+      ? '같은 캐릭터와 전장 코드로 적 배치와 보상 순서를 다시 재현합니다.'
+      : '재시작은 같은 캐릭터 · 같은 시드'
     panel.appendChild(note)
 
     let done = false

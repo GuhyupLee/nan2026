@@ -1,4 +1,6 @@
 import { GameAudio } from './audio.ts'
+import { getClassSkills } from './content/skills.ts'
+import { applyUpgrade } from './content/upgrades.ts'
 import { InputState, applyPointerMove } from './input.ts'
 import { Renderer } from './render/renderer.ts'
 import {
@@ -18,6 +20,7 @@ import {
 } from './sim/battlefield-pickups.ts'
 import { SURGE_BEATS, SURGE_WARNING_DURATION } from './sim/surges.ts'
 import { MAX_LEVEL } from './sim/progression.ts'
+import { rankUpSkill, unlockSkill } from './sim/skills.ts'
 import { createInput } from './sim/types.ts'
 import type { PlayerClass, World } from './sim/types.ts'
 import {
@@ -86,7 +89,7 @@ try {
   throw err
 }
 
-const seed = resolveSeed()
+const initialSeed = resolveSeed()
 const input = new InputState(app)
 const simInput = createInput()
 
@@ -147,7 +150,7 @@ let activeRun = false
  * 선택 화면 뒤에서 미리 치러야 "고르자마자 즉시 시작"이 된다.
  * 대신 running이 false인 동안 시뮬은 한 틱도 진행하지 않는다.
  */
-let world: World = createWorld(seed)
+let world: World = createWorld(initialSeed)
 let running = false
 
 let accumulator = 0
@@ -165,7 +168,7 @@ function requestMenuWarmup(): void {
  * 결말 판정은 고정 틱에서 이미 끝났다. 이후에는 시뮬·입력·HUD만 즉시 잠그고,
  * 보스 사망 플래시·히트스톱·카메라 셰이크 같은 실시간 렌더 효과만 마무리한다.
  */
-function beginOutcomeTransition(now: number): void {
+function beginOutcomeTransition(now: number, revealDelayOverride?: number): void {
   if (
     !running ||
     world.outcome === 'alive' ||
@@ -175,9 +178,11 @@ function beginOutcomeTransition(now: number): void {
     return
   }
 
-  const revealDelay = reducedMotion.matches
-    ? REDUCED_MOTION_OUTCOME_REVEAL_DELAY_MS
-    : OUTCOME_REVEAL_DELAY_MS
+  const revealDelay =
+    revealDelayOverride ??
+    (reducedMotion.matches
+      ? REDUCED_MOTION_OUTCOME_REVEAL_DELAY_MS
+      : OUTCOME_REVEAL_DELAY_MS)
 
   running = false
   outcomeTransition = {
@@ -242,7 +247,9 @@ function revealOutcome(now: number): void {
 
     outcomeOpen = false
     if (action === 'restart') {
-      beginRun(transition.restartClass)
+      // 결과를 만든 정확한 시드와 클래스를 다시 넘긴다. 메뉴의 새 판 정책이
+      // 달라져도 SAME SEED 재도전 계약은 이 경로에서 유지된다.
+      beginRun(transition.restartClass, transition.world.seed)
     } else {
       void start()
     }
@@ -433,14 +440,14 @@ async function pauseRun(): Promise<void> {
   running = true
 }
 
-/** 선택된 캐릭터와 고정 시드로 새 판을 즉시 시작한다. */
-function beginRun(playerClass: PlayerClass): void {
+/** 선택된 캐릭터와 명시한 시드로 새 판을 즉시 시작한다. */
+function beginRun(playerClass: PlayerClass, runSeed = initialSeed): void {
   runId += 1
   running = false
   activeRun = true
   menuWarmupFramesLeft = 0
   outcomeTransition = null
-  world = createWorld(seed, playerClass)
+  world = createWorld(runSeed, playerClass)
   choiceOpen = false
   outcomeOpen = false
   pauseOpen = false
@@ -473,6 +480,7 @@ function beginRun(playerClass: PlayerClass): void {
   fpsFrames = 0
   statsTimer = 0.25
   fps = 0
+  let revealQaOutcome = false
   if (import.meta.env.DEV) {
     const qa = new URLSearchParams(window.location.search).get('qa')
     if (qa === 'relic') {
@@ -507,6 +515,35 @@ function beginRun(playerClass: PlayerClass): void {
           world.boss.hp = world.boss.maxHp
         }
       }
+    } else if (qa === 'outcome') {
+      // 대표 완성 빌드로 결과 화면을 즉시 연다. DEV 상수와 함께 프로덕션
+      // 번들에서 제거되며 데스크톱·모바일 결과 UI를 반복 검수할 때 쓴다.
+      const targetRanks = { q: 4, w: 3, e: 2, r: 1 } as const
+      for (const skill of getClassSkills(world.playerClass)) {
+        unlockSkill(world.skills, skill.id, skill.cooldown)
+        const targetRank =
+          targetRanks[skill.id as keyof typeof targetRanks] ?? 0
+        for (let rank = 0; rank < targetRank; rank += 1) {
+          rankUpSkill(world.skills, skill.id)
+        }
+      }
+
+      const recipe =
+        world.playerClass === 'ranged'
+          ? ['orbit-lens', 'gravity-prism', 'singularity-interferometer']
+          : ['iai-scroll', 'fullmoon-form', 'eclipse-sword-codex']
+      for (const id of recipe.slice(0, 2)) {
+        for (let rank = 0; rank < 3; rank += 1) applyUpgrade(world, id)
+      }
+      applyUpgrade(world, recipe[2]!)
+
+      world.tick = Math.round(247.4 / DT)
+      world.time = world.tick * DT
+      world.kills = 318
+      world.progression.level = 26
+      world.relicsClaimed = 3
+      world.outcome = 'victory'
+      revealQaOutcome = true
     } else if (qa === 'pickups') {
       // 세 픽업의 월드 실루엣과 자석 지속 HUD를 한 화면에서 검수한다.
       // 프로덕션 빌드에서는 이 분기 전체가 제거된다.
@@ -555,6 +592,10 @@ function beginRun(playerClass: PlayerClass): void {
     }
   }
   running = true
+  if (revealQaOutcome) {
+    const now = performance.now()
+    beginOutcomeTransition(now, 0)
+  }
 }
 
 /** 첫 프레임이 나온 뒤 캐릭터 선택을 띄우고, 고르면 판을 시작한다. */
