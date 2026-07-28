@@ -142,6 +142,8 @@ const NUMBER_MAX_DIGITS = 6
 const MAX_GLYPHS_PER_NUMBER = NUMBER_MAX_DIGITS + 1
 const MAX_GLYPHS = MAX_NUMBERS * MAX_GLYPHS_PER_NUMBER
 const NUMBER_MAX_VALUE = 999999
+/** Skill FX occupy renderOrder 2..23; combat text stays in a dedicated overlay band. */
+const DAMAGE_NUMBER_RENDER_ORDER = 100
 
 /**
  * 기본 쿼드 한 변(월드 유닛).
@@ -443,8 +445,8 @@ export class ImpactFx {
     this.mesh.count = 0
     // 인스턴스가 매 프레임 흩어지므로 메시 단위 바운딩은 의미가 없다.
     this.mesh.frustumCulled = false
-    // 타기팅 프리뷰(renderOrder 7~9)보다 위.
-    this.mesh.renderOrder = 20
+    // 스킬 FX(최대 renderOrder 23)까지 모두 그린 뒤 전투 정보를 마지막에 합성한다.
+    this.mesh.renderOrder = DAMAGE_NUMBER_RENDER_ORDER
     scene.add(this.mesh)
 
     // 렌더 품질 갱신이 뒤에서 setShakeScale(1)을 호출해도 접근성 배율은
