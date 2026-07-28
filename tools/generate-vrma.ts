@@ -458,7 +458,13 @@ function padChunk(bytes: Uint8Array, fill: number): Uint8Array {
   return padded
 }
 
-function createGlb(): Uint8Array {
+/**
+ * Builds the committed VRMA entirely in memory.
+ *
+ * Keeping generation pure lets checks compare repeated outputs without
+ * rewriting the tracked asset or depending on a temporary directory.
+ */
+export function generateVrmaBytes(): Uint8Array {
   const binary = new BinaryBuilder()
   const animations = VRMA_CLIP_ORDER.map((name) => addAnimation(name, binary))
   const binChunk = padChunk(binary.finish(), 0)
@@ -512,8 +518,16 @@ function createGlb(): Uint8Array {
   return bytes
 }
 
-const output = createGlb()
-mkdirSync(dirname(OUTPUT), { recursive: true })
-writeFileSync(OUTPUT, output)
-console.log(`Generated ${OUTPUT}`)
-console.log(`${VRMA_CLIP_ORDER.length} clips, ${output.byteLength.toLocaleString()} bytes`)
+export function writeVrmaFile(outputPath = OUTPUT): Uint8Array {
+  const output = generateVrmaBytes()
+  mkdirSync(dirname(outputPath), { recursive: true })
+  writeFileSync(outputPath, output)
+  return output
+}
+
+const invokedPath = process.argv[1] ? resolve(process.argv[1]) : null
+if (invokedPath === fileURLToPath(import.meta.url)) {
+  const output = writeVrmaFile()
+  console.log(`Generated ${OUTPUT}`)
+  console.log(`${VRMA_CLIP_ORDER.length} clips, ${output.byteLength.toLocaleString()} bytes`)
+}

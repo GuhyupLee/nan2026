@@ -19,6 +19,7 @@ import {
   type VrmaClipName,
 } from '../src/render/animation-data.ts'
 import { canStartVrmAction } from '../src/render/vrm-animation.ts'
+import { generateVrmaBytes } from './generate-vrma.ts'
 
 interface GltfAccessor {
   bufferView: number
@@ -63,6 +64,20 @@ interface GltfJson {
 const HERE = fileURLToPath(new URL('.', import.meta.url))
 const FILE = resolve(HERE, '../public/animations/myeongwol-combat.vrma')
 const file = readFileSync(FILE)
+const generatedOnce = generateVrmaBytes()
+const generatedTwice = generateVrmaBytes()
+
+assert.deepEqual(
+  generatedOnce,
+  generatedTwice,
+  'VRMA generation is byte-for-byte deterministic in memory',
+)
+assert.deepEqual(
+  generatedOnce,
+  new Uint8Array(file.buffer, file.byteOffset, file.byteLength),
+  'committed VRMA matches deterministic generator output',
+)
+
 const view = new DataView(file.buffer, file.byteOffset, file.byteLength)
 
 assert.equal(canStartVrmAction('attack', 0.2, 'attack'), false, 'attack blocks early retrigger')
