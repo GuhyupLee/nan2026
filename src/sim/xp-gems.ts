@@ -13,6 +13,8 @@ export const XP_GEM_PICKUP_RADIUS = 1.2
 export const XP_GEM_MAGNET_RADIUS = 16
 /** Movement speed of an attracted gem in world units per second. */
 export const XP_GEM_ATTRACT_SPEED = 24
+/** Off-route XP eventually comes home so kiting never deletes progression. */
+export const XP_GEM_STALE_ATTRACT_AFTER = 20
 
 /**
  * Renderer-facing XP gem state.
@@ -28,6 +30,8 @@ export interface XpGemPool {
   prevY: Float32Array
   value: Float32Array
   attracted: Uint8Array
+  /** Seconds since drop; used only for the forgiving stale-gem latch. */
+  age: Float32Array
 }
 
 export function createXpGemPool(capacity = MAX_XP_GEMS): XpGemPool {
@@ -40,6 +44,7 @@ export function createXpGemPool(capacity = MAX_XP_GEMS): XpGemPool {
     prevY: new Float32Array(size),
     value: new Float32Array(size),
     attracted: new Uint8Array(size),
+    age: new Float32Array(size),
   }
 }
 
@@ -54,6 +59,7 @@ export function resetXpGemPool(pool: XpGemPool): void {
   pool.prevY.fill(0)
   pool.value.fill(0)
   pool.attracted.fill(0)
+  pool.age.fill(0)
 }
 
 /**
@@ -87,6 +93,7 @@ export function dropXpGem(
     pool.prevY[i] = y
     pool.value[i] = value
     pool.attracted[i] = 0
+    pool.age[i] = 0
     return true
   }
 
@@ -120,7 +127,8 @@ export function stepXpGems(
 ): number {
   const pickupRadiusSquared = XP_GEM_PICKUP_RADIUS * XP_GEM_PICKUP_RADIUS
   const magnetRadiusSquared = XP_GEM_MAGNET_RADIUS * XP_GEM_MAGNET_RADIUS
-  const travel = Number.isFinite(dt) && dt > 0 ? XP_GEM_ATTRACT_SPEED * dt : 0
+  const elapsed = Number.isFinite(dt) && dt > 0 ? dt : 0
+  const travel = XP_GEM_ATTRACT_SPEED * elapsed
   let collected = 0
 
   for (let i = pool.count - 1; i >= 0; i -= 1) {
@@ -128,6 +136,7 @@ export function stepXpGems(
     const y = pool.y[i]!
     pool.prevX[i] = x
     pool.prevY[i] = y
+    pool.age[i] = pool.age[i]! + elapsed
 
     const dx = playerX - x
     const dy = playerY - y
@@ -140,7 +149,9 @@ export function stepXpGems(
 
     if (
       pool.attracted[i] === 0 &&
-      (forceAttract || distanceSquared <= magnetRadiusSquared)
+      (forceAttract ||
+        pool.age[i]! >= XP_GEM_STALE_ATTRACT_AFTER ||
+        distanceSquared <= magnetRadiusSquared)
     ) {
       pool.attracted[i] = 1
     }
@@ -170,6 +181,7 @@ function removeXpGem(pool: XpGemPool, index: number): void {
     pool.prevY[index] = pool.prevY[last]!
     pool.value[index] = pool.value[last]!
     pool.attracted[index] = pool.attracted[last]!
+    pool.age[index] = pool.age[last]!
   }
   pool.count = last
 }

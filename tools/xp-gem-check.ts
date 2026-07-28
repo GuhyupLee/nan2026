@@ -9,6 +9,7 @@ import {
   MAX_XP_GEMS,
   XP_GEM_ATTRACT_SPEED,
   XP_GEM_MAGNET_RADIUS,
+  XP_GEM_STALE_ATTRACT_AFTER,
   createXpGemPool,
   dropXpGem,
   resetXpGemPool,
@@ -40,6 +41,7 @@ function totalValue(pool: XpGemPool): number {
   assert.equal(pool.prevY[0], -2)
   assert.equal(pool.value[0], 4)
   assert.equal(pool.attracted[0], 0)
+  assert.equal(pool.age[0], 0)
   assert.equal(dropXpGem(pool, 0, 0, 0), false)
   assert.equal(pool.count, 1)
 }
@@ -70,6 +72,21 @@ function totalValue(pool: XpGemPool): number {
   stepXpGems(outside, 0, 0, 0.1)
   assert.equal(outside.x[0], XP_GEM_MAGNET_RADIUS + 1)
   assert.equal(outside.attracted[0], 0)
+}
+
+// A gem abandoned outside the normal magnet radius eventually latches instead
+// of deleting progression for players who kite away from a kill.
+{
+  const pool = createXpGemPool()
+  const start = XP_GEM_MAGNET_RADIUS + 10
+  dropXpGem(pool, start, 0, 3)
+  stepXpGems(pool, 0, 0, XP_GEM_STALE_ATTRACT_AFTER - DT)
+  assert.equal(pool.attracted[0], 0)
+  assert.equal(pool.x[0], start)
+
+  stepXpGems(pool, 0, 0, DT)
+  assert.equal(pool.attracted[0], 1)
+  assert.ok(pool.x[0]! < start)
 }
 
 // Pickup consumes the gem exactly once and returns its raw XP.
@@ -113,6 +130,7 @@ function totalValue(pool: XpGemPool): number {
   const pool = createXpGemPool(4)
   const xStorage = pool.x
   const attractedStorage = pool.attracted
+  const ageStorage = pool.age
   dropXpGem(pool, 5, 0, 3)
   stepXpGems(pool, 0, 0, 0)
   assert.equal(pool.attracted[0], 1)
@@ -121,9 +139,11 @@ function totalValue(pool: XpGemPool): number {
   assert.equal(pool.count, 0)
   assert.strictEqual(pool.x, xStorage)
   assert.strictEqual(pool.attracted, attractedStorage)
+  assert.strictEqual(pool.age, ageStorage)
   assert.deepEqual(Array.from(pool.x), [0, 0, 0, 0])
   assert.deepEqual(Array.from(pool.value), [0, 0, 0, 0])
   assert.deepEqual(Array.from(pool.attracted), [0, 0, 0, 0])
+  assert.deepEqual(Array.from(pool.age), [0, 0, 0, 0])
 
   dropXpGem(pool, -3, 2, 6)
   assert.equal(pool.count, 1)
@@ -131,6 +151,7 @@ function totalValue(pool: XpGemPool): number {
   assert.equal(pool.prevY[0], 2)
   assert.equal(pool.value[0], 6)
   assert.equal(pool.attracted[0], 0)
+  assert.equal(pool.age[0], 0)
 }
 
 // Enemy death creates a world drop instead of granting XP. Collection applies
@@ -194,6 +215,7 @@ function totalValue(pool: XpGemPool): number {
   assert.deepEqual(a.prevY, b.prevY)
   assert.deepEqual(a.value, b.value)
   assert.deepEqual(a.attracted, b.attracted)
+  assert.deepEqual(a.age, b.age)
 }
 
 console.log('xp-gem-check: ok')
