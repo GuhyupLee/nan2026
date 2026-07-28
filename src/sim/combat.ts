@@ -1,7 +1,7 @@
 import { emitActionStart } from './actions.ts'
 import { DT } from './constants.ts'
 import { damageEnemy } from './damage.ts'
-import { ENEMY_TYPES, type EnemyPool } from './enemies.ts'
+import { ENEMY_TYPES, MAX_ENEMIES, type EnemyPool } from './enemies.ts'
 import { tryEmpoweredAttack } from './kits.ts'
 import { upgradeTraitToken } from './progression.ts'
 import type { SpatialHash } from './spatial.ts'
@@ -12,19 +12,56 @@ import type { TracerEvent, World } from './types.ts'
 const ATTACK_WIDTH = 0.35
 const CONE_HALF = 0.96
 const BIG_TARGET_DISCOUNT = 0.72
+const RANGED_CLUSTER_RADIUS = 2.6
+const RANGED_CLUSTER_RADIUS_SQ = RANGED_CLUSTER_RADIUS * RANGED_CLUSTER_RADIUS
+const RANGED_CLUSTER_MAX_NEIGHBORS = 4
+const RANGED_CLUSTER_SCORE_WEIGHT = 0.22
+const RANGED_CLUSTER_DISTANCE_WINDOW = 1.02
 const hitBuf: number[] = []
+const clusterBuf = new Int32Array(MAX_ENEMIES)
 
 function hasTrait(world: World, trait: string): boolean {
   return world.upgradesTaken.has(upgradeTraitToken(trait))
 }
 
+/**
+ * 원거리 평타가 고립된 한 마리보다 가까운 무리를 향하게 할 밀집도다.
+ *
+ * 공간 해시 질의 결과는 현재 좌표로 다시 좁히며, 버퍼와 결과를 모두 재사용해
+ * 자동 공격·표적 링이 갱신될 때 쓰레기 객체를 만들지 않는다.
+ */
+function nearbyEnemyCount(
+  pool: EnemyPool,
+  hash: SpatialHash,
+  source: number,
+): number {
+  const x = pool.x[source]!
+  const y = pool.y[source]!
+  const count = hash.query(x, y, RANGED_CLUSTER_RADIUS, clusterBuf)
+  let nearby = 0
+
+  for (let k = 0; k < count; k++) {
+    const i = clusterBuf[k]!
+    if (i === source || i >= pool.count || pool.hp[i]! <= 0) continue
+    const dx = pool.x[i]! - x
+    const dy = pool.y[i]! - y
+    if (dx * dx + dy * dy > RANGED_CLUSTER_RADIUS_SQ) continue
+    nearby += 1
+    if (nearby >= RANGED_CLUSTER_MAX_NEIGHBORS) break
+  }
+
+  return nearby
+}
+
 export function pickAutoAttackTarget(
   pool: EnemyPool,
+  hash: SpatialHash,
   px: number,
   py: number,
   aimX: number,
   aimY: number,
   range: number,
+  preferCluster = false,
 ): number {
   let ax = aimX - px
   let ay = aimY - py
@@ -37,13 +74,13 @@ export function pickAutoAttackTarget(
     ay = 0
   }
 
-  let inCone = -1
-  let coneScore = Infinity
-  let anyNear = -1
-  let anyScore = Infinity
+  let nearestConeScore = Infinity
+  let nearestScore = Infinity
   const r2 = range * range
   const cosCone = Math.cos(CONE_HALF)
 
+  // 먼저 기존 규칙의 최근접 점수를 구한다. 군집 보정은 이 점수와 가까운
+  // 후보끼리만 경쟁시켜, 먼 대군이 바로 옆 위협이나 보스 조준을 빼앗지 않는다.
   for (let i = 0; i < pool.count; i++) {
     if (pool.hp[i]! <= 0) continue
 
@@ -54,20 +91,46 @@ export function pickAutoAttackTarget(
 
     const big = ENEMY_TYPES[pool.type[i]!]!.radius >= 0.6
     const score = big ? d2 * BIG_TARGET_DISCOUNT : d2
-    if (score < anyScore) {
-      anyScore = score
-      anyNear = i
-    }
+    if (score < nearestScore) nearestScore = score
 
     const d = Math.sqrt(d2)
     if (d > 1e-6 && (dx / d) * ax + (dy / d) * ay < cosCone) continue
-    if (score < coneScore) {
-      coneScore = score
-      inCone = i
+    if (score < nearestConeScore) nearestConeScore = score
+  }
+
+  const useCone = Number.isFinite(nearestConeScore)
+  const baseLimit =
+    (useCone ? nearestConeScore : nearestScore) *
+    (preferCluster ? RANGED_CLUSTER_DISTANCE_WINDOW : 1)
+  let target = -1
+  let targetScore = Infinity
+
+  for (let i = 0; i < pool.count; i++) {
+    if (pool.hp[i]! <= 0) continue
+
+    const dx = pool.x[i]! - px
+    const dy = pool.y[i]! - py
+    const d2 = dx * dx + dy * dy
+    if (d2 > r2) continue
+
+    if (useCone) {
+      const d = Math.sqrt(d2)
+      if (d > 1e-6 && (dx / d) * ax + (dy / d) * ay < cosCone) continue
+    }
+
+    const big = ENEMY_TYPES[pool.type[i]!]!.radius >= 0.6
+    let score = big ? d2 * BIG_TARGET_DISCOUNT : d2
+    if (score > baseLimit) continue
+    if (preferCluster) {
+      score /= 1 + nearbyEnemyCount(pool, hash, i) * RANGED_CLUSTER_SCORE_WEIGHT
+    }
+    if (score < targetScore) {
+      targetScore = score
+      target = i
     }
   }
 
-  return inCone >= 0 ? inCone : anyNear
+  return target
 }
 
 function distSqToSegment(
@@ -267,7 +330,7 @@ function resolveAutoAttack(
 export function stepAutoAttack(
   world: World,
   pool: EnemyPool,
-  _hash: SpatialHash,
+  hash: SpatialHash,
   tracers: TracerEvent[],
 ): number {
   const p = world.player
@@ -282,13 +345,22 @@ export function stepAutoAttack(
     return 0
   }
 
+  // 틱 맨 앞의 해시는 이후 적 이동·신규 스폰을 아직 반영하지 않는다.
+  // 군집 점수를 쓰는 원거리만 발사 직전에 갱신해 실제 화면의 무리를 센다.
+  // 보스전에서는 조준한 단일 위협을 잡몹 무리가 빼앗지 않게 기존 규칙으로
+  // 돌아간다. 군집 최적화는 일반 웨이브를 관통해 정리할 때만 필요하다.
+  const preferCluster = world.playerClass === 'ranged' && !world.boss.active
+  if (preferCluster) hash.rebuild(pool.count, pool.x, pool.y)
+
   const target = pickAutoAttackTarget(
     pool,
+    hash,
     p.pos.x,
     p.pos.y,
     world.lastAim.x,
     world.lastAim.y,
     s.atkRange,
+    preferCluster,
   )
   if (target < 0) return 0
 

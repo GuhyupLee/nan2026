@@ -20,6 +20,7 @@ import {
   PLAYER_ACTION_TIMING,
   playerActionTiming,
 } from '../src/sim/action-timing.ts'
+import { pickAutoAttackTarget } from '../src/sim/combat.ts'
 import { MAX_DAMAGE_FEEDBACK, damageEnemy } from '../src/sim/damage.ts'
 import { castSkill } from '../src/sim/kits.ts'
 import {
@@ -35,6 +36,7 @@ import {
   TYPE_ELITE,
   TYPE_WALKER,
   bossPhaseAt,
+  createEnemyHash,
   createEnemyPool,
   enemyHealthMultiplier,
   removeEnemy,
@@ -772,6 +774,107 @@ console.log('\nsim smoke check\n')
     started && immediateHit && w.enemies.hp[0]! < hpBefore && w.playerAction === null,
   )
   check('평타 중에도 이동 입력이 유지된다', w.player.pos.x > 0)
+}
+
+// --- 원거리 자동 평타는 조준 방향 안의 가까운 군집을 고른다 ---
+{
+  const pool = createEnemyPool()
+  const rng = createRng(801)
+  const hash = createEnemyHash()
+  const add = (x: number, y: number): number => {
+    spawnEnemy(pool, rng, 0, 0, TYPE_WALKER)
+    const i = pool.count - 1
+    pool.x[i] = x
+    pool.y[i] = y
+    pool.prevX[i] = x
+    pool.prevY[i] = y
+    return i
+  }
+  const pick = (preferCluster: boolean): number =>
+    pickAutoAttackTarget(pool, hash, 0, 0, 15, 0, 15, preferCluster)
+
+  // 가장 가까운 한 마리도 cone 안에 두되 군집과는 밀집 반경 밖에 둔다.
+  const isolated = add(Math.cos(0.9) * 4, Math.sin(0.9) * 4)
+  const clusterCenter = add(4.02, 0)
+  const clusterTop = add(4.02, 0.75)
+  const clusterBottom = add(4.02, -0.75)
+  hash.rebuild(pool.count, pool.x, pool.y)
+
+  check(
+    '원거리 평타는 조금 더 먼 가까운 군집의 중심을 우선한다',
+    pick(true) === clusterCenter,
+    `target=${pick(true)} center=${clusterCenter}`,
+  )
+  check(
+    '근접 평타의 기존 최근접 선택은 군집 보정 없이 유지된다',
+    pick(false) === isolated,
+    `target=${pick(false)} isolated=${isolated}`,
+  )
+
+  let deterministic = true
+  for (let attempt = 0; attempt < 64; attempt += 1) {
+    hash.rebuild(pool.count, pool.x, pool.y)
+    if (pick(true) !== clusterCenter) deterministic = false
+  }
+  check('군집 타기팅은 반복 호출·해시 재구축에도 결정론적이다', deterministic)
+
+  pool.hp[clusterTop] = 0
+  pool.hp[clusterBottom] = 0
+  hash.rebuild(pool.count, pool.x, pool.y)
+  check(
+    '죽은 적은 표적과 군집 밀집도에서 모두 제외된다',
+    pick(true) === isolated,
+    `target=${pick(true)} isolated=${isolated}`,
+  )
+}
+
+{
+  const pool = createEnemyPool()
+  const rng = createRng(802)
+  const hash = createEnemyHash()
+  const add = (x: number, y: number): number => {
+    spawnEnemy(pool, rng, 0, 0, TYPE_WALKER)
+    const i = pool.count - 1
+    pool.x[i] = x
+    pool.y[i] = y
+    return i
+  }
+
+  const close = add(Math.cos(0.8) * 3.5, Math.sin(0.8) * 3.5)
+  add(7, 0)
+  add(7, 0.65)
+  add(7, -0.65)
+  add(7.65, 0)
+  add(6.35, 0)
+  hash.rebuild(pool.count, pool.x, pool.y)
+  check(
+    '멀리 있는 큰 군집은 훨씬 가까운 단독 표적을 밀어내지 않는다',
+    pickAutoAttackTarget(pool, hash, 0, 0, 15, 0, 15, true) === close,
+  )
+}
+
+{
+  const pool = createEnemyPool()
+  const rng = createRng(803)
+  const hash = createEnemyHash()
+  const add = (x: number, y: number): number => {
+    spawnEnemy(pool, rng, 0, 0, TYPE_WALKER)
+    const i = pool.count - 1
+    pool.x[i] = x
+    pool.y[i] = y
+    return i
+  }
+
+  const inCone = add(5, 0)
+  add(0, 4.5)
+  add(0.65, 4.5)
+  add(-0.65, 4.5)
+  add(0, 5.15)
+  hash.rebuild(pool.count, pool.x, pool.y)
+  check(
+    '조준 cone 밖 군집은 cone 안 표적보다 우선하지 않는다',
+    pickAutoAttackTarget(pool, hash, 0, 0, 15, 0, 15, true) === inCone,
+  )
 }
 
 // --- 스킬 중 평타 판정은 유지하되 평타 모션 이벤트는 숨긴다 ---

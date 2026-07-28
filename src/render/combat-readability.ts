@@ -13,6 +13,7 @@ import {
   TYPE_ELITE,
   bossCycleTime,
   bossPhaseAt,
+  createEnemyHash,
 } from '../sim/enemies.ts'
 import type { World } from '../sim/types.ts'
 import { lerp } from '../sim/vec.ts'
@@ -130,6 +131,7 @@ export class CombatReadabilityFx {
   private readonly quaternion = new THREE.Quaternion()
   private readonly scale = new THREE.Vector3()
   private readonly axisY = new THREE.Vector3(0, 1, 0)
+  private readonly targetHash = createEnemyHash()
 
   constructor(scene: THREE.Scene) {
     this.scene = scene
@@ -219,13 +221,23 @@ export class CombatReadabilityFx {
   }
 
   update(world: World, alpha: number): void {
+    const preferCluster = world.playerClass === 'ranged' && !world.boss.active
+    if (preferCluster) {
+      this.targetHash.rebuild(
+        world.enemies.count,
+        world.enemies.x,
+        world.enemies.y,
+      )
+    }
     const target = pickAutoAttackTarget(
       world.enemies,
+      this.targetHash,
       world.player.pos.x,
       world.player.pos.y,
       world.lastAim.x,
       world.lastAim.y,
       world.stats.atkRange,
+      preferCluster,
     )
     this.drawRings(world, alpha, target)
     this.drawHealthBars(world, alpha, target)
