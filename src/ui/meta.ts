@@ -2,6 +2,7 @@ import { trapFocus } from './focus-trap.ts'
 import {
   META_DOCTRINES,
   META_DOCTRINE_SLOT_MAX,
+  META_STATS,
   META_STAT_RANK_MAX,
   META_UNLOCKS,
   isMetaDoctrineId,
@@ -9,12 +10,13 @@ import {
   isMetaUnlockActive,
   loadMetaProgress,
   metaStatCost,
+  metaStatRank,
   purchaseMetaItem,
   toggleMetaDoctrine,
   type MetaDoctrineId,
   type MetaProgress,
   type MetaPurchaseId,
-  type MetaStatId,
+  type MetaStatDef,
   type MetaUnlockDef,
 } from './meta-progression.ts'
 
@@ -31,13 +33,11 @@ function formatMoonlight(value: number): string {
 }
 
 function statRow(
-  id: MetaStatId,
-  name: string,
-  currentValue: string,
-  nextEffect: string,
-  rank: number,
+  stat: MetaStatDef,
   progress: MetaProgress,
 ): string {
+  const { id, name } = stat
+  const rank = metaStatRank(progress, id)
   const cost = metaStatCost(id, rank)
   const affordable = cost !== null && progress.moonlight >= cost
   const shortage = cost === null ? 0 : Math.max(0, cost - progress.moonlight)
@@ -53,8 +53,8 @@ function statRow(
     `<article class="meta-stat-row" data-purchase-state="${
       cost === null ? 'complete' : affordable ? 'affordable' : 'shortage'
     }">` +
-    `<div class="meta-row-copy"><header><strong>${name}</strong><b>${currentValue}</b></header>` +
-    `<p>${cost === null ? '강화 완료' : `다음 단계 · ${nextEffect}`}</p>` +
+    `<div class="meta-row-copy"><header><strong>${name}</strong><b>${stat.currentEffect(rank)}</b></header>` +
+    `<p>${cost === null ? '강화 완료' : `${stat.summary} 다음 · ${stat.nextEffect(rank)}`}</p>` +
     `<div class="meta-rank" role="img" aria-label="${name} ${rank}/${META_STAT_RANK_MAX}">` +
     `${progressPips(rank)}</div></div>${action}</article>`
   )
@@ -130,8 +130,8 @@ function doctrineCard(progress: MetaProgress, id: MetaDoctrineId): string {
 }
 
 function purchaseName(id: MetaPurchaseId): string {
-  if (id === 'vitality') return '월맥'
-  if (id === 'stride') return '월보'
+  const stat = META_STATS.find((candidate) => candidate.id === id)
+  if (stat) return stat.name
   if (isMetaDoctrineId(id)) {
     return META_DOCTRINES.find((doctrine) => doctrine.id === id)?.name ?? '전승 경로'
   }
@@ -146,10 +146,10 @@ function purchaseFailureMessage(
   progress: MetaProgress,
 ): string {
   const name = purchaseName(id)
-  if (id === 'vitality' || id === 'stride') {
-    const rank =
-      id === 'vitality' ? progress.vitalityRank : progress.strideRank
-    const cost = metaStatCost(id, rank)
+  const stat = META_STATS.find((candidate) => candidate.id === id)
+  if (stat) {
+    const rank = metaStatRank(progress, stat.id)
+    const cost = metaStatCost(stat.id, rank)
     if (cost === null) return `${name} · 최대 단계`
     return `${name} · 월광 ${formatMoonlight(Math.max(0, cost - progress.moonlight))} 부족`
   }
@@ -232,9 +232,10 @@ export function showMetaProgress(parent: HTMLElement): Promise<MetaProgress> {
         `<header class="meta-heading">` +
         `<div class="meta-brand"><img src="${import.meta.env.BASE_URL}art/myeongwol-mark.webp" alt="">` +
         `<div><h2 id="meta-title">월광 전승</h2>` +
-        `<p id="meta-intro">다음 판에 가져갈 전승 경로를 두 개까지 고르세요.</p></div></div>` +
+        `<p id="meta-intro">전투 점수 75점마다 월광 1개를 얻습니다. 영구 강화와 전승 빌드에 투자하세요.</p></div></div>` +
         `<div class="meta-heading-actions"><div class="meta-currency">` +
         `<span><small>월광</small><strong>${formatMoonlight(progress.moonlight)}</strong></span>` +
+        `<span><small>누적 점수</small><strong>${formatMoonlight(progress.lifetimeScore)}</strong></span>` +
         `<span><small>장착</small><strong>${equipped}/${META_DOCTRINE_SLOT_MAX}</strong></span></div>` +
         `<button class="meta-close" type="button" aria-label="월광 전승 닫기">닫기 <kbd>ESC</kbd></button>` +
         `</div></header>` +
@@ -248,24 +249,9 @@ export function showMetaProgress(parent: HTMLElement): Promise<MetaProgress> {
         `<div class="meta-lower-grid">` +
         `<section class="meta-section meta-ledger-section" aria-labelledby="meta-stats-title">` +
         `<header><div><h3 id="meta-stats-title">시작 능력</h3>` +
-        `<p>모든 전투에 적용됩니다.</p></div></header>` +
+        `<p>8개 계통 · 40단계가 모든 전투에 적용됩니다.</p></div></header>` +
         `<div class="meta-stat-list">` +
-        statRow(
-          'vitality',
-          '월맥',
-          `최대 체력 +${progress.vitalityRank * 3}`,
-          '최대 체력 +3',
-          progress.vitalityRank,
-          progress,
-        ) +
-        statRow(
-          'stride',
-          '월보',
-          `이동 속도 +${progress.strideRank}%`,
-          '이동 속도 +1%',
-          progress.strideRank,
-          progress,
-        ) +
+        META_STATS.map((stat) => statRow(stat, progress)).join('') +
         `</div></section>` +
         `<section class="meta-section meta-ledger-section" aria-labelledby="meta-unlocks-title">` +
         `<header><div><h3 id="meta-unlocks-title">카드 해금</h3>` +
@@ -273,8 +259,8 @@ export function showMetaProgress(parent: HTMLElement): Promise<MetaProgress> {
         `<div class="meta-unlock-list">${META_UNLOCKS.map((unlock) =>
           unlockRow(progress, unlock),
         ).join('')}</div></section></div>` +
-        `<footer class="meta-footer"><span>누적 처치 ${progress.lifetimeKills.toLocaleString('ko-KR')} · ` +
-        `보스 격파 ${progress.bossWins}</span>` +
+        `<footer class="meta-footer"><span>완료한 런 ${progress.completedRuns.toLocaleString('ko-KR')} · ` +
+        `누적 처치 ${progress.lifetimeKills.toLocaleString('ko-KR')} · 보스 격파 ${progress.bossWins}</span>` +
         `<button class="menu-button primary meta-back" type="button"><span>메뉴로</span></button></footer>`
 
       for (const button of content.querySelectorAll<HTMLButtonElement>(

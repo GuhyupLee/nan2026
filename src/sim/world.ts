@@ -72,9 +72,16 @@ import { length, lerpAngle, vec2 } from './vec.ts'
 import { createXpGemPool, stepXpGems } from './xp-gems.ts'
 
 const EMPTY_RUN_META: RunMetaSnapshot = {
-  version: 1,
+  version: 2,
   maxHpBonus: 0,
   speedMultiplier: 1,
+  damageMultiplier: 1,
+  cooldownMultiplier: 1,
+  damageTakenMultiplier: 1,
+  pickupRadiusMultiplier: 1,
+  healingMultiplier: 1,
+  xpMultiplier: 1,
+  rerolls: 0,
   unlockedUpgradeIds: [],
 }
 
@@ -86,6 +93,17 @@ function normalizeRunConfig(config?: Partial<RunConfig>): RunConfig {
   const speedMultiplier = Number.isFinite(source.speedMultiplier)
     ? source.speedMultiplier
     : 1
+  const finiteMultiplier = (
+    value: number | undefined,
+    min: number,
+    max: number,
+  ): number =>
+    Number.isFinite(value)
+      ? Math.max(min, Math.min(max, value!))
+      : 1
+  const rerolls = Number.isFinite(source.rerolls)
+    ? Math.max(0, Math.min(3, Math.floor(source.rerolls!)))
+    : 0
   const unlockedUpgradeIds = Array.from(
     new Set(
       source.unlockedUpgradeIds.filter(
@@ -97,9 +115,32 @@ function normalizeRunConfig(config?: Partial<RunConfig>): RunConfig {
   return {
     difficulty: config?.difficulty === 'hard' ? 'hard' : 'normal',
     meta: {
-      version: 1,
+      version: 2,
       maxHpBonus: Math.max(0, Math.min(30, maxHpBonus)),
       speedMultiplier: Math.max(1, Math.min(1.12, speedMultiplier)),
+      damageMultiplier: finiteMultiplier(source.damageMultiplier, 1, 1.2),
+      cooldownMultiplier: finiteMultiplier(
+        source.cooldownMultiplier,
+        0.9,
+        1,
+      ),
+      damageTakenMultiplier: finiteMultiplier(
+        source.damageTakenMultiplier,
+        0.88,
+        1,
+      ),
+      pickupRadiusMultiplier: finiteMultiplier(
+        source.pickupRadiusMultiplier,
+        1,
+        1.5,
+      ),
+      healingMultiplier: finiteMultiplier(
+        source.healingMultiplier,
+        1,
+        1.5,
+      ),
+      xpMultiplier: finiteMultiplier(source.xpMultiplier, 1, 1.25),
+      rerolls,
       unlockedUpgradeIds,
     },
   }
@@ -162,7 +203,11 @@ export function createWorld(
     victoryAt: -1,
     metaAwardedKills: 0,
     metaAwardedMoonlight: 0,
+    metaAwardedScore: 0,
+    metaRunRecorded: false,
     metaVictoryAwarded: false,
+    upgradeRerollsRemaining: runConfig.meta.rerolls ?? 0,
+    upgradeRerollsUsed: 0,
     stats,
     player,
     playerAction: null,
@@ -569,7 +614,8 @@ export function grantXp(world: World, amount: number): void {
     world.progression.level,
     world.time,
   )
-  const scaledAmount = amount * classMultiplier * pacingMultiplier
+  const scaledAmount =
+    amount * classMultiplier * pacingMultiplier * world.stats.xpGainMul
   if (world.endless && world.progression.level >= MAX_LEVEL) {
     world.endlessXp += scaledAmount
     while (world.endlessXp >= 420) {

@@ -165,7 +165,7 @@ function sanitizeBuild(value: unknown): RunBuildSummaryV1 | null {
   if (typeof build.meta === 'object' && build.meta !== null) {
     const rawMeta = build.meta as Partial<RunMetaSnapshot>
     if (
-      rawMeta.version === 1 &&
+      (rawMeta.version === 1 || rawMeta.version === 2) &&
       finiteNumber(rawMeta.maxHpBonus) &&
       rawMeta.maxHpBonus >= 0 &&
       rawMeta.maxHpBonus <= 30 &&
@@ -174,9 +174,51 @@ function sanitizeBuild(value: unknown): RunBuildSummaryV1 | null {
       rawMeta.speedMultiplier <= 1.12
     ) {
       meta = {
-        version: 1,
+        version: rawMeta.version,
         maxHpBonus: rawMeta.maxHpBonus,
         speedMultiplier: rawMeta.speedMultiplier,
+        damageMultiplier:
+          finiteNumber(rawMeta.damageMultiplier) &&
+          rawMeta.damageMultiplier >= 1 &&
+          rawMeta.damageMultiplier <= 1.2
+            ? rawMeta.damageMultiplier
+            : 1,
+        cooldownMultiplier:
+          finiteNumber(rawMeta.cooldownMultiplier) &&
+          rawMeta.cooldownMultiplier >= 0.9 &&
+          rawMeta.cooldownMultiplier <= 1
+            ? rawMeta.cooldownMultiplier
+            : 1,
+        damageTakenMultiplier:
+          finiteNumber(rawMeta.damageTakenMultiplier) &&
+          rawMeta.damageTakenMultiplier >= 0.88 &&
+          rawMeta.damageTakenMultiplier <= 1
+            ? rawMeta.damageTakenMultiplier
+            : 1,
+        pickupRadiusMultiplier:
+          finiteNumber(rawMeta.pickupRadiusMultiplier) &&
+          rawMeta.pickupRadiusMultiplier >= 1 &&
+          rawMeta.pickupRadiusMultiplier <= 1.5
+            ? rawMeta.pickupRadiusMultiplier
+            : 1,
+        healingMultiplier:
+          finiteNumber(rawMeta.healingMultiplier) &&
+          rawMeta.healingMultiplier >= 1 &&
+          rawMeta.healingMultiplier <= 1.5
+            ? rawMeta.healingMultiplier
+            : 1,
+        xpMultiplier:
+          finiteNumber(rawMeta.xpMultiplier) &&
+          rawMeta.xpMultiplier >= 1 &&
+          rawMeta.xpMultiplier <= 1.25
+            ? rawMeta.xpMultiplier
+            : 1,
+        rerolls:
+          finiteNumber(rawMeta.rerolls) &&
+          rawMeta.rerolls >= 0 &&
+          rawMeta.rerolls <= 3
+            ? Math.floor(rawMeta.rerolls)
+            : 0,
         unlockedUpgradeIds: sanitizeIdList(rawMeta.unlockedUpgradeIds),
       }
     }

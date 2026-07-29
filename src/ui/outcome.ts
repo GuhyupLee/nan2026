@@ -10,6 +10,7 @@ import {
 import {
   META_UNLOCKS,
   awardMetaRun,
+  scoreToMoonlight,
 } from './meta-progression.ts'
 
 export type GameOutcome = Exclude<World['outcome'], 'alive'>
@@ -173,21 +174,27 @@ export function showOutcome(
     let outcomeDetails: HTMLDetailsElement | null = null
     if (world) {
       const s = computeScore(world)
-      const targetMoonlight = Math.floor(s.total / 100)
+      const targetMoonlight = scoreToMoonlight(s.total)
       const moonlightEarned = Math.max(
         0,
         targetMoonlight - world.metaAwardedMoonlight,
       )
+      const scoreEarned = Math.max(0, s.total - world.metaAwardedScore)
       const killsEarned = Math.max(0, world.kills - world.metaAwardedKills)
       const bossWinEarned =
         outcome === 'victory' && !world.metaVictoryAwarded ? 1 : 0
+      const runEarned = world.metaRunRecorded ? 0 : 1
       const metaAward = awardMetaRun({
         moonlight: moonlightEarned,
         kills: killsEarned,
         bossWins: bossWinEarned,
+        score: scoreEarned,
+        runs: runEarned,
       })
       world.metaAwardedMoonlight += moonlightEarned
       world.metaAwardedKills += killsEarned
+      world.metaAwardedScore += scoreEarned
+      world.metaRunRecorded ||= runEarned > 0
       world.metaVictoryAwarded ||= bossWinEarned > 0
       const at = Date.now()
       const build = createRunBuildSummary(world)
@@ -252,8 +259,8 @@ export function showOutcome(
       legacy.className = 'meta-run-reward'
       legacy.setAttribute('aria-label', '월광 전승 보상')
       legacy.innerHTML =
-        `<div><span>획득 월광</span><strong>+${moonlightEarned.toLocaleString('ko-KR')}</strong></div>` +
-        `<p>보유 월광 ${metaAward.progress.moonlight.toLocaleString('ko-KR')}` +
+        `<div><span>점수 환산 월광</span><strong>+${moonlightEarned.toLocaleString('ko-KR')}</strong></div>` +
+        `<p>점수 75 = 월광 1 · 보유 ${metaAward.progress.moonlight.toLocaleString('ko-KR')}` +
         (unlockedNames.length > 0
           ? ` · 신규 해금 ${unlockedNames.join(' · ')}`
           : '') +

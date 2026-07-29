@@ -57,9 +57,23 @@ export type PlayerClass = 'ranged' | 'melee'
  * localStorage를 읽지 않으며, 같은 스냅샷·시드·입력이면 같은 결과를 낸다.
  */
 export interface RunMetaSnapshot {
-  version: 1
+  version: 1 | 2
   maxHpBonus: number
   speedMultiplier: number
+  /** 모든 기본 공격과 스킬 피해에 적용되는 영구 전승 배수. */
+  damageMultiplier?: number
+  /** QWER·D·F 재사용 대기시간에 적용되는 영구 전승 배수. */
+  cooldownMultiplier?: number
+  /** 플레이어가 받는 피해에 적용되는 영구 전승 배수. */
+  damageTakenMultiplier?: number
+  /** XP 보석과 전장 아이템 획득 범위 배수. */
+  pickupRadiusMultiplier?: number
+  /** D 회복과 전장 회복 아이템에 적용되는 배수. */
+  healingMultiplier?: number
+  /** 획득 XP 배수. */
+  xpMultiplier?: number
+  /** 일반 강화 선택에서 사용할 수 있는 런당 재굴림 횟수. */
+  rerolls?: number
   unlockedUpgradeIds: readonly string[]
 }
 
@@ -341,7 +355,11 @@ export interface World {
   /** 결과 UI가 같은 런의 보상을 두 번 지급하지 않게 하는 외부 저장 체크포인트. */
   metaAwardedKills: number
   metaAwardedMoonlight: number
+  metaAwardedScore: number
+  metaRunRecorded: boolean
   metaVictoryAwarded: boolean
+  upgradeRerollsRemaining: number
+  upgradeRerollsUsed: number
   /** 강화 카드가 건드리는 런타임 스탯. 게임 코드는 상수가 아니라 이걸 읽는다. */
   stats: Stats
   player: Player

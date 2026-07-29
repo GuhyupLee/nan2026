@@ -212,6 +212,10 @@ for (const upgrade of UPGRADES) {
     'executioner-inscription',
     'guardian-inscription',
     'timekeeper-inscription',
+    'star-eater-inscription',
+    'bloodmoon-inscription',
+    'tempest-inscription',
+    'hunter-inscription',
   ] as const
   const locked = createWorld(261, 'ranged')
   for (const id of legacyIds) {
@@ -278,6 +282,37 @@ for (const upgrade of UPGRADES) {
   assert(world.skills.f.maxCooldown === fCooldown * 0.88, '시계공 F 쿨다운 효과가 다름')
   applyUpgrade(world, 'timekeeper-inscription')
   assert(world.stats.flashRange === flashRange + 2, '시계공 점멸 거리 효과가 다름')
+
+  const xpGain = world.stats.xpGainMul
+  applyUpgrade(world, 'star-eater-inscription')
+  applyUpgrade(world, 'star-eater-inscription')
+  applyUpgrade(world, 'star-eater-inscription')
+  assert(world.stats.xpGainMul === xpGain * 1.18, '별 포식 XP 효과가 다름')
+
+  const bloodDamage = world.stats.atkDamageMul
+  const bloodMaxHp = world.stats.maxHp
+  applyUpgrade(world, 'bloodmoon-inscription')
+  applyUpgrade(world, 'bloodmoon-inscription')
+  applyUpgrade(world, 'bloodmoon-inscription')
+  assert(
+    Math.abs(world.stats.atkDamageMul / bloodDamage - 1.12 * 1.18) < 1e-9,
+    '혈월 공격 피해 효과가 다름',
+  )
+  assert(world.stats.maxHp === bloodMaxHp - 15, '혈월 체력 대가가 다름')
+
+  const tempestSpeed = world.stats.speed
+  applyUpgrade(world, 'tempest-inscription')
+  applyUpgrade(world, 'tempest-inscription')
+  applyUpgrade(world, 'tempest-inscription')
+  assert(world.stats.speed === tempestSpeed * 1.07, '폭풍 이동 효과가 다름')
+
+  const hunterRange = world.stats.atkRange
+  const hunterPierce = world.stats.atkPierce
+  applyUpgrade(world, 'hunter-inscription')
+  applyUpgrade(world, 'hunter-inscription')
+  applyUpgrade(world, 'hunter-inscription')
+  assert(world.stats.atkRange === hunterRange + 1.5, '사냥패 사거리 효과가 다름')
+  assert(world.stats.atkPierce === hunterPierce + 1, '사냥패 관통 효과가 다름')
 
   const legacy = getUpgrade('wanderer-inscription')!
   const legacyRanks = [
