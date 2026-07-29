@@ -1,5 +1,11 @@
 import type { AudioSettings, GameAudio } from '../audio.ts'
 import type { InputState } from '../input.ts'
+import {
+  GLOW_MAX,
+  GLOW_MIN,
+  getGlowIntensity,
+  setGlowIntensity,
+} from '../render/glow-settings.ts'
 import { trapFocus } from './focus-trap.ts'
 
 export type PauseAction = 'resume' | 'menu'
@@ -111,7 +117,7 @@ export function showSettings(
     heading.innerHTML =
       '<div class="menu-eyebrow">게임 설정</div>' +
       '<h2 id="settings-title">설정</h2>' +
-      '<p>전투 소리와 스킬 시전 방식을 바로 조절할 수 있습니다.</p>'
+      '<p>전투 소리와 화면 밝기, 스킬 시전 방식을 바로 조절할 수 있습니다.</p>'
     panel.appendChild(heading)
 
     const fields = document.createElement('div')
@@ -197,6 +203,50 @@ export function showSettings(
       void unlockAndPreview(audio)
     })
     fields.appendChild(mute)
+
+    // 발광 강도.
+    //
+    // 이 게임은 어두운 아레나에서 발광으로 정보를 전달하는데, 한 화면에 열
+    // 개 넘게 겹치면 눈이 아프다. `prefers-reduced-motion`은 움직임만 줄여
+    // 이 축을 덮지 못하므로 별도 슬라이더를 둔다.
+    //
+    // 완전히 끄지 못하게 하한(35%)이 있다. 보스 돌진 예고선이 안 보이면
+    // 그건 접근성이 아니라 난이도 상승이다.
+    {
+      const row = document.createElement('label')
+      row.className = 'settings-volume'
+
+      const copy = document.createElement('span')
+      copy.className = 'settings-copy'
+      copy.innerHTML =
+        '<strong>발광 강도</strong>' +
+        '<small>스킬과 이펙트의 번짐, 화면이 물드는 정도를 줄입니다. ' +
+        '경고와 범위 표시는 항상 보입니다.</small>'
+
+      const output = document.createElement('output')
+      output.className = 'settings-value'
+
+      const slider = document.createElement('input')
+      slider.type = 'range'
+      slider.min = String(Math.round(GLOW_MIN * 100))
+      slider.max = String(Math.round(GLOW_MAX * 100))
+      slider.step = '5'
+      slider.value = String(Math.round(getGlowIntensity() * 100))
+      slider.setAttribute('aria-label', '발광 강도')
+
+      const apply = (): void => {
+        const next = Number(slider.value) / 100
+        output.value = `${slider.value}%`
+        // 전투 중(일시정지)에도 열리므로 즉시 반영한다. 닫을 때 적용하면
+        // 사용자는 값을 보고 고르는 게 아니라 짐작해서 고르게 된다.
+        setGlowIntensity(next)
+      }
+      apply()
+      slider.addEventListener('input', apply)
+
+      row.append(copy, output, slider)
+      fields.appendChild(row)
+    }
 
     const aimAssist = makeButton(
       'settings-toggle',

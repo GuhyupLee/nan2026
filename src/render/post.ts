@@ -147,6 +147,15 @@ export class PostFx {
   private tintPeak = 0
 
   private bloomBoost = 1
+  /**
+   * 사용자 발광 강도(0.35~1).
+   *
+   * 블룸과 화면 틴트에만 곱한다. 이펙트 자체의 발광 게인은 건드리지 않는데,
+   * 그건 후처리가 꺼진 저사양 경로에서도 스킬이 보이게 하는 값이라 낮추면
+   * 그쪽에서 이펙트가 사라진다. 여기서 줄이는 것은 **번짐과 화면 물듦**,
+   * 즉 눈이 실제로 피로해지는 성분이다.
+   */
+  private glowScale = 1
   private width = 1
   private height = 1
   private pixelRatio = 1
@@ -223,8 +232,8 @@ export class PostFx {
     this.composerPixelRatio = this.resolveComposerPixelRatio()
     this.composer.setPixelRatio(this.composerPixelRatio)
     this.updateResolutionUniforms()
-    this.bloom.strength = (q === 'low' ? BLOOM.strength * 0.75 : BLOOM.strength) * this.bloomBoost
-    this.grade.uniforms.uAberration.value = q === 'low' ? 0 : 1.6
+    this.applyBloomStrength()
+    this.applyAberration()
   }
 
   private resolveComposerPixelRatio(): number {
@@ -247,7 +256,9 @@ export class PostFx {
    */
   flash(color: number, strength: number, durationSec: number): void {
     const motionScale = this.reducedMotion.matches ? 0.45 : 1
-    strength *= motionScale
+    // 발광 강도는 틴트에도 곱한다. 피격 경고는 남아야 하므로 완전히 없애지
+    // 않고, 화면 전체가 물드는 정도만 줄인다.
+    strength *= motionScale * this.glowScale
     durationSec *= this.reducedMotion.matches ? 0.6 : 1
     // 진행 중인 틴트보다 약하면 무시한다. 연타로 화면이 계속 물들면
     // 피격 경고가 배경이 되어 오히려 정보를 잃는다.
@@ -262,8 +273,36 @@ export class PostFx {
   /** 궁극기 순간처럼 화면 전체가 밝아져야 할 때 블룸을 잠깐 키운다. */
   setBloomBoost(k: number): void {
     this.bloomBoost = Math.max(0.2, Math.min(3, k))
-    this.bloom.strength =
-      (this.quality === 'low' ? BLOOM.strength * 0.75 : BLOOM.strength) * this.bloomBoost
+    this.applyBloomStrength()
+  }
+
+  /**
+   * 사용자 발광 강도. 설정에서 슬라이더를 움직이면 즉시 반영된다.
+   *
+   * 색수차도 함께 내린다. 화면 가장자리의 색 분리는 밝은 이펙트가 겹칠 때
+   * 특히 눈에 거슬리는 성분이라, 발광을 줄이려는 사람은 그것도 원한다.
+   */
+  setGlowScale(scale: number): void {
+    this.glowScale = Math.max(0.2, Math.min(1, scale))
+    this.applyBloomStrength()
+    this.applyAberration()
+  }
+
+  /**
+   * 색수차는 품질 단계와 발광 강도 **둘 다**의 함수다.
+   *
+   * 처음에는 두 곳에서 따로 대입했는데, 그러면 나중에 불린 쪽이 다른 쪽을
+   * 덮는다. 실제로 창 크기가 바뀌어 `setQuality`가 다시 돌면 사용자가 내린
+   * 발광 설정이 조용히 원상 복귀했다. 한 함수에서만 계산한다.
+   */
+  private applyAberration(): void {
+    this.grade.uniforms.uAberration.value =
+      this.quality === 'low' ? 0 : 1.6 * this.glowScale
+  }
+
+  private applyBloomStrength(): void {
+    const base = this.quality === 'low' ? BLOOM.strength * 0.75 : BLOOM.strength
+    this.bloom.strength = base * this.bloomBoost * this.glowScale
   }
 
   /**

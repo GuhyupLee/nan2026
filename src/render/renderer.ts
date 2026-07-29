@@ -30,6 +30,7 @@ import {
 } from './characters.ts'
 import { EnemyRenderer } from './enemies.ts'
 import { MOON_DIRECTION, Sky } from './env/sky.ts'
+import { onGlowIntensityChange } from './glow-settings.ts'
 import { ImpactParticles } from './impact-particles.ts'
 import { ImpactFx } from './impact.ts'
 import { CLASS_COLORS, REWARD_COLORS } from './palette.ts'
@@ -162,6 +163,7 @@ export class Renderer {
   private readonly fog: THREE.Fog
   private readonly hemisphere: THREE.HemisphereLight
   private readonly sky: Sky
+  private releaseGlowSubscription: (() => void) | null = null
   private readonly lightRig: THREE.Group
   private readonly sun: THREE.DirectionalLight
   private readonly enemyRenderer: EnemyRenderer
@@ -391,6 +393,12 @@ export class Renderer {
     // resize()가 post.setSize를 부르기 때문에 순서가 뒤집히면 첫 호출에서
     // undefined를 건드린다.
     this.post = new PostFx(this.gl, this.scene, this.camera)
+
+    // 사용자 발광 강도. 설정 패널에서 슬라이더를 움직이면 즉시 반영된다.
+    this.releaseGlowSubscription = onGlowIntensityChange((value) => {
+      this.post.setGlowScale(value)
+      this.sky.setEnvironmentIntensity(0.72 + value * 0.28)
+    })
 
     this.resize()
     // passive: false 여야 preventDefault로 페이지 스크롤을 막을 수 있다.
@@ -1280,6 +1288,8 @@ export class Renderer {
   }
 
   dispose(): void {
+    this.releaseGlowSubscription?.()
+    this.releaseGlowSubscription = null
     this.gl.domElement.removeEventListener('wheel', this.onWheel)
     window.removeEventListener('resize', this.resize)
     this.coarsePointer.removeEventListener('change', this.resize)
