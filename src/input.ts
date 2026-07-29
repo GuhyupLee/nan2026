@@ -18,6 +18,12 @@ const SKILL_KEYS: Record<string, SkillId> = {
   KeyF: 'f',
 }
 
+const MOVEMENT_KEYS = new Set([
+  'ArrowLeft',
+  'ArrowRight',
+  'ArrowUp',
+  'ArrowDown',
+])
 const MOVE_STOP_RADIUS = 0.55
 const MOVE_SLOW_RADIUS = 2.6
 // 112px 베이스와 48px 노브 안에서 노브가 정확히 가장자리까지 움직인다.
@@ -50,8 +56,12 @@ export class InputState {
   pointerX = 0
   pointerY = 0
 
-  /** 마우스 이동 또는 터치 조이스틱이 눌려 있는가. */
+  /** 마우스 방향 고정 이동 또는 터치 조이스틱이 활성화되어 있는가. */
   pointerHeld = false
+
+  /** 마우스로 고정한 이동 방향의 화면 앵커. 호버 조준과 독립적이다. */
+  movementPointerX = 0
+  movementPointerY = 0
 
   /** 첫 조작 안내를 닫기 위한 플래그. */
   hasActed = false
@@ -71,6 +81,7 @@ export class InputState {
   private readonly previousTouchAction: string
 
   private mousePointerId: number | null = null
+  private mouseMoveActive = false
   private touchPointerId: number | null = null
   private touchOriginX = 0
   private touchOriginY = 0
@@ -89,6 +100,8 @@ export class InputState {
     const bounds = surface.getBoundingClientRect()
     this.pointerX = bounds.left + bounds.width * 0.5
     this.pointerY = bounds.top + bounds.height * 0.5
+    this.movementPointerX = this.pointerX
+    this.movementPointerY = this.pointerY
 
     this.touchStick = document.createElement('div')
     this.touchStick.className = 'touchstick'
@@ -120,6 +133,7 @@ export class InputState {
       if (this.touchPointerId !== null) return
 
       e.preventDefault()
+      this.mouseMoveActive = false
       this.touchPointerId = e.pointerId
       this.touchOriginX = e.clientX
       this.touchOriginY = e.clientY
@@ -154,6 +168,9 @@ export class InputState {
     this.mousePointerId = e.pointerId
     this.pointerX = e.clientX
     this.pointerY = e.clientY
+    this.movementPointerX = e.clientX
+    this.movementPointerY = e.clientY
+    this.mouseMoveActive = true
     this.pointerHeld = true
     this.hasActed = true
     try {
@@ -186,11 +203,17 @@ export class InputState {
       e.buttons === 0
     ) {
       this.mousePointerId = null
-      this.pointerHeld = this.touchPointerId !== null
+      this.pointerHeld = this.mouseMoveActive || this.touchPointerId !== null
       return
     }
     this.pointerX = e.clientX
     this.pointerY = e.clientY
+    if (this.mousePointerId !== null && e.pointerId === this.mousePointerId) {
+      this.movementPointerX = e.clientX
+      this.movementPointerY = e.clientY
+      this.mouseMoveActive = true
+      this.pointerHeld = true
+    }
   }
 
   private readonly onPointerUp = (e: PointerEvent): void => {
@@ -210,12 +233,14 @@ export class InputState {
     if (e.type !== 'pointercancel' && e.button !== 0) return
     if (this.mousePointerId !== null && e.pointerId !== this.mousePointerId) return
     this.mousePointerId = null
-    this.pointerHeld = this.touchPointerId !== null
+    if (e.type === 'pointercancel') this.mouseMoveActive = false
+    this.pointerHeld = this.mouseMoveActive || this.touchPointerId !== null
   }
 
   private readonly onLostPointerCapture = (e: PointerEvent): void => {
     if (e.pointerId === this.mousePointerId) {
       this.mousePointerId = null
+      this.mouseMoveActive = false
       this.pointerHeld = this.touchPointerId !== null
     }
     if (e.pointerId === this.touchPointerId) {
@@ -276,6 +301,10 @@ export class InputState {
       return
     }
     if (e.repeat) return
+    if (MOVEMENT_KEYS.has(e.code) && this.touchPointerId === null) {
+      this.mouseMoveActive = false
+      this.pointerHeld = false
+    }
     this.held.add(e.code)
 
     const skill = SKILL_KEYS[e.code]
@@ -318,6 +347,7 @@ export class InputState {
     }
 
     this.mousePointerId = null
+    this.mouseMoveActive = false
     this.touchPointerId = null
     this.touchDirectionX = 0
     this.touchDirectionY = 0
@@ -332,6 +362,13 @@ export class InputState {
     this.skillPointerAimActive = false
     this.skillPointerAimPending = false
     this.sampledSkillPointerAim = false
+  }
+
+  /** 화면 중앙을 클릭해 정지하면 이후 밀림이 자동 이동을 되살리지 않게 한다. */
+  completePointerMove(): void {
+    if (this.touchPointerId !== null) return
+    this.mouseMoveActive = false
+    this.pointerHeld = false
   }
 
   get targetingSkill(): SkillId | null {
@@ -498,20 +535,26 @@ function isEditableTarget(target: EventTarget | null): boolean {
 }
 
 /**
- * 눌린 포인터를 이동 벡터로 바꾼다. 터치는 화면 기준 조이스틱 방향을
- * 이동과 조준에 함께 쓰고, 마우스·펜은 기존 지면 좌표 방식을 유지한다.
+ * 활성 포인터를 이동 벡터로 바꾼다. 터치는 화면 기준 조이스틱 방향을
+ * 이동과 조준에 함께 쓰고, 마우스·펜은 고정한 화면 방향으로 이동한다.
  */
-export function applyPointerMove(input: InputState, out: Input, player: Vec2): void {
+export function applyPointerMove(
+  input: InputState,
+  out: Input,
+  player: Vec2,
+  movementTarget: Vec2 = out.aim,
+): void {
   if (!input.pointerHeld) return
   if (input.applyTouchMove(out, player)) return
 
-  const dx = out.aim.x - player.x
-  const dy = out.aim.y - player.y
+  const dx = movementTarget.x - player.x
+  const dy = movementTarget.y - player.y
 
   const distance = Math.hypot(dx, dy)
   if (distance <= MOVE_STOP_RADIUS) {
     out.move.x = 0
     out.move.y = 0
+    input.completePointerMove()
     return
   }
 

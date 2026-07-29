@@ -83,7 +83,7 @@ function updateControlHint(): void {
   if (!controlHintMoved) {
     hint.textContent = coarsePointer
       ? '빈 전장을 밀어 이동하세요'
-      : '마우스를 누른 채 이동하세요'
+      : '전장을 클릭해 이동 방향을 고정하세요'
     hint.classList.remove('hidden')
     return
   }
@@ -139,6 +139,7 @@ try {
 const initialSeed = resolveSeed()
 const input = new InputState(app)
 const simInput = createInput()
+const pointerMoveTarget = { x: 0, y: 0 }
 const skillPointerAim = { x: 0, y: 0 }
 
 if (import.meta.env.DEV) assertSlotsCoverAllSkills(DEFAULT_SLOTS)
@@ -392,7 +393,12 @@ function frame(now: number): void {
       input.sample(simInput)
       // 조준점(월드 좌표)을 먼저 구해야 포인터 이동 방향을 계산할 수 있다.
       renderer.screenToGround(input.pointerX, input.pointerY, simInput.aim)
-      applyPointerMove(input, simInput, world.player.pos)
+      renderer.screenToGround(
+        input.movementPointerX,
+        input.movementPointerY,
+        pointerMoveTarget,
+      )
+      applyPointerMove(input, simInput, world.player.pos, pointerMoveTarget)
       if (input.hasSkillPointerAim) {
         renderer.screenToGround(
           input.sampledSkillPointerX,

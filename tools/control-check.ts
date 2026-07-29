@@ -431,6 +431,81 @@ for (const mode of ['instant', 'release'] as const) {
   input.dispose()
 }
 
+// Releasing a battlefield click keeps its movement anchor active while subsequent
+// hover updates remain available for independent aiming. Keyboard movement and
+// a center stop both cancel the locked direction.
+{
+  const { input, surface } = createInputHarness()
+  surface.dispatch(
+    'pointerdown',
+    pointerEvent(surface, {
+      pointerId: 15,
+      buttons: 1,
+      clientX: 800,
+      clientY: 200,
+    }),
+  )
+  inputWindow.dispatch(
+    'pointerup',
+    pointerEvent(surface, {
+      pointerId: 15,
+      button: 0,
+      buttons: 0,
+      clientX: 800,
+      clientY: 200,
+    }),
+  )
+  assert.equal(input.pointerHeld, true, 'click release keeps direction active')
+
+  inputWindow.dispatch(
+    'pointermove',
+    pointerEvent(surface, {
+      pointerId: 16,
+      buttons: 0,
+      clientX: 300,
+      clientY: 600,
+    }),
+  )
+  approx(input.pointerX, 300, 'hover continues updating aim x')
+  approx(input.pointerY, 600, 'hover continues updating aim y')
+  approx(input.movementPointerX, 800, 'hover preserves movement anchor x')
+  approx(input.movementPointerY, 200, 'hover preserves movement anchor y')
+
+  const moving = idleAt(300, 600)
+  applyPointerMove(input, moving, { x: 0, y: 0 }, { x: 8, y: 0 })
+  approx(moving.move.x, 1, 'locked click keeps moving in its direction')
+  approx(moving.move.y, 0, 'locked click preserves movement direction')
+
+  inputWindow.dispatch('keydown', keyEvent('ArrowUp'))
+  assert.equal(input.pointerHeld, false, 'keyboard movement cancels direction lock')
+  inputWindow.dispatch('keyup', keyEvent('ArrowUp'))
+
+  surface.dispatch(
+    'pointerdown',
+    pointerEvent(surface, {
+      pointerId: 17,
+      buttons: 1,
+      clientX: 800,
+      clientY: 200,
+    }),
+  )
+  inputWindow.dispatch(
+    'pointerup',
+    pointerEvent(surface, {
+      pointerId: 17,
+      button: 0,
+      buttons: 0,
+      clientX: 800,
+      clientY: 200,
+    }),
+  )
+  const arrived = idleAt(300, 600)
+  applyPointerMove(input, arrived, { x: 7.7, y: 0 }, { x: 8, y: 0 })
+  approx(Math.hypot(arrived.move.x, arrived.move.y), 0, 'center click stops movement')
+  assert.equal(input.pointerHeld, false, 'center click clears locked direction')
+  input.dispose()
+}
+
 // Targeting contracts: ranged Q is self-cast, while ranged W travels toward
 // the cursor and its destination never escapes the arena.
 {
@@ -487,6 +562,7 @@ for (const mode of ['instant', 'release'] as const) {
   const pointer = {
     pointerHeld: true,
     applyTouchMove: () => false,
+    completePointerMove: () => {},
   } as unknown as InputState
   const player = { x: 0, y: 0 }
 
