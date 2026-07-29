@@ -1,4 +1,4 @@
-import { RUN_TIME_LIMIT } from './constants.ts'
+import { difficultyRules } from './difficulty.ts'
 import type { World } from './types.ts'
 
 /**
@@ -37,6 +37,7 @@ const POINTS_PER_SECOND_LEFT = 50
 const POINTS_PER_ENDLESS_SECOND = 40
 
 export function computeScore(world: World): ScoreBreakdown {
+  const rules = difficultyRules(world.runConfig.difficulty)
   const kills = world.kills * POINTS_PER_KILL
   const level = world.progression.level * POINTS_PER_LEVEL
 
@@ -44,7 +45,7 @@ export function computeScore(world: World): ScoreBreakdown {
   const secondsLeft = defeatedBoss
     ? Math.max(
         0,
-        RUN_TIME_LIMIT -
+        rules.runTimeLimit -
           (world.victoryAt >= 0 ? world.victoryAt : world.time),
       )
     : 0
@@ -56,8 +57,7 @@ export function computeScore(world: World): ScoreBreakdown {
           POINTS_PER_ENDLESS_SECOND,
       )
     : 0
-  const difficultyMultiplier =
-    world.runConfig.difficulty === 'hard' ? 1.5 : 1
+  const difficultyMultiplier = rules.scoreMultiplier
   const subtotal = kills + level + victory + speed + survival
 
   return {

@@ -245,6 +245,7 @@ export class Renderer {
   private lastProgressionLevel = 1
   private lastBossActive = false
   private lastBossPhaseTwoAt = -1
+  private lastBossPhaseThreeAt = -1
   private lastBossHazardDetonations = -1
   /** Persistent simulation counters need renderer-side baselines for one-shot feedback. */
   private lastHealPickupActivations = -1
@@ -614,6 +615,7 @@ export class Renderer {
       // 한 번 보여준다. 일반 새 판은 false라 아무 일도 일어나지 않는다.
       this.lastBossActive = false
       this.lastBossPhaseTwoAt = world.boss.phaseTwoAt
+      this.lastBossPhaseThreeAt = world.boss.phaseThreeAt
       this.lastBossHazardDetonations = world.boss.hazardDetonations
       this.lastHealPickupActivations =
         world.battlefieldPickups.healActivations
@@ -897,6 +899,17 @@ export class Renderer {
       this.pulseBloom(2.2)
     }
     this.lastBossPhaseTwoAt = world.boss.phaseTwoAt
+
+    if (
+      world.boss.phaseThreeAt >= 0 &&
+      this.lastBossPhaseThreeAt < 0
+    ) {
+      this.impact.shake(1.05, 0.95, 13)
+      this.impact.requestHitstop(0.78, 0.09)
+      this.post.flash(0xe8d7ff, 0.42, 0.58)
+      this.pulseBloom(2.55)
+    }
+    this.lastBossPhaseThreeAt = world.boss.phaseThreeAt
 
     if (world.boss.hazardDetonations > this.lastBossHazardDetonations) {
       this.post.flash(0xff654f, 0.11, 0.2)

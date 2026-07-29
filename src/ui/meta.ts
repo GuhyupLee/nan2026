@@ -260,7 +260,7 @@ export function showMetaProgress(parent: HTMLElement): Promise<MetaProgress> {
           unlockRow(progress, unlock),
         ).join('')}</div></section></div>` +
         `<footer class="meta-footer"><span>완료한 런 ${progress.completedRuns.toLocaleString('ko-KR')} · ` +
-        `누적 처치 ${progress.lifetimeKills.toLocaleString('ko-KR')} · 보스 격파 ${progress.bossWins}</span>` +
+        `누적 처치 ${progress.lifetimeKills.toLocaleString('ko-KR')} · 보스 격파 ${progress.bossWins} · 보통 ${progress.normalWins} / 월식 ${progress.eclipseWins} / 만월 ${progress.fullMoonWins}</span>` +
         `<button class="menu-button primary meta-back" type="button"><span>메뉴로</span></button></footer>`
 
       for (const button of content.querySelectorAll<HTMLButtonElement>(

@@ -148,6 +148,57 @@ assert.equal(retry.rng.state(), reference.rng.state())
 assert.equal(retry.choiceRng.state(), reference.choiceRng.state())
 assert.equal(retry.pickupRng.state(), reference.pickupRng.state())
 
+// 10분 만월 점수가 5분 스테이지 기록을 밀어내지 않도록 단계별 5개를 보존한다.
+for (let i = 0; i < 6; i += 1) {
+  saveRecord('ranged', {
+    score: 20_000 + i,
+    kills: 600 + i,
+    level: 26,
+    time: 700 - i,
+    victory: i >= 2,
+    difficulty: 'fullmoon',
+    at: 3000 + i,
+  })
+}
+const fullMoonRecords = loadRecords('ranged', 'fullmoon')
+assert.equal(fullMoonRecords.length, 5)
+assert.ok(fullMoonRecords.every((record) => record.difficulty === 'fullmoon'))
+assert.equal(fullMoonRecords[0]?.score, 20_005)
+assert.ok(
+  loadRecords('ranged', 'normal').some((record) => record.at === completed.at),
+)
+
+const firstEclipse = saveRecord('ranged', {
+  score: 500,
+  kills: 10,
+  level: 4,
+  time: 80,
+  victory: false,
+  difficulty: 'hard',
+  at: 4000,
+})
+assert.equal(firstEclipse.isBest, true, '최고 기록은 스테이지 안에서 비교한다')
+assert.equal(firstEclipse.records.length, 1)
+assert.ok(
+  firstEclipse.records.every((record) => record.difficulty === 'hard'),
+  '결과 화면에는 현재 스테이지 기록만 돌려준다',
+)
+
+const continuedEclipse = saveRecord('ranged', {
+  score: 750,
+  kills: 24,
+  level: 7,
+  time: 120,
+  victory: true,
+  difficulty: 'hard',
+  endless: true,
+  endlessTime: 18,
+  at: 4000,
+})
+assert.equal(continuedEclipse.records.length, 1)
+assert.equal(continuedEclipse.records[0]?.score, 750)
+assert.equal(continuedEclipse.records[0]?.endless, true)
+
 console.log(
-  'Records check passed: legacy recovery, versioned builds, build identity, same-seed retry',
+  'Records check passed: legacy recovery, versioned builds, per-stage top five, endless replacement, build identity, same-seed retry',
 )

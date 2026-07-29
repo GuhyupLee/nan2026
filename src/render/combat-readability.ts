@@ -5,14 +5,16 @@ import {
   BOSS_CHARGE_AT,
   BOSS_CHARGE_SPEED,
   BOSS_RECOVER_AT,
-  BOSS_WINDUP_AT,
   ENEMY_CONTACT_REACH,
   ENEMY_TYPES,
   TYPE_BOSS,
   TYPE_BRUTE,
   TYPE_ELITE,
   bossCycleTime,
+  bossChargeAt,
   bossPhaseAt,
+  bossRecoverAt,
+  bossWindupAt,
   createEnemyHash,
 } from '../sim/enemies.ts'
 import {
@@ -441,6 +443,7 @@ export class CombatReadabilityFx {
       world.time,
       world.boss.spawnedAt,
       world.boss.phaseTwoAt,
+      world.boss.phaseThreeAt,
     )
     if (phase !== 'windup' && phase !== 'charge') {
       this.chargeMesh.visible = false
@@ -463,15 +466,19 @@ export class CombatReadabilityFx {
       world.time,
       world.boss.spawnedAt,
       world.boss.phaseTwoAt,
+      world.boss.phaseThreeAt,
     )
+    const windupAt = bossWindupAt(world.boss.phaseThreeAt)
+    const chargeAt = bossChargeAt(world.boss.phaseThreeAt)
+    const recoverAt = bossRecoverAt(world.boss.phaseThreeAt)
     const arenaLimit = world.arenaRadius - ENEMY_TYPES[TYPE_BOSS]!.radius
     const along = x * nx + z * nz
     const discriminant = Math.max(0, along * along - (x * x + z * z - arenaLimit * arenaLimit))
     const exitDistance = Math.max(0, -along + Math.sqrt(discriminant))
     const remainingChargeTime =
       phase === 'charge'
-        ? Math.max(0, BOSS_RECOVER_AT - cycle)
-        : BOSS_RECOVER_AT - BOSS_CHARGE_AT
+        ? Math.max(0, recoverAt - cycle)
+        : recoverAt - chargeAt
     const travelDistance = Math.min(
       MAX_CHARGE_DISTANCE,
       BOSS_CHARGE_SPEED * remainingChargeTime,
@@ -497,12 +504,12 @@ export class CombatReadabilityFx {
         ? 1
         : Math.max(
             0,
-            Math.min(1, (cycle - BOSS_WINDUP_AT) / (BOSS_CHARGE_AT - BOSS_WINDUP_AT)),
+            Math.min(1, (cycle - windupAt) / (chargeAt - windupAt)),
           )
     this.chargeUniforms.uTime.value = world.time
     this.chargeUniforms.uProgress.value = progress
     this.chargeUniforms.uCharging.value =
-      cycle >= BOSS_CHARGE_AT && cycle < BOSS_RECOVER_AT ? 1 : 0
+      cycle >= chargeAt && cycle < recoverAt ? 1 : 0
   }
 
   private drawSurgeWarning(world: World, alpha: number): void {

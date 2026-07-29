@@ -105,6 +105,10 @@ export const BOSS_CYCLE_TIME = 7
 export const BOSS_WINDUP_AT = 3.8
 export const BOSS_CHARGE_AT = 4.6
 export const BOSS_RECOVER_AT = 6.35
+/** 만월 3페이즈는 같은 예고 문법을 20% 빠르게 반복한다. */
+export const BOSS_PHASE_THREE_TIME_SCALE = 0.8
+export const BOSS_PHASE_THREE_CYCLE_TIME =
+  BOSS_CYCLE_TIME * BOSS_PHASE_THREE_TIME_SCALE
 /**
  * 2페이즈 전환 직후에는 긴 선회를 반복하지 않고 바로 돌진 예고로 들어간다.
  * 이후 주기는 기존 7초 문법을 유지해 회피 타이밍 자체는 바꾸지 않는다.
@@ -127,9 +131,39 @@ export type BossPhase =
   | 'charge'
   | 'recover'
 
-function bossPatternStart(spawnedAt: number, phaseTwoAt: number): number {
-  return phaseTwoAt >= 0
-    ? phaseTwoAt + BOSS_PHASE_TWO_TRANSITION_DURATION
+function latestBossTransitionAt(
+  phaseTwoAt: number,
+  phaseThreeAt: number,
+): number {
+  return phaseThreeAt >= 0 ? phaseThreeAt : phaseTwoAt
+}
+
+export function bossWindupAt(phaseThreeAt = -1): number {
+  return phaseThreeAt >= 0
+    ? BOSS_WINDUP_AT * BOSS_PHASE_THREE_TIME_SCALE
+    : BOSS_WINDUP_AT
+}
+
+export function bossChargeAt(phaseThreeAt = -1): number {
+  return phaseThreeAt >= 0
+    ? BOSS_CHARGE_AT * BOSS_PHASE_THREE_TIME_SCALE
+    : BOSS_CHARGE_AT
+}
+
+export function bossRecoverAt(phaseThreeAt = -1): number {
+  return phaseThreeAt >= 0
+    ? BOSS_RECOVER_AT * BOSS_PHASE_THREE_TIME_SCALE
+    : BOSS_RECOVER_AT
+}
+
+function bossPatternStart(
+  spawnedAt: number,
+  phaseTwoAt: number,
+  phaseThreeAt: number,
+): number {
+  const transitionAt = latestBossTransitionAt(phaseTwoAt, phaseThreeAt)
+  return transitionAt >= 0
+    ? transitionAt + BOSS_PHASE_TWO_TRANSITION_DURATION
     : spawnedAt + BOSS_INTRO_DURATION
 }
 
@@ -137,15 +171,19 @@ function bossPatternElapsedTicks(
   now: number,
   spawnedAt: number,
   phaseTwoAt: number,
+  phaseThreeAt: number,
 ): number {
+  const transitionAt = latestBossTransitionAt(phaseTwoAt, phaseThreeAt)
   const openingOffset =
-    phaseTwoAt >= 0
-      ? Math.round(BOSS_PHASE_TWO_OPENING_CYCLE_AT / DT)
+    transitionAt >= 0
+      ? Math.round(bossWindupAt(phaseThreeAt) / DT)
       : 0
   return (
     Math.max(
       0,
-      Math.round((now - bossPatternStart(spawnedAt, phaseTwoAt)) / DT),
+      Math.round(
+        (now - bossPatternStart(spawnedAt, phaseTwoAt, phaseThreeAt)) / DT,
+      ),
     ) + openingOffset
   )
 }
@@ -154,9 +192,17 @@ export function bossCycleTime(
   now: number,
   spawnedAt = BOSS_SPAWN_TIME,
   phaseTwoAt = -1,
+  phaseThreeAt = -1,
 ): number {
-  const cycleTicks = Math.round(BOSS_CYCLE_TIME / DT)
-  const elapsedTicks = bossPatternElapsedTicks(now, spawnedAt, phaseTwoAt)
+  const cycleTicks = Math.round(
+    (phaseThreeAt >= 0 ? BOSS_PHASE_THREE_CYCLE_TIME : BOSS_CYCLE_TIME) / DT,
+  )
+  const elapsedTicks = bossPatternElapsedTicks(
+    now,
+    spawnedAt,
+    phaseTwoAt,
+    phaseThreeAt,
+  )
   return (elapsedTicks % cycleTicks) * DT
 }
 
@@ -164,9 +210,17 @@ export function bossCycleIndex(
   now: number,
   spawnedAt = BOSS_SPAWN_TIME,
   phaseTwoAt = -1,
+  phaseThreeAt = -1,
 ): number {
-  const cycleTicks = Math.round(BOSS_CYCLE_TIME / DT)
-  const elapsedTicks = bossPatternElapsedTicks(now, spawnedAt, phaseTwoAt)
+  const cycleTicks = Math.round(
+    (phaseThreeAt >= 0 ? BOSS_PHASE_THREE_CYCLE_TIME : BOSS_CYCLE_TIME) / DT,
+  )
+  const elapsedTicks = bossPatternElapsedTicks(
+    now,
+    spawnedAt,
+    phaseTwoAt,
+    phaseThreeAt,
+  )
   return Math.floor(elapsedTicks / cycleTicks)
 }
 
@@ -180,7 +234,17 @@ export function bossPhaseAt(
   now: number,
   spawnedAt = BOSS_SPAWN_TIME,
   phaseTwoAt = -1,
+  phaseThreeAt = -1,
 ): BossPhase {
+  const phaseThreeElapsedTicks = Math.round((now - phaseThreeAt) / DT)
+  if (
+    phaseThreeAt >= 0 &&
+    phaseThreeElapsedTicks >= 0 &&
+    phaseThreeElapsedTicks <
+      Math.round(BOSS_PHASE_TWO_TRANSITION_DURATION / DT)
+  ) {
+    return 'transition'
+  }
   const phaseTwoElapsedTicks = Math.round((now - phaseTwoAt) / DT)
   if (
     phaseTwoAt >= 0 &&
@@ -197,10 +261,10 @@ export function bossPhaseAt(
   ) {
     return 'arrival'
   }
-  const cycle = bossCycleTime(now, spawnedAt, phaseTwoAt)
-  if (cycle < BOSS_WINDUP_AT) return 'orbit'
-  if (cycle < BOSS_CHARGE_AT) return 'windup'
-  if (cycle < BOSS_RECOVER_AT) return 'charge'
+  const cycle = bossCycleTime(now, spawnedAt, phaseTwoAt, phaseThreeAt)
+  if (cycle < bossWindupAt(phaseThreeAt)) return 'orbit'
+  if (cycle < bossChargeAt(phaseThreeAt)) return 'windup'
+  if (cycle < bossRecoverAt(phaseThreeAt)) return 'charge'
   return 'recover'
 }
 
@@ -793,7 +857,7 @@ function writeEnemy(
   pool.vy[i] = 0
   const maxHp =
     type === TYPE_BOSS
-      ? BOSS_MAX_HP
+      ? BOSS_MAX_HP * healthScale
       : def.hp * enemyHealthMultiplier(time) * healthScale
   pool.hp[i] = maxHp
   pool.maxHp[i] = maxHp
@@ -825,9 +889,15 @@ function writeEnemy(
  * 한 번만이라는 규칙은 World.boss.spawned가 맡고, 이 함수는 풀 용량 때문에
  * 실패했는지만 반환한다. 일반 스폰보다 먼저 호출해 보스 자리를 보장한다.
  */
-export function spawnBoss(pool: EnemyPool, rng: Rng, px: number, py: number): boolean {
+export function spawnBoss(
+  pool: EnemyPool,
+  rng: Rng,
+  px: number,
+  py: number,
+  healthScale = 1,
+): boolean {
   const before = pool.count
-  spawnEnemy(pool, rng, px, py, TYPE_BOSS)
+  spawnEnemy(pool, rng, px, py, TYPE_BOSS, 0, healthScale)
   return pool.count > before
 }
 
@@ -934,6 +1004,7 @@ export function stepEnemies(
   relicThreat = 0,
   bossPhaseTwoAt = -1,
   globalSpeedMultiplier = 1,
+  bossPhaseThreeAt = -1,
 ): EnemyStepResult {
   // 격자는 여기서 만들지 않는다. 스킬이 stepEnemies보다 먼저 돌기 때문에
   // 여기서 재구축하면 스킬 질의가 항상 한 틱 낡은(또는 첫 틱엔 빈) 격자를 본다.
@@ -964,7 +1035,7 @@ export function stepEnemies(
     const def = ENEMY_TYPES[type]!
     const isBoss = type === TYPE_BOSS
     const bossPhase = isBoss
-      ? bossPhaseAt(now, bossSpawnedAt, bossPhaseTwoAt)
+      ? bossPhaseAt(now, bossSpawnedAt, bossPhaseTwoAt, bossPhaseThreeAt)
       : null
     const ex = pool.x[i]!
     const ey = pool.y[i]!
@@ -1045,6 +1116,7 @@ export function stepEnemies(
             now,
             bossSpawnedAt,
             bossPhaseTwoAt,
+            bossPhaseThreeAt,
           )
           if (pool.bossChargeCycle[i] !== cycle) {
             let chargeX = dx
@@ -1066,6 +1138,7 @@ export function stepEnemies(
             now,
             bossSpawnedAt,
             bossPhaseTwoAt,
+            bossPhaseThreeAt,
           )
           if (pool.bossChargeCycle[i] !== cycle) {
             pool.bossChargeDirX[i] = dl > 1e-6 ? dx : 1

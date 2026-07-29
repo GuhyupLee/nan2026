@@ -122,6 +122,7 @@ export class GameAudio {
   private lastLevel = 1
   private lastBossActive = false
   private lastBossPhaseTwoAt = -1
+  private lastBossPhaseThreeAt = -1
   private lastBossHazardVolley = 0
   private lastBossHazardDetonations = 0
   private lastSurgeWarningIndex = 0
@@ -263,8 +264,8 @@ export class GameAudio {
     const bossAppeared = !newWorld && world.boss.active && !this.lastBossActive
     const bossShifted =
       !newWorld &&
-      world.boss.phaseTwoAt >= 0 &&
-      this.lastBossPhaseTwoAt < 0
+      ((world.boss.phaseTwoAt >= 0 && this.lastBossPhaseTwoAt < 0) ||
+        (world.boss.phaseThreeAt >= 0 && this.lastBossPhaseThreeAt < 0))
     const bossHazardWarned =
       !newWorld &&
       world.boss.nextHazardVolley > this.lastBossHazardVolley
@@ -283,6 +284,7 @@ export class GameAudio {
     this.lastLevel = world.progression.level
     this.lastBossActive = world.boss.active
     this.lastBossPhaseTwoAt = world.boss.phaseTwoAt
+    this.lastBossPhaseThreeAt = world.boss.phaseThreeAt
     this.lastBossHazardVolley = world.boss.nextHazardVolley
     this.lastBossHazardDetonations = world.boss.hazardDetonations
     this.lastSurgeWarningIndex = world.surgeWarningIndex
@@ -358,6 +360,7 @@ export class GameAudio {
     this.lastLevel = 1
     this.lastBossActive = false
     this.lastBossPhaseTwoAt = -1
+    this.lastBossPhaseThreeAt = -1
     this.lastBossHazardVolley = 0
     this.lastBossHazardDetonations = 0
     this.lastSurgeWarningIndex = 0

@@ -285,6 +285,7 @@ export class EnemyRenderer {
   private readonly color = new THREE.Color()
   private readonly white = new THREE.Color(0xffffff)
   private readonly phaseTwoColor = new THREE.Color(0xff4f86)
+  private readonly phaseThreeColor = new THREE.Color(0xe8d7ff)
 
   constructor(scene: THREE.Scene) {
     for (let t = 0; t < ENEMY_TYPES.length; t++) {
@@ -384,6 +385,7 @@ export class EnemyRenderer {
           world.time,
           world.boss.spawnedAt,
           world.boss.phaseTwoAt,
+          world.boss.phaseThreeAt,
         )
         const transitioning = phase === 'transition'
         const charging = phase === 'windup' || phase === 'charge'
@@ -440,7 +442,11 @@ export class EnemyRenderer {
       const f = pool.flash[i]!
       this.color.copy(batch.baseColor)
       if (isBoss) {
-        if (world.boss.phaseTwoAt >= 0) {
+        if (world.boss.phaseThreeAt >= 0) {
+          const phaseThreePulse =
+            0.42 + (Math.sin(world.time * 8.4) * 0.5 + 0.5) * 0.24
+          this.color.lerp(this.phaseThreeColor, phaseThreePulse)
+        } else if (world.boss.phaseTwoAt >= 0) {
           const phaseTwoPulse =
             0.28 + (Math.sin(world.time * 5.6) * 0.5 + 0.5) * 0.18
           this.color.lerp(this.phaseTwoColor, phaseTwoPulse)

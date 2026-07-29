@@ -11,8 +11,9 @@ import {
   shouldUseVrmModels,
 } from './render/vrm-rig.ts'
 import { ARENA_RADIUS, DT, MAX_TICKS_PER_FRAME } from './sim/constants.ts'
-import { BOSS_PHASE_TWO_THRESHOLD } from './sim/boss.ts'
-import { BOSS_SPAWN_TIME, spawnBoss } from './sim/enemies.ts'
+import { bossPhaseTwoThreshold } from './sim/boss.ts'
+import { difficultyRules } from './sim/difficulty.ts'
+import { BOSS_MAX_HP, spawnBoss } from './sim/enemies.ts'
 import {
   BATTLEFIELD_MAGNET_DURATION,
   dropBattlefieldPickup,
@@ -41,8 +42,10 @@ import { showLoadoutBriefing } from './ui/loadout-briefing.ts'
 import { showMainMenu } from './ui/mainmenu.ts'
 import {
   createRunMetaSnapshot,
+  isFullMoonModeUnlocked,
   isHardModeUnlocked,
   loadMetaProgress,
+  totalMetaStatRanks,
 } from './ui/meta-progression.ts'
 import { showMetaProgress } from './ui/meta.ts'
 import { showOutcome } from './ui/outcome.ts'
@@ -593,10 +596,19 @@ function beginRun(
     } else if (qa === 'boss' || qa === 'boss-p2') {
       // P1은 등장부터 돌진선, P2는 첫 평타부터 전환·예측 장판을 검수한다.
       // 프로덕션 빌드에서는 이 분기 전체가 제거된다.
-      world.tick = Math.round(BOSS_SPAWN_TIME / DT)
+      const rules = difficultyRules(world.runConfig.difficulty)
+      world.tick = Math.round(rules.bossSpawnTime / DT)
       world.time = world.tick * DT
       world.spawnEnabled = false
-      if (spawnBoss(world.enemies, world.rng, world.player.pos.x, world.player.pos.y)) {
+      if (
+        spawnBoss(
+          world.enemies,
+          world.rng,
+          world.player.pos.x,
+          world.player.pos.y,
+          rules.bossMaxHp / BOSS_MAX_HP,
+        )
+      ) {
         const boss = world.enemies.count - 1
         const bossX =
           qa === 'boss-p2' && world.playerClass === 'melee' ? 2.6 : 8
@@ -608,7 +620,7 @@ function beginRun(
         world.boss.spawnedAt = world.time
         world.boss.active = true
         if (qa === 'boss-p2') {
-          const readyHp = BOSS_PHASE_TWO_THRESHOLD + 1
+          const readyHp = bossPhaseTwoThreshold(world) + 1
           world.enemies.hp[boss] = readyHp
           world.boss.hp = readyHp
           world.player.invulnUntil = Number.POSITIVE_INFINITY
@@ -717,10 +729,15 @@ async function start(): Promise<void> {
     () => showRecords(document.body),
     async () => {
       metaProgress = await showMetaProgress(document.body)
-      return { moonlight: metaProgress.moonlight }
+      return {
+        moonlight: metaProgress.moonlight,
+        metaRanks: totalMetaStatRanks(metaProgress),
+      }
     },
     metaProgress.moonlight,
     isHardModeUnlocked(metaProgress),
+    isFullMoonModeUnlocked(metaProgress),
+    totalMetaStatRanks(metaProgress),
   )
   // 일부 WebView는 AudioContext.resume() Promise를 사용자 제스처가 끝난 뒤에도
   // 오래 보류한다. 사운드는 best-effort 기능이므로 화면 전환을 막지 않는다.

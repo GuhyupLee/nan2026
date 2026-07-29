@@ -1,8 +1,11 @@
 import { tryDropBattlefieldPickup } from './battlefield-pickups.ts'
 import {
-  BOSS_PHASE_TWO_THRESHOLD,
+  bossPhaseThreeThreshold,
+  bossPhaseTwoThreshold,
+  triggerBossPhaseThree,
   triggerBossPhaseTwo,
 } from './boss.ts'
+import { difficultyRules } from './difficulty.ts'
 import { ENEMY_TYPES, removeEnemy, TYPE_BOSS, TYPE_ELITE } from './enemies.ts'
 import { dropRelic } from './rewards.ts'
 import { upgradeTraitToken } from './progression.ts'
@@ -13,6 +16,7 @@ import { dropXpGem } from './xp-gems.ts'
 export const MAX_DAMAGE_FEEDBACK = 24
 /** 보스에게 한 번에 적용할 수 있는 최대 피해. 보스 최대 체력의 비율이다. */
 export const BOSS_SINGLE_HIT_DAMAGE_CAP_RATIO = 0.34
+export const FULLMOON_BOSS_SINGLE_HIT_DAMAGE_CAP_RATIO = 0.28
 /** 나머지 네 칸은 정예·보스 타격을 위해 예약한다. */
 const MAX_COMMON_DAMAGE_FEEDBACK = 20
 const HP_BAR_REVEAL_DURATION = 0.75
@@ -91,7 +95,6 @@ export function damageEnemy(
   if (
     isBoss &&
     world.boss.active &&
-    world.boss.phaseTwoAt >= 0 &&
     world.time < world.boss.invulnerableUntil
   ) {
     return false
@@ -100,19 +103,36 @@ export function damageEnemy(
   const hpBefore = pool.hp[i]!
   const uncappedApplied = Math.min(hpBefore, Math.max(0, amount))
   const bossHitCap = isBoss
-    ? Math.max(0, pool.maxHp[i]! * BOSS_SINGLE_HIT_DAMAGE_CAP_RATIO)
+    ? Math.max(
+        0,
+        pool.maxHp[i]! *
+          (world.runConfig.difficulty === 'fullmoon'
+            ? FULLMOON_BOSS_SINGLE_HIT_DAMAGE_CAP_RATIO
+            : BOSS_SINGLE_HIT_DAMAGE_CAP_RATIO),
+      )
     : Number.POSITIVE_INFINITY
   const capped = uncappedApplied > bossHitCap
   let applied = Math.min(uncappedApplied, bossHitCap)
-  if (
-    isBoss &&
-    world.boss.active &&
-    world.boss.phaseTwoAt < 0
-  ) {
-    const thresholdHp = BOSS_PHASE_TWO_THRESHOLD
+  let gateStage: 2 | 3 | null = null
+  let thresholdHp = 0
+  if (isBoss && world.boss.active) {
+    if (world.boss.phaseTwoAt < 0) {
+      gateStage = 2
+      thresholdHp = bossPhaseTwoThreshold(world)
+    } else if (
+      difficultyRules(world.runConfig.difficulty).bossPhaseCount === 3 &&
+      world.boss.phaseThreeAt < 0
+    ) {
+      const phaseThreeThreshold = bossPhaseThreeThreshold(world)
+      if (phaseThreeThreshold !== null) {
+        gateStage = 3
+        thresholdHp = phaseThreeThreshold
+      }
+    }
+  }
+  if (gateStage !== null) {
     if (hpBefore >= thresholdHp && hpBefore - applied <= thresholdHp) {
-      // 첫 50% 타격은 정확히 문턱에서 멈춘다. 한 번에 남은 체력을 모두
-      // 날리는 공격도 전환 연출과 2페이즈 패턴을 건너뛸 수 없다.
+      // 큰 한 방도 현재 체력 문턱에서 정확히 멈춰 전환 연출을 건너뛰지 못한다.
       applied = Math.max(0, hpBefore - thresholdHp)
     }
   }
@@ -124,12 +144,14 @@ export function damageEnemy(
   )
   if (isBoss) {
     world.boss.hp = Math.max(0, pool.hp[i]!)
-    if (
-      world.boss.active &&
-      world.boss.phaseTwoAt < 0 &&
-      pool.hp[i]! <= BOSS_PHASE_TWO_THRESHOLD
-    ) {
+    if (world.boss.active && gateStage === 2 && pool.hp[i]! <= thresholdHp) {
       triggerBossPhaseTwo(world, i)
+    } else if (
+      world.boss.active &&
+      gateStage === 3 &&
+      pool.hp[i]! <= thresholdHp
+    ) {
+      triggerBossPhaseThree(world, i)
     }
   }
 

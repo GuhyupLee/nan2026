@@ -1,7 +1,7 @@
 import {
-  BOSS_CHARGE_AT,
   ENEMY_TYPES,
   TYPE_BOSS,
+  bossChargeAt,
   bossCycleTime,
   bossPhaseAt,
   type BossPhase,
@@ -25,6 +25,7 @@ export class BossBar {
   private enabled = false
   private wasActive = false
   private wasPhaseTwo = false
+  private wasPhaseThree = false
 
   constructor(parent: HTMLElement) {
     this.root = document.createElement('div')
@@ -82,6 +83,7 @@ export class BossBar {
       this.phaseShift.hidden = true
       this.wasActive = boss.active
       this.wasPhaseTwo = boss.phaseTwoAt >= 0
+      this.wasPhaseThree = boss.phaseThreeAt >= 0
       return
     }
 
@@ -89,26 +91,37 @@ export class BossBar {
       boss.maxHp > 0 ? Math.max(0, Math.min(1, boss.hp / boss.maxHp)) : 0
     const percent = Math.ceil(ratio * 100)
     const phaseTwo = boss.phaseTwoAt >= 0
-    const bossPhase = bossPhaseAt(world.time, boss.spawnedAt, boss.phaseTwoAt)
+    const phaseThree = boss.phaseThreeAt >= 0
+    const stage = phaseThree ? 3 : phaseTwo ? 2 : 1
+    const phaseCount =
+      world.runConfig.difficulty === 'fullmoon' ? 3 : 2
+    const bossPhase = bossPhaseAt(
+      world.time,
+      boss.spawnedAt,
+      boss.phaseTwoAt,
+      boss.phaseThreeAt,
+    )
     const presentation = phasePresentation(
       bossPhase,
       world.time,
       boss.spawnedAt,
       boss.phaseTwoAt,
+      boss.phaseThreeAt,
+      stage,
     )
 
     this.fill.style.width = `${(ratio * 100).toFixed(2)}%`
-    this.stage.textContent = `${phaseTwo ? '2' : '1'}단계`
+    this.stage.textContent = `페이즈 ${stage}/${phaseCount}`
     this.action.textContent = presentation.label
     this.percent.textContent = `체력 ${percent}%`
     this.root.dataset.phase = bossPhase
-    this.root.dataset.stage = phaseTwo ? '2' : '1'
+    this.root.dataset.stage = String(stage)
     this.root.dataset.action = presentation.tone
     this.root.setAttribute('aria-valuenow', String(Math.max(0, boss.hp)))
     this.root.setAttribute('aria-valuemax', String(boss.maxHp))
     this.root.setAttribute(
       'aria-valuetext',
-      `${phaseTwo ? '2' : '1'}단계, ${presentation.label}, 체력 ${percent}%`,
+      `페이즈 ${stage}/${phaseCount}, ${presentation.label}, 체력 ${percent}%`,
     )
 
     const arriving = bossPhase === 'arrival'
@@ -121,13 +134,22 @@ export class BossBar {
     }
     const transitioning = bossPhase === 'transition'
     this.phaseShift.hidden = !transitioning
-    if (transitioning && !this.wasPhaseTwo) {
+    const newTransition =
+      (stage === 2 && !this.wasPhaseTwo) ||
+      (stage === 3 && !this.wasPhaseThree)
+    if (transitioning && newTransition) {
+      this.phaseShift.dataset.stage = String(stage)
+      this.phaseShift.innerHTML =
+        stage === 3
+          ? `<span>만월 해방</span><strong>페이즈 3/3</strong><small>삼중 예측 균열 · 갈라지는 원 사이로 이탈</small>`
+          : `<span>월식 전환</span><strong>페이즈 2/${phaseCount}</strong><small>예측 균열 활성화 · 붉은 원에서 이탈</small>`
       this.phaseShift.classList.remove('play')
       void this.phaseShift.offsetWidth
       this.phaseShift.classList.add('play')
     }
     this.wasActive = boss.active
     this.wasPhaseTwo = phaseTwo
+    this.wasPhaseThree = phaseThree
   }
 
   setVisible(visible: boolean): void {
@@ -138,6 +160,7 @@ export class BossBar {
       this.phaseShift.hidden = true
       this.wasActive = false
       this.wasPhaseTwo = false
+      this.wasPhaseThree = false
     }
   }
 
@@ -158,18 +181,21 @@ function phasePresentation(
   now: number,
   spawnedAt: number,
   phaseTwoAt: number,
+  phaseThreeAt: number,
+  stage: number,
 ): PhasePresentation {
   switch (phase) {
     case 'arrival':
       return { label: '출현 중', tone: 'intro' }
     case 'transition':
-      return { label: '2단계 전환', tone: 'transition' }
+      return { label: `${stage}페이즈 전환`, tone: 'transition' }
     case 'orbit':
       return { label: '추적 중', tone: 'tracking' }
     case 'windup': {
       const remaining = Math.max(
         0,
-        BOSS_CHARGE_AT - bossCycleTime(now, spawnedAt, phaseTwoAt),
+        bossChargeAt(phaseThreeAt) -
+          bossCycleTime(now, spawnedAt, phaseTwoAt, phaseThreeAt),
       )
       return {
         label: `돌진까지 ${remaining.toFixed(1)}초`,

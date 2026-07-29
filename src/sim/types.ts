@@ -82,7 +82,7 @@ export interface RunConfig {
   difficulty: RunDifficulty
 }
 
-export type RunDifficulty = 'normal' | 'hard'
+export type RunDifficulty = 'normal' | 'hard' | 'fullmoon'
 
 export type PlayerActionKind =
   | 'attack'
@@ -285,6 +285,8 @@ export interface BossState {
   maxHp: number
   /** 체력이 처음 절반에 닿아 2페이즈 전환을 시작한 시각. -1이면 아직 1페이즈다. */
   phaseTwoAt: number
+  /** 만월에서 마지막 체력 관문에 닿아 3페이즈 전환을 시작한 시각. */
+  phaseThreeAt: number
   /** 전환 연출 동안 보스가 피해를 받지 않는 마지막 시각. */
   invulnerableUntil: number
   /** 마지막으로 2원 장판을 예약한 2페이즈 압박 펄스. */
@@ -358,6 +360,8 @@ export interface World {
   metaAwardedScore: number
   metaRunRecorded: boolean
   metaVictoryAwarded: boolean
+  /** 승리 뒤 무한전을 이어가도 같은 런 기록을 갱신하도록 유지하는 epoch ms 식별자. */
+  runRecordAt: number
   upgradeRerollsRemaining: number
   upgradeRerollsUsed: number
   /** 강화 카드가 건드리는 런타임 스탯. 게임 코드는 상수가 아니라 이걸 읽는다. */

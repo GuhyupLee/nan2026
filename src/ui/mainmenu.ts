@@ -10,9 +10,13 @@ export function showMainMenu(
   parent: HTMLElement,
   onSettings: () => Promise<void> | void,
   onRecords: () => Promise<void> | void,
-  onMeta?: () => Promise<{ moonlight: number }> | { moonlight: number },
+  onMeta?: () =>
+    | Promise<{ moonlight: number; metaRanks?: number }>
+    | { moonlight: number; metaRanks?: number },
   initialMoonlight = 0,
   hardModeUnlocked = false,
+  fullMoonModeUnlocked = false,
+  initialMetaRanks = 0,
 ): Promise<RunDifficulty> {
   return new Promise((resolve) => {
     const root = document.createElement('div')
@@ -66,30 +70,66 @@ export function showMainMenu(
     const rule = document.createElement('div')
     rule.className = 'mainmenu-rule'
     rule.setAttribute('aria-hidden', 'true')
-    rule.innerHTML = '<span>5분 생존 · 보스 격파</span><i></i>'
+    rule.innerHTML = '<span>5분 생존 · 3:30 보스 · 2페이즈</span><i></i>'
     content.appendChild(rule)
 
     let selectedDifficulty: RunDifficulty = 'normal'
-    const difficulty = document.createElement('button')
-    difficulty.className = 'mainmenu-difficulty'
-    difficulty.type = 'button'
-    difficulty.disabled = !hardModeUnlocked
+    let metaRanks = initialMetaRanks
+    const difficulties = document.createElement('div')
+    difficulties.className = 'mainmenu-difficulties'
+    difficulties.setAttribute('role', 'radiogroup')
+    difficulties.setAttribute('aria-label', '도전 스테이지')
+    content.appendChild(difficulties)
+    const difficultyButtons = new Map<RunDifficulty, HTMLButtonElement>()
+    const stageOrder: readonly RunDifficulty[] = ['normal', 'hard', 'fullmoon']
+    const isStageUnlocked = (mode: RunDifficulty): boolean =>
+      mode === 'normal' ||
+      (mode === 'hard' ? hardModeUnlocked : fullMoonModeUnlocked)
+
+    for (const mode of stageOrder) {
+      const button = document.createElement('button')
+      button.className = 'mainmenu-difficulty'
+      button.type = 'button'
+      button.dataset.mode = mode
+      button.setAttribute('role', 'radio')
+      difficultyButtons.set(mode, button)
+      difficulties.appendChild(button)
+    }
+
     const renderDifficulty = (): void => {
-      const hard = selectedDifficulty === 'hard'
-      difficulty.dataset.mode = hard ? 'hard' : 'normal'
-      difficulty.setAttribute('aria-pressed', String(hard))
-      difficulty.innerHTML =
-        `<span><small>난이도</small><b>${hard ? '월식' : '일반'}</b></span>` +
-        `<em>${
-          hardModeUnlocked
-            ? hard
-              ? '적 속도 +10% · 접촉 피해 +25% · 점수 ×1.5'
-              : '기본 난이도의 5분 보스전'
-            : '보스 최초 격파 후 해금'
-        }</em><i aria-hidden="true">${hardModeUnlocked ? '↔' : '잠김'}</i>`
+      for (const mode of stageOrder) {
+        const button = difficultyButtons.get(mode)!
+        const selected = selectedDifficulty === mode
+        const unlocked = isStageUnlocked(mode)
+        const label =
+          mode === 'normal' ? '보통' : mode === 'hard' ? '월식' : '만월'
+        const description =
+          mode === 'normal'
+            ? '5:00 제한 · 3:30 보스 · 2페이즈'
+            : mode === 'hard'
+              ? unlocked
+                ? '적 속도 +10% · 접촉 피해 +25% · 점수 ×1.5'
+                : '보통 최초 클리어 후 해금'
+              : unlocked
+                ? `10:00 보스 등장 · 12:00 마감 · 3페이즈 · 전승 ${metaRanks}/40`
+                : '월식 최초 클리어 후 해금 · 전승 40/40 권장'
+        button.dataset.selected = String(selected)
+        button.tabIndex = selected ? 0 : -1
+        button.setAttribute('aria-checked', String(selected))
+        button.setAttribute('aria-disabled', String(!unlocked))
+        button.innerHTML =
+          `<span><small>스테이지 ${mode === 'normal' ? 'I' : mode === 'hard' ? 'II' : 'III'}</small><b>${label}</b></span>` +
+          `<em>${description}</em>` +
+          `<i aria-hidden="true">${unlocked ? (selected ? '선택됨' : '도전') : '잠김'}</i>`
+      }
+      rule.innerHTML =
+        selectedDifficulty === 'fullmoon'
+          ? '<span>10:00 보스 등장 · 12:00 마감 · 3페이즈</span><i></i>'
+          : selectedDifficulty === 'hard'
+            ? '<span>5분 월식 · 강화된 적 · 보스 2페이즈</span><i></i>'
+            : '<span>5분 생존 · 3:30 보스 · 2페이즈</span><i></i>'
     }
     renderDifficulty()
-    content.appendChild(difficulty)
 
     const actions = document.createElement('div')
     actions.className = 'mainmenu-actions'
@@ -187,6 +227,10 @@ export function showMainMenu(
         if (metaBalance) {
           metaBalance.textContent = `월광 ${next.moonlight.toLocaleString('ko-KR')}`
         }
+        if (typeof next.metaRanks === 'number') {
+          metaRanks = next.metaRanks
+          renderDifficulty()
+        }
       } finally {
         subviewOpen = false
         if (!done) meta.focus()
@@ -233,12 +277,35 @@ export function showMainMenu(
     }
 
     start.addEventListener('click', finish)
-    difficulty.addEventListener('click', () => {
-      if (!hardModeUnlocked || done || subviewOpen) return
-      selectedDifficulty =
-        selectedDifficulty === 'normal' ? 'hard' : 'normal'
-      renderDifficulty()
-    })
+    for (const mode of stageOrder) {
+      const button = difficultyButtons.get(mode)!
+      button.addEventListener('click', () => {
+        if (done || subviewOpen) return
+        if (!isStageUnlocked(mode)) return
+        selectedDifficulty = mode
+        renderDifficulty()
+      })
+      button.addEventListener('keydown', (event) => {
+        if (done || subviewOpen) return
+        const available = stageOrder.filter(isStageUnlocked)
+        const current = Math.max(0, available.indexOf(selectedDifficulty))
+        let next = -1
+        if (event.code === 'ArrowRight' || event.code === 'ArrowDown') {
+          next = (current + 1) % available.length
+        } else if (event.code === 'ArrowLeft' || event.code === 'ArrowUp') {
+          next = (current - 1 + available.length) % available.length
+        } else if (event.code === 'Home') {
+          next = 0
+        } else if (event.code === 'End') {
+          next = available.length - 1
+        }
+        if (next < 0) return
+        event.preventDefault()
+        selectedDifficulty = available[next]!
+        renderDifficulty()
+        difficultyButtons.get(selectedDifficulty)!.focus()
+      })
+    }
     records.addEventListener('click', () => void openRecords())
     settings.addEventListener('click', () => void openSettings())
     meta?.addEventListener('click', () => void openMeta())

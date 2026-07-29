@@ -1,7 +1,7 @@
 import { xpToNext } from '../sim/progression.ts'
 import type { World } from '../sim/types.ts'
-import { RUN_TIME_LIMIT } from '../sim/constants.ts'
-import { ELITE_SPAWN_TIMES } from '../sim/enemies.ts'
+import { difficultyRules, runDifficultyLabel } from '../sim/difficulty.ts'
+import { ELITE_SPAWN_TIMES, TYPE_BOSS } from '../sim/enemies.ts'
 import {
   BATTLEFIELD_MAGNET_DURATION,
   BATTLEFIELD_MAGNET_MAX_REMAINING,
@@ -10,6 +10,11 @@ import {
   SURGE_BEATS,
   SURGE_WARNING_DURATION,
 } from '../sim/surges.ts'
+import {
+  bossIndicatorDirection,
+  bossIndicatorPosition,
+  type BossIndicatorInsets,
+} from './boss-indicator.ts'
 
 /**
  * HUD — 캐릭터 위 체력바 + 하단 경험치 바 + 타이머.
@@ -55,6 +60,18 @@ export class Hud {
   private readonly magnetTime: HTMLElement
   private readonly magnetProgress: HTMLElement
   private readonly clock: HTMLDivElement
+  private readonly bossIndicator: HTMLDivElement
+  private readonly bossIndicatorDistance: HTMLElement
+  private bossIndicatorDirection = ''
+  private bossIndicatorInsets: BossIndicatorInsets = {
+    left: 76,
+    right: 76,
+    top: 96,
+    bottom: 96,
+  }
+  private bossIndicatorInsetWidth = -1
+  private bossIndicatorInsetHeight = -1
+  private bossIndicatorInsetTick = -30
   private readonly surgeAlert: HTMLDivElement
   private readonly surgeTitle: HTMLElement
   private readonly surgeCountdown: HTMLElement
@@ -65,6 +82,7 @@ export class Hud {
   private readonly damageVignette: HTMLDivElement
 
   private readonly screen = { x: 0, y: 0 }
+  private readonly bossScreen = { x: 0, y: 0 }
   /** 화면에 남아 흐르는 붉은 잔상 비율. 실제 체력보다 천천히 따라간다. */
   private ghostRatio = 1
   private lastLevel = 0
@@ -122,7 +140,21 @@ export class Hud {
 
     this.clock = document.createElement('div')
     this.clock.className = 'clock'
+    this.clock.setAttribute('role', 'timer')
     parent.appendChild(this.clock)
+
+    this.bossIndicator = document.createElement('div')
+    this.bossIndicator.className = 'boss-indicator'
+    this.bossIndicator.hidden = true
+    this.bossIndicator.setAttribute('role', 'status')
+    this.bossIndicator.setAttribute('aria-live', 'polite')
+    this.bossIndicator.setAttribute('aria-atomic', 'true')
+    this.bossIndicator.innerHTML =
+      `<i aria-hidden="true">▶</i>` +
+      `<span aria-hidden="true"><b>보스</b><small data-boss-distance></small></span>`
+    this.bossIndicatorDistance =
+      this.bossIndicator.querySelector('[data-boss-distance]')!
+    parent.appendChild(this.bossIndicator)
 
     this.surgeAlert = document.createElement('div')
     this.surgeAlert.className = 'surge-alert'
@@ -282,9 +314,12 @@ export class Hud {
     // --- 경험치 ---
     const prog = world.progression
     const need = xpToNext(prog.level)
+    const repeatRanks =
+      world.endless ||
+      difficultyRules(world.runConfig.difficulty).extendedProgression
     // 만렙이면 Infinity가 온다. 그 경우 바를 가득 채워 "더 없음"을 보여준다.
     this.xpFill.style.width =
-      world.endless && !Number.isFinite(need)
+      repeatRanks && !Number.isFinite(need)
         ? `${Math.min(100, (world.endlessXp / 420) * 100).toFixed(1)}%`
         : Number.isFinite(need)
           ? `${Math.min(100, (prog.xp / need) * 100).toFixed(1)}%`
@@ -332,15 +367,16 @@ export class Hud {
     // --- 제한 시간 ---
     // 경과 시간보다 "얼마나 남았는가"가 보스전의 의사결정에 직접 필요하다.
     // 마지막 30초에는 색과 점멸로 시선을 끌되, 보스 등장 전에는 조용히 둔다.
+    const rules = difficultyRules(world.runConfig.difficulty)
     const t = world.endless
       ? Math.max(0, world.time - world.endlessStartedAt)
-      : Math.max(0, RUN_TIME_LIMIT - world.time)
+      : Math.max(0, rules.runTimeLimit - world.time)
     const wholeSeconds = Math.ceil(t)
     const mm = Math.floor(wholeSeconds / 60)
     const ss = wholeSeconds % 60
     this.clock.textContent =
       `${world.endless ? '∞ ' : ''}${mm}:${String(ss).padStart(2, '0')}` +
-      `${world.runConfig.difficulty === 'hard' ? ' · 월식' : ''}`
+      `${world.endless ? '' : ` · ${runDifficultyLabel(world.runConfig.difficulty)}`}`
     this.clock.dataset.mode = world.endless
       ? 'endless'
       : world.runConfig.difficulty
@@ -350,9 +386,7 @@ export class Hud {
       'aria-label',
       world.endless
         ? `무한전 생존 시간 ${mm}분 ${ss}초`
-        : `남은 시간 ${mm}분 ${ss}초${
-            world.runConfig.difficulty === 'hard' ? ', 월식 난이도' : ''
-          }`,
+        : `남은 시간 ${mm}분 ${ss}초, ${runDifficultyLabel(world.runConfig.difficulty)} 스테이지`,
     )
 
     // --- 웨이브 서지 ---
@@ -398,6 +432,141 @@ export class Hud {
       this.surgeDisplayKey = ''
     }
 
+    this.updateBossIndicator(world, project)
+  }
+
+  private updateBossIndicator(world: World, project: Projector): void {
+    if (!world.boss.active || world.outcome !== 'alive') {
+      this.hideBossIndicator()
+      return
+    }
+
+    let bossIndex = -1
+    for (let i = 0; i < world.enemies.count; i += 1) {
+      if (
+        world.enemies.type[i] === TYPE_BOSS &&
+        world.enemies.hp[i]! > 0
+      ) {
+        bossIndex = i
+        break
+      }
+    }
+    if (bossIndex < 0) {
+      this.hideBossIndicator()
+      return
+    }
+
+    const projected = project(
+      world.enemies.x[bossIndex]!,
+      1.4,
+      world.enemies.y[bossIndex]!,
+      this.bossScreen,
+    )
+    const width = Math.max(1, window.innerWidth)
+    const height = Math.max(1, window.innerHeight)
+    const safeInsets = this.updateBossIndicatorInsets(
+      width,
+      height,
+      world.tick,
+    )
+    const indicator = bossIndicatorPosition(
+      this.bossScreen.x,
+      this.bossScreen.y,
+      width,
+      height,
+      projected,
+      safeInsets,
+    )
+    if (!indicator) {
+      this.hideBossIndicator()
+      return
+    }
+
+    const distance = Math.round(
+      Math.hypot(
+        world.enemies.x[bossIndex]! - world.player.pos.x,
+        world.enemies.y[bossIndex]! - world.player.pos.y,
+      ),
+    )
+    const wasHidden = this.bossIndicator.hidden
+    const direction = bossIndicatorDirection(indicator.angle)
+    this.bossIndicator.hidden = false
+    this.bossIndicator.style.transform =
+      `translate(-50%, -50%) translate(${indicator.x.toFixed(1)}px, ${indicator.y.toFixed(1)}px)`
+    this.bossIndicator.style.setProperty(
+      '--boss-arrow-angle',
+      `${indicator.angle}deg`,
+    )
+    this.bossIndicatorDistance.textContent = `${distance}m`
+    if (wasHidden || direction !== this.bossIndicatorDirection) {
+      this.bossIndicatorDirection = direction
+      this.bossIndicator.setAttribute(
+        'aria-label',
+        `보스가 화면 밖 ${direction}에 있습니다. 거리 약 ${distance}미터`,
+      )
+    }
+  }
+
+  private hideBossIndicator(): void {
+    this.bossIndicator.hidden = true
+    this.bossIndicatorDirection = ''
+  }
+
+  private updateBossIndicatorInsets(
+    width: number,
+    height: number,
+    tick: number,
+  ): BossIndicatorInsets {
+    if (
+      width === this.bossIndicatorInsetWidth &&
+      height === this.bossIndicatorInsetHeight &&
+      tick - this.bossIndicatorInsetTick < 30
+    ) {
+      return this.bossIndicatorInsets
+    }
+
+    const rootSize =
+      Number.parseFloat(getComputedStyle(document.documentElement).fontSize) ||
+      16
+    const side = Math.max(24, rootSize * 4.75)
+    const gap = Math.max(12, rootSize * 1.15)
+    let top = Math.max(82, rootSize * 6.5)
+    let bottom = Math.max(
+      82,
+      rootSize * (width <= 820 || width / height <= 0.75 ? 11 : 7),
+    )
+
+    const reserveTop = (element: HTMLElement | null): void => {
+      if (!element || element.hidden) return
+      const rect = element.getBoundingClientRect()
+      if (rect.height > 0 && rect.top < height * 0.5) {
+        top = Math.max(top, rect.bottom + gap)
+      }
+    }
+    const reserveBottom = (element: HTMLElement | null): void => {
+      if (!element || element.hidden) return
+      const rect = element.getBoundingClientRect()
+      if (rect.height > 0 && rect.bottom > height * 0.5) {
+        bottom = Math.max(bottom, height - rect.top + gap)
+      }
+    }
+
+    reserveTop(this.clock)
+    reserveTop(document.querySelector<HTMLElement>('.bossbar'))
+    reserveTop(this.surgeAlert)
+    reserveBottom(this.xpBar)
+    reserveBottom(document.querySelector<HTMLElement>('.skillbar'))
+
+    this.bossIndicatorInsets = {
+      left: side,
+      right: side,
+      top,
+      bottom,
+    }
+    this.bossIndicatorInsetWidth = width
+    this.bossIndicatorInsetHeight = height
+    this.bossIndicatorInsetTick = tick
+    return this.bossIndicatorInsets
   }
 
   /**
@@ -469,6 +638,7 @@ export class Hud {
     this.xpBar.style.display = d
     this.magnetBuff.style.display = d
     this.clock.style.display = d
+    this.bossIndicator.style.display = d
     this.surgeAlert.style.display = d
     this.runInfo.style.display = d
     this.damageVignette.style.display = d

@@ -1,4 +1,5 @@
 import { computeScore } from '../sim/score.ts'
+import { difficultyRules, runDifficultyLabel } from '../sim/difficulty.ts'
 import type { World } from '../sim/types.ts'
 import { trapFocus } from './focus-trap.ts'
 import { formatTime, loadRecords, saveRecord, type RunRecord } from './records.ts'
@@ -131,6 +132,7 @@ function recordsTable(records: RunRecord[], currentAt: number): string {
         `<tr class="rec${mine}">` +
         `<td class="rank">${i + 1}</td>` +
         `<td class="sc">${r.score.toLocaleString('ko-KR')}</td>` +
+        `<td>${runDifficultyLabel(r.difficulty ?? 'normal')}</td>` +
         `<td class="res" data-win="${r.victory}">${mark}</td>` +
         `<td class="tm">${formatTime(r.time)}</td>` +
         `<td class="kl">${r.kills}킬</td>` +
@@ -141,7 +143,7 @@ function recordsTable(records: RunRecord[], currentAt: number): string {
   return (
     `<div class="records"><h3>최고 기록</h3>` +
     `<table aria-label="최고 기록 순위">` +
-    `<thead><tr><th scope="col">순위</th><th scope="col">점수</th>` +
+    `<thead><tr><th scope="col">순위</th><th scope="col">점수</th><th scope="col">스테이지</th>` +
     `<th scope="col">결과</th><th scope="col">시간</th><th scope="col">처치</th></tr></thead>` +
     `<tbody>${rows}</tbody></table></div>`
   )
@@ -153,7 +155,32 @@ export function showOutcome(
   world?: World,
 ): Promise<OutcomeAction> {
   return new Promise((resolve) => {
-    const copy = COPY[outcome]
+    const baseCopy = COPY[outcome]
+    const runRules = world
+      ? difficultyRules(world.runConfig.difficulty)
+      : null
+    const stageLabel = world
+      ? runDifficultyLabel(world.runConfig.difficulty)
+      : ''
+    const copy: OutcomeCopy =
+      world && outcome === 'timeout' && runRules
+        ? {
+            ...baseCopy,
+            description: `${formatTime(runRules.runTimeLimit)} 안에 ${stageLabel} 보스를 쓰러뜨리지 못했습니다. 바로 재도전하거나 기록을 확인할 수 있습니다.`,
+          }
+        : world && outcome === 'victory'
+          ? {
+              ...baseCopy,
+              title:
+                world.runConfig.difficulty === 'fullmoon'
+                  ? '만월을 제압했습니다'
+                  : baseCopy.title,
+              description:
+                world.runConfig.difficulty === 'fullmoon'
+                  ? '10분의 공세와 최종 보스 3페이즈를 돌파했습니다.'
+                  : baseCopy.description,
+            }
+          : baseCopy
     const root = document.createElement('div')
     root.className = 'outcome'
     root.dataset.result = outcome
@@ -188,6 +215,12 @@ export function showOutcome(
         moonlight: moonlightEarned,
         kills: killsEarned,
         bossWins: bossWinEarned,
+        normalWins:
+          world.runConfig.difficulty === 'normal' ? bossWinEarned : 0,
+        eclipseWins:
+          world.runConfig.difficulty === 'hard' ? bossWinEarned : 0,
+        fullMoonWins:
+          world.runConfig.difficulty === 'fullmoon' ? bossWinEarned : 0,
         score: scoreEarned,
         runs: runEarned,
       })
@@ -196,7 +229,8 @@ export function showOutcome(
       world.metaAwardedScore += scoreEarned
       world.metaRunRecorded ||= runEarned > 0
       world.metaVictoryAwarded ||= bossWinEarned > 0
-      const at = Date.now()
+      const at = world.runRecordAt >= 0 ? world.runRecordAt : Date.now()
+      world.runRecordAt = at
       const build = createRunBuildSummary(world)
       const buildView = getRunBuildPresentation(build)
       retryBattlefieldCode = buildView.battlefieldCode
@@ -221,10 +255,20 @@ export function showOutcome(
         const unlock = META_UNLOCKS.find((candidate) => candidate.id === id)
         return unlock ? [unlock.name] : []
       })
+      const unlockedStage =
+        bossWinEarned > 0 &&
+        world.runConfig.difficulty === 'normal' &&
+        metaAward.progress.normalWins === 1
+          ? '새 스테이지 해금 · 월식'
+          : bossWinEarned > 0 &&
+              world.runConfig.difficulty === 'hard' &&
+              metaAward.progress.eclipseWins === 1
+            ? '새 스테이지 해금 · 만월 · 10:00 보스 · 3페이즈'
+            : ''
       score.innerHTML =
         `<section class="score-summary outcome-core-summary" aria-label="이번 전투 핵심 결과">` +
         `<div class="total${isBest ? ' best' : ''}">` +
-        `<span class="label">${isBest ? '최고 기록 갱신' : '점수'}</span>` +
+        `<span class="label">${isBest ? `${stageLabel} 최고 기록 갱신` : '점수'}</span>` +
         `<strong>${s.total.toLocaleString('ko-KR')}</strong>` +
         `</div>` +
         `<div class="rows outcome-core-metrics">` +
@@ -244,10 +288,10 @@ export function showOutcome(
         scoreRow(`처치 점수 (${world.kills}킬)`, s.kills) +
         scoreRow(`레벨 점수 (${world.progression.level}레벨)`, s.level) +
         scoreRow('보스 처치 점수', s.victory, true) +
-        scoreRow(`남은 시간 점수 (${formatTime(Math.max(0, 300 - world.time))})`, s.speed, true) +
+        scoreRow(`남은 시간 점수 (${formatTime(Math.max(0, difficultyRules(world.runConfig.difficulty).runTimeLimit - world.time))})`, s.speed, true) +
         scoreRow('추가 생존 점수', s.survival, true) +
         (s.difficultyMultiplier > 1
-          ? `<div class="row hard"><span>월식 난이도 배율</span><b>×${s.difficultyMultiplier.toFixed(1)}</b></div>`
+          ? `<div class="row hard"><span>${runDifficultyLabel(world.runConfig.difficulty)} 스테이지 배율</span><b>×${s.difficultyMultiplier.toFixed(2).replace(/0$/, '')}</b></div>`
           : '') +
         `</div>` +
         recordsTable(records, at) +
@@ -259,6 +303,9 @@ export function showOutcome(
       legacy.className = 'meta-run-reward'
       legacy.setAttribute('aria-label', '월광 전승 보상')
       legacy.innerHTML =
+        (unlockedStage
+          ? `<div class="stage-unlock"><span>${unlockedStage}</span><strong>NEW</strong></div>`
+          : '') +
         `<div><span>점수 환산 월광</span><strong>+${moonlightEarned.toLocaleString('ko-KR')}</strong></div>` +
         `<p>점수 75 = 월광 1 · 보유 ${metaAward.progress.moonlight.toLocaleString('ko-KR')}` +
         (unlockedNames.length > 0

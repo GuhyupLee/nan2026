@@ -16,7 +16,8 @@ import type {
 
 export const RECORDS_STORAGE_KEY = 'myeongwol-records-v1'
 /** 클래스당 보관하는 기록 수. 결과 화면에 다 들어가는 만큼만. */
-const KEEP = 5
+const KEEP_PER_DIFFICULTY = 5
+const KEEP = KEEP_PER_DIFFICULTY * 3
 
 export const RUN_BUILD_VERSION = 1
 export const RUN_BUILD_SKILLS = ['q', 'w', 'e', 'r'] as const
@@ -96,6 +97,14 @@ function write(store: Store): void {
 
 function finiteNumber(value: unknown): value is number {
   return typeof value === 'number' && Number.isFinite(value)
+}
+
+function isRunDifficulty(value: unknown): value is RunDifficulty {
+  return value === 'normal' || value === 'hard' || value === 'fullmoon'
+}
+
+function recordDifficulty(record: RunRecord): RunDifficulty {
+  return record.difficulty ?? 'normal'
 }
 
 function sanitizeIdList(value: unknown): string[] {
@@ -232,7 +241,7 @@ function sanitizeBuild(value: unknown): RunBuildSummaryV1 | null {
     fusionIds: sanitizeIdList(build.fusionIds),
     seals: build.seals,
     ...(meta ? { meta } : {}),
-    ...(build.difficulty === 'hard' || build.difficulty === 'normal'
+    ...(isRunDifficulty(build.difficulty)
       ? { difficulty: build.difficulty }
       : {}),
   }
@@ -260,7 +269,7 @@ function sanitizeRecord(value: unknown): RunRecord | null {
     level: record.level,
     time: record.time,
     victory: record.victory,
-    ...(record.difficulty === 'hard' || record.difficulty === 'normal'
+    ...(isRunDifficulty(record.difficulty)
       ? { difficulty: record.difficulty }
       : {}),
     ...(record.endless === true ? { endless: true } : {}),
@@ -283,12 +292,21 @@ function sanitize(list: unknown): RunRecord[] {
   return records
 }
 
-export function loadRecords(cls: PlayerClass): RunRecord[] {
-  return sanitize(read()[cls])
+export function loadRecords(
+  cls: PlayerClass,
+  difficulty?: RunDifficulty,
+): RunRecord[] {
+  const records = sanitize(read()[cls])
+  return difficulty === undefined
+    ? records
+    : records.filter((record) => recordDifficulty(record) === difficulty)
 }
 
-export function loadBest(cls: PlayerClass): RunRecord | null {
-  return loadRecords(cls)[0] ?? null
+export function loadBest(
+  cls: PlayerClass,
+  difficulty?: RunDifficulty,
+): RunRecord | null {
+  return loadRecords(cls, difficulty)[0] ?? null
 }
 
 /**
@@ -301,17 +319,33 @@ export function saveRecord(
 ): { records: RunRecord[]; isBest: boolean } {
   const store = read()
   const prev = sanitize(store[cls])
-  const prevBest = prev[0]?.score ?? -1
   const safeRecord = sanitizeRecord(record)
   if (!safeRecord) return { records: prev, isBest: false }
+  const difficulty = recordDifficulty(safeRecord)
+  const prevBest =
+    prev.find((entry) => recordDifficulty(entry) === difficulty)?.score ?? -1
 
-  const next = [...prev, safeRecord]
-    // 점수 내림차순, 동점이면 최신 우선.
+  // 같은 런이 승리 화면 뒤 무한전 결과로 다시 저장되면 새 칸을 만들지 않고
+  // 최초 기록 시각을 키로 삼아 최신 결과로 교체한다.
+  const candidates = [
+    ...prev.filter((entry) => entry.at !== safeRecord.at),
+    safeRecord,
+  ]
+  const next = (['normal', 'hard', 'fullmoon'] as const)
+    .flatMap((mode) =>
+      candidates
+        .filter((entry) => recordDifficulty(entry) === mode)
+        .sort((a, b) => b.score - a.score || b.at - a.at)
+        .slice(0, KEEP_PER_DIFFICULTY),
+    )
+    // 저장·통합 화면에서는 점수 내림차순, 동점이면 최신 우선.
     .sort((a, b) => b.score - a.score || b.at - a.at)
-    .slice(0, KEEP)
 
   write({ ...store, [cls]: next })
-  return { records: next, isBest: safeRecord.score > prevBest }
+  return {
+    records: next.filter((entry) => recordDifficulty(entry) === difficulty),
+    isBest: safeRecord.score > prevBest,
+  }
 }
 
 /** m:ss 포맷. */

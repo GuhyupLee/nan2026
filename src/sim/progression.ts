@@ -195,11 +195,15 @@ export function xpToNext(level: number): number {
  * 보스 처치처럼 한 번에 큰 XP가 들어오면 여러 레벨이 동시에 오를 수 있으므로
  * 루프로 처리한다. @param time 은 levelTimes 기록용 현재 시각(초).
  */
-export function addXp(prog: Progression, amount: number, time: number): void {
-  if (amount <= 0) return
+export function addXp(
+  prog: Progression,
+  amount: number,
+  time: number,
+): number {
+  if (amount <= 0) return 0
   prog.totalXp += amount
 
-  if (prog.level >= MAX_LEVEL) return
+  if (prog.level >= MAX_LEVEL) return amount
 
   prog.xp += amount
   while (prog.level < MAX_LEVEL) {
@@ -211,7 +215,12 @@ export function addXp(prog: Progression, amount: number, time: number): void {
     prog.levelTimes[prog.level - 1] = time
   }
 
-  if (prog.level >= MAX_LEVEL) prog.xp = 0
+  if (prog.level >= MAX_LEVEL) {
+    const overflow = prog.xp
+    prog.xp = 0
+    return overflow
+  }
+  return 0
 }
 
 /** 다음에 처리해야 할 레벨업의 보상 종류. 대기 중인 레벨업이 없으면 null. */

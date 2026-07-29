@@ -1246,8 +1246,8 @@ body.pickup-buff-active #hint:not(.hidden) {
   letter-spacing: 0.08em;
 }
 
-.mainmenu-difficulty:hover:not(:disabled),
-.mainmenu-difficulty:focus-visible {
+.mainmenu-difficulty:hover:not([aria-disabled='true']),
+.mainmenu-difficulty:focus-visible:not([aria-disabled='true']) {
   border-color: rgba(192, 207, 209, 0.45);
   background:
     linear-gradient(90deg, rgba(116, 188, 205, 0.16), transparent 72%),
@@ -1259,7 +1259,7 @@ body.pickup-buff-active #hint:not(.hidden) {
   outline-offset: 2px;
 }
 
-.mainmenu-difficulty:active:not(:disabled) {
+.mainmenu-difficulty:active:not([aria-disabled='true']) {
   transform: translateY(1px);
 }
 
@@ -1277,8 +1277,10 @@ body.pickup-buff-active #hint:not(.hidden) {
 
 /* 하드 모드에서는 호버도 적색 문법을 유지한다. 특이성(0-4-0)이 공용
    호버(0-3-0)보다 높아 청록 배경으로 뒤집히지 않는다. */
-.mainmenu-difficulty[data-mode='hard']:hover:not(:disabled),
-.mainmenu-difficulty[data-mode='hard']:focus-visible {
+.mainmenu-difficulty[data-mode='hard']:hover:not([aria-disabled='true']),
+.mainmenu-difficulty[data-mode='hard']:focus-visible:not(
+    [aria-disabled='true']
+  ) {
   border-color: rgba(238, 94, 104, 0.75);
   background:
     linear-gradient(90deg, rgba(182, 47, 57, 0.3), transparent 76%),
@@ -7961,6 +7963,186 @@ body.pickup-buff-active #hint:not(.hidden) {
 
   .loadout-briefing-start {
     min-width: 0;
+  }
+}
+
+/* 세 단계 도전 선택: 잠긴 단계도 해금 조건을 읽을 수 있게 버튼 자체는 유지한다. */
+.mainmenu-difficulties {
+  width: min(31rem, 100%);
+  margin: 0 0 clamp(0.7rem, 1.4vh, 1rem);
+  display: grid;
+  gap: 0.38rem;
+}
+
+.mainmenu-difficulties .mainmenu-difficulty {
+  width: 100%;
+  min-height: 3.5rem;
+  margin: 0;
+  padding-block: 0.58rem;
+}
+
+.mainmenu-difficulty[data-selected='true'] {
+  border-width: 2px;
+  box-shadow: 0 0 1rem rgba(91, 205, 231, 0.14);
+}
+
+.mainmenu-difficulty[aria-disabled='true'] {
+  cursor: not-allowed;
+  border-color: rgba(192, 207, 209, 0.12);
+  background: rgba(8, 13, 17, 0.78);
+}
+
+.mainmenu-difficulty[aria-disabled='true'] b,
+.mainmenu-difficulty[aria-disabled='true'] em,
+.mainmenu-difficulty[aria-disabled='true'] i {
+  color: #8a94a2;
+}
+
+.mainmenu-difficulty[data-mode='fullmoon'] {
+  border-color: rgba(209, 188, 255, 0.5);
+  background:
+    linear-gradient(90deg, rgba(119, 86, 189, 0.24), transparent 78%),
+    rgba(13, 10, 22, 0.86);
+}
+
+.mainmenu-difficulty[data-mode='fullmoon'] b,
+.mainmenu-difficulty[data-mode='fullmoon'] i {
+  color: #e8dcff;
+}
+
+.mainmenu-difficulty[data-mode='fullmoon']:hover:not(
+    [aria-disabled='true']
+  ),
+.mainmenu-difficulty[data-mode='fullmoon']:focus-visible:not(
+    [aria-disabled='true']
+  ) {
+  border-color: rgba(225, 210, 255, 0.82);
+  background:
+    linear-gradient(90deg, rgba(136, 97, 218, 0.34), transparent 78%),
+    rgba(17, 12, 28, 0.92);
+}
+
+.clock[data-mode='fullmoon'] {
+  color: #eadfff;
+  border-color: rgba(199, 171, 255, 0.58);
+  text-shadow: 0 0 1rem rgba(174, 132, 255, 0.34);
+}
+
+.bossbar[data-stage='3'] .boss-track {
+  border-color: #d9c2ff;
+  box-shadow:
+    0 3px 0 rgba(0, 0, 0, 0.42),
+    0 0 1.15rem rgba(174, 124, 255, 0.34);
+}
+
+.bossbar[data-stage='3'][data-action='warning'] .boss-track {
+  border-color: #d69d54;
+}
+
+.bossbar[data-stage='3'][data-action='danger'] .boss-track {
+  border-color: #d57355;
+}
+
+.bossbar[data-stage='3'][data-action='opening'] .boss-track {
+  border-color: #5eaa82;
+  box-shadow:
+    0 3px 0 rgba(0, 0, 0, 0.42),
+    0 0 0.7rem rgba(88, 211, 139, 0.25);
+}
+
+.bossbar[data-stage='3'] .boss-fill,
+.bossbar[data-stage='3'][data-phase='windup'] .boss-fill,
+.bossbar[data-stage='3'][data-phase='charge'] .boss-fill {
+  background: linear-gradient(90deg, #7550c8, #c78dff 58%, #f3e9ff);
+}
+
+.boss-phase-shift[data-stage='3']::before {
+  background: linear-gradient(90deg, transparent, #9d72ff, #f0e4ff, transparent);
+  box-shadow: 0 0 2.4rem rgba(185, 139, 255, 0.72);
+}
+
+.boss-phase-shift[data-stage='3'] span,
+.boss-phase-shift[data-stage='3'] strong {
+  color: #eee4ff;
+}
+
+.boss-indicator {
+  --boss-arrow-angle: 0deg;
+  position: fixed;
+  left: 0;
+  top: 0;
+  z-index: 10;
+  display: flex;
+  align-items: center;
+  gap: 0.38rem;
+  padding: 0.36rem 0.5rem;
+  border: 1px solid rgba(255, 115, 137, 0.62);
+  border-radius: 0.25rem;
+  background: rgba(19, 7, 12, 0.88);
+  color: #ffe6ec;
+  pointer-events: none;
+  box-shadow: 0 0 1rem rgba(216, 58, 99, 0.28);
+}
+
+.boss-indicator[hidden] {
+  display: none;
+}
+
+.boss-indicator i {
+  color: #ff7089;
+  font-size: 0.88rem;
+  font-style: normal;
+  line-height: 1;
+  transform: rotate(var(--boss-arrow-angle));
+}
+
+.boss-indicator span {
+  display: grid;
+  gap: 0.05rem;
+  line-height: 1;
+}
+
+.boss-indicator b {
+  font-size: max(10px, 0.62rem);
+  letter-spacing: 0.12em;
+}
+
+.boss-indicator small {
+  color: #d7aab4;
+  font-size: max(9px, 0.52rem);
+  font-variant-numeric: tabular-nums;
+}
+
+.stage-unlock {
+  margin-bottom: 0.7rem;
+  padding: 0.65rem 0.75rem;
+  border: 1px solid rgba(210, 180, 255, 0.45);
+  display: flex;
+  justify-content: space-between;
+  gap: 1rem;
+  color: #eadfff;
+  background: rgba(96, 59, 150, 0.18);
+}
+
+.stage-unlock strong {
+  color: #f5dc8b;
+  letter-spacing: 0.16em;
+}
+
+@media (max-width: 640px) {
+  .mainmenu-difficulties {
+    gap: 0.26rem;
+  }
+
+  .mainmenu-difficulties .mainmenu-difficulty {
+    min-height: 3.1rem;
+    grid-template-columns: minmax(4.5rem, 0.5fr) minmax(0, 1.5fr) auto;
+    gap: 0.52rem;
+    padding: 0.45rem 0.62rem;
+  }
+
+  .mainmenu-difficulty em {
+    font-size: max(10px, 0.62rem);
   }
 }
 

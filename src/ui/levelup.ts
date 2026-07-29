@@ -198,7 +198,10 @@ function skillCard(world: World, id: SkillId): LevelUpCard | null {
  * 지금까지 스킬은 해금된 뒤 영원히 그대로였다.
  */
 function rankCards(world: World): LevelUpCard[] {
-  const maxRank = world.endless ? MAX_ENDLESS_SKILL_RANK : MAX_SKILL_RANK
+  const maxRank =
+    world.endless || world.runConfig.difficulty === 'fullmoon'
+      ? MAX_ENDLESS_SKILL_RANK
+      : MAX_SKILL_RANK
   const ids = rankableSkills(world.skills, maxRank)
   if (ids.length === 0) return []
 
@@ -415,7 +418,9 @@ export function applyLevelUpCard(world: World, card: LevelUpCard): void {
     rankUpSkill(
       world.skills,
       card.id.slice(5) as SkillId,
-      world.endless ? MAX_ENDLESS_SKILL_RANK : MAX_SKILL_RANK,
+      world.endless || world.runConfig.difficulty === 'fullmoon'
+        ? MAX_ENDLESS_SKILL_RANK
+        : MAX_SKILL_RANK,
     )
     return
   }

@@ -5,6 +5,7 @@ import {
   META_STORAGE_KEY,
   awardMetaRun,
   createRunMetaSnapshot,
+  isFullMoonModeUnlocked,
   isHardModeUnlocked,
   isMetaUnlockActive,
   loadMetaProgress,
@@ -13,6 +14,7 @@ import {
   scoreToMoonlight,
   toggleMetaDoctrine,
 } from '../src/ui/meta-progression.ts'
+import { RECORDS_STORAGE_KEY } from '../src/ui/records.ts'
 
 const entries = new Map<string, string>()
 const storage: Storage = {
@@ -42,10 +44,13 @@ Object.defineProperty(globalThis, 'localStorage', {
 
 storage.setItem(META_STORAGE_KEY, '{broken')
 assert.deepEqual(loadMetaProgress(), {
-  version: 3,
+  version: 4,
   moonlight: 0,
   lifetimeKills: 0,
   bossWins: 0,
+  normalWins: 0,
+  eclipseWins: 0,
+  fullMoonWins: 0,
   lifetimeScore: 0,
   completedRuns: 0,
   vitalityRank: 0,
@@ -87,10 +92,13 @@ assert.deepEqual(
     ],
   }),
   {
-    version: 3,
+    version: 4,
     moonlight: 0,
     lifetimeKills: 0,
     bossWins: 2,
+    normalWins: 1,
+    eclipseWins: 0,
+    fullMoonWins: 0,
     lifetimeScore: 0,
     completedRuns: 0,
     vitalityRank: 5,
@@ -125,10 +133,13 @@ assert.deepEqual(
     purchasedUnlocks: ['decapitating-flash'],
   }),
   {
-    version: 3,
+    version: 4,
     moonlight: 50,
     lifetimeKills: 75,
     bossWins: 1,
+    normalWins: 1,
+    eclipseWins: 0,
+    fullMoonWins: 0,
     lifetimeScore: 0,
     completedRuns: 0,
     vitalityRank: 1,
@@ -177,8 +188,10 @@ const winAward = awardMetaRun({
   moonlight: 1000,
   kills: 1500,
   bossWins: 1,
+  normalWins: 1,
 })
 assert.equal(isHardModeUnlocked(winAward.progress), true)
+assert.equal(isFullMoonModeUnlocked(winAward.progress), false)
 assert.equal(
   isMetaUnlockActive(winAward.progress, 'decapitating-flash'),
   true,
@@ -187,6 +200,13 @@ assert.equal(
   isMetaUnlockActive(winAward.progress, 'eclipse-execution-array'),
   true,
 )
+const eclipseAward = awardMetaRun({
+  moonlight: 0,
+  kills: 0,
+  bossWins: 1,
+  eclipseWins: 1,
+})
+assert.equal(isFullMoonModeUnlocked(eclipseAward.progress), true)
 
 const wanderer = purchaseMetaItem('wanderer-inscription')
 assert.equal(wanderer.purchased, true)
@@ -340,6 +360,31 @@ assert.ok(Math.abs(expandedWorld.stats.cooldownMul - 0.985) < 1e-9)
 assert.ok(Math.abs(expandedWorld.stats.pickupRadiusMul - 1.08) < 1e-9)
 assert.ok(Math.abs(expandedWorld.stats.xpGainMul - 1.03) < 1e-9)
 assert.equal(expandedWorld.upgradeRerollsRemaining, 1)
+
+storage.setItem(
+  META_STORAGE_KEY,
+  JSON.stringify({ version: 3, bossWins: 7 }),
+)
+storage.setItem(
+  RECORDS_STORAGE_KEY,
+  JSON.stringify({
+    ranged: [
+      {
+        score: 12_000,
+        kills: 300,
+        level: 26,
+        time: 250,
+        victory: true,
+        difficulty: 'hard',
+        at: 1234,
+      },
+    ],
+  }),
+)
+const historicalEclipse = loadMetaProgress()
+assert.equal(historicalEclipse.normalWins, 1)
+assert.equal(historicalEclipse.eclipseWins, 1)
+assert.equal(historicalEclipse.bossWins, 7)
 
 console.log(
   'meta-check: score economy, 40-rank legacy, doctrines, rerolls, migration, and deterministic snapshot ok',

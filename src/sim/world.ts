@@ -2,7 +2,6 @@ import {
   ARENA_RADIUS,
   DT,
   PLAYER_ACCEL,
-  RUN_TIME_LIMIT,
 } from './constants.ts'
 import { currentSpeed, stepAbilities } from './abilities.ts'
 import {
@@ -24,11 +23,15 @@ import {
 import { stepBossEncounter } from './boss.ts'
 import { stepAutoAttack } from './combat.ts'
 import { damageEnemy, sweepDead } from './damage.ts'
+import {
+  difficultyRules,
+  normalizeRunDifficulty,
+  usesExtendedProgression,
+} from './difficulty.ts'
 import { stepGauge, stepKits } from './kits.ts'
 import { stepZones } from './zones.ts'
 import {
   BOSS_MAX_HP,
-  BOSS_SPAWN_TIME,
   TYPE_BOSS,
   TYPE_ELITE,
   createEnemyHash,
@@ -44,7 +47,6 @@ import {
 } from './enemies.ts'
 import {
   MELEE_XP_GAIN_MULTIPLIER,
-  MAX_LEVEL,
   RANGED_XP_GAIN_MULTIPLIER,
   addXp,
   consumeLevelUp,
@@ -113,7 +115,7 @@ function normalizeRunConfig(config?: Partial<RunConfig>): RunConfig {
     ),
   ).slice(0, 32)
   return {
-    difficulty: config?.difficulty === 'hard' ? 'hard' : 'normal',
+    difficulty: normalizeRunDifficulty(config?.difficulty),
     meta: {
       version: 2,
       maxHpBonus: Math.max(0, Math.min(30, maxHpBonus)),
@@ -146,12 +148,29 @@ function normalizeRunConfig(config?: Partial<RunConfig>): RunConfig {
   }
 }
 
+function runEnemyHealthScale(
+  world: World,
+  extendedProgression: boolean,
+): number {
+  const rules = difficultyRules(world.runConfig.difficulty)
+  if (!extendedProgression) return rules.enemyHealthMultiplier
+  const extendedRatio =
+    enemyHealthMultiplier(world.time, true) /
+    enemyHealthMultiplier(world.time)
+  return (
+    (1 +
+      (extendedRatio - 1) * rules.extendedHealthGrowthMultiplier) *
+    rules.enemyHealthMultiplier
+  )
+}
+
 export function createWorld(
   seed: number,
   playerClass: PlayerClass = 'ranged',
   config?: Partial<RunConfig>,
 ): World {
   const runConfig = normalizeRunConfig(config)
+  const rules = difficultyRules(runConfig.difficulty)
   const stats = createStats(playerClass, runConfig.meta)
 
   const player: Player = {
@@ -197,7 +216,7 @@ export function createWorld(
     runConfig,
     endless: false,
     endlessStartedAt: -1,
-    nextEndlessEliteAt: Number.POSITIVE_INFINITY,
+    nextEndlessEliteAt: rules.repeatEliteStart,
     endlessXp: 0,
     pendingEndlessSkillRanks: 0,
     victoryAt: -1,
@@ -206,6 +225,7 @@ export function createWorld(
     metaAwardedScore: 0,
     metaRunRecorded: false,
     metaVictoryAwarded: false,
+    runRecordAt: -1,
     upgradeRerollsRemaining: runConfig.meta.rerolls ?? 0,
     upgradeRerollsUsed: 0,
     stats,
@@ -228,8 +248,9 @@ export function createWorld(
       spawnedAt: -1,
       active: false,
       hp: 0,
-      maxHp: BOSS_MAX_HP,
+      maxHp: rules.bossMaxHp,
       phaseTwoAt: -1,
+      phaseThreeAt: -1,
       invulnerableUntil: -1,
       hazardCycle: -1,
       recoverBlastCycle: -1,
@@ -295,6 +316,9 @@ export function stepWorld(world: World, input: Input): void {
   stepAbilities(world, input)
   stepPlayer(world, input)
   const p = world.player
+  const rules = difficultyRules(world.runConfig.difficulty)
+  const extendedProgression =
+    world.endless || usesExtendedProgression(world.runConfig.difficulty)
   const collectedPickups = stepBattlefieldPickups(
     world.battlefieldPickups,
     p.pos.x,
@@ -343,10 +367,9 @@ export function stepWorld(world: World, input: Input): void {
     stepEliteRewardBeats(world)
     stepSurgeBeats(world)
 
-    if (world.endless && world.time >= world.nextEndlessEliteAt) {
+    if (extendedProgression && world.time >= world.nextEndlessEliteAt) {
       const healthScale =
-        enemyHealthMultiplier(world.time, true) /
-        enemyHealthMultiplier(world.time)
+        runEnemyHealthScale(world, extendedProgression)
       if (
         spawnElite(
           world.enemies,
@@ -357,7 +380,9 @@ export function stepWorld(world: World, input: Input): void {
           healthScale,
         )
       ) {
-        world.nextEndlessEliteAt += 40
+        world.nextEndlessEliteAt += world.endless
+          ? 40
+          : rules.repeatEliteInterval
         if (world.rings.length < 32) {
           const elite = world.enemies.count - 1
           world.rings.push({
@@ -372,8 +397,16 @@ export function stepWorld(world: World, input: Input): void {
 
     // 일반 스폰보다 먼저 보스 슬롯을 확보한다. 용량 부족으로 실패하면
     // spawned를 올리지 않아 다음 틱에 안전하게 다시 시도한다.
-    if (!world.boss.spawned && world.time >= BOSS_SPAWN_TIME) {
-      if (spawnBoss(world.enemies, world.rng, p.pos.x, p.pos.y)) {
+    if (!world.boss.spawned && world.time >= rules.bossSpawnTime) {
+      if (
+        spawnBoss(
+          world.enemies,
+          world.rng,
+          p.pos.x,
+          p.pos.y,
+          rules.bossMaxHp / BOSS_MAX_HP,
+        )
+      ) {
         world.boss.spawned = true
         world.boss.spawnedAt = world.time
         world.boss.active = true
@@ -390,7 +423,14 @@ export function stepWorld(world: World, input: Input): void {
             SURGE_WAVE_SUPPRESSION_DURATION
         thinEnemiesForBoss(
           world.enemies,
-          targetAliveCount(world.time, false, surgeSuppressed),
+          Math.min(
+            targetAliveCount(
+              world.time,
+              rules.extendedProgression,
+              surgeSuppressed,
+            ),
+            rules.bossArenaTarget,
+          ),
         )
 
         // 렌더 전용 균열 파동. 시뮬 판정에는 관여하지 않는다.
@@ -399,21 +439,29 @@ export function stepWorld(world: World, input: Input): void {
         }
       }
     }
-    const endlessHealthScale = world.endless
-      ? enemyHealthMultiplier(world.time, true) /
-        enemyHealthMultiplier(world.time)
-      : 1
+    const endlessHealthScale = runEnemyHealthScale(
+      world,
+      extendedProgression,
+    )
     const surgeSuppressed =
       world.surgeStartedAt >= 0 &&
       world.time - world.surgeStartedAt <
         SURGE_WAVE_SUPPRESSION_DURATION
+    const aliveTarget = targetAliveCount(
+      world.time,
+      extendedProgression,
+      surgeSuppressed,
+    )
+    const encounterTarget = world.boss.active
+      ? Math.min(aliveTarget, rules.bossArenaTarget)
+      : aliveTarget
     updateSpawner(
       world.enemies,
       world.rng,
       world.time,
       p.pos.x,
       p.pos.y,
-      targetAliveCount(world.time, world.endless, surgeSuppressed),
+      encounterTarget,
       endlessHealthScale,
       surgeSuppressed,
     )
@@ -432,13 +480,14 @@ export function stepWorld(world: World, input: Input): void {
     world.boss.spawnedAt,
     world.relicsClaimed,
     world.boss.phaseTwoAt,
-    world.runConfig.difficulty === 'hard' ? 1.1 : 1,
+    rules.enemySpeedMultiplier,
+    world.boss.phaseThreeAt,
   )
   // 무적 중에는 접촉 피해를 받지 않는다. 대시·궁극기가 성립하는 근거다.
   const rawPlayerDamage =
     res.contactDamage *
-      (world.runConfig.difficulty === 'hard' ? 1.25 : 1) +
-    bossHazardDamage
+      rules.contactDamageMultiplier +
+    bossHazardDamage * rules.bossHazardDamageMultiplier
   if (rawPlayerDamage > 0 && world.time >= p.invulnUntil) {
     // 클래스별 피해 감소를 여기 한 곳에서만 적용한다.
     let incoming = rawPlayerDamage * world.stats.damageTakenMul
@@ -523,7 +572,7 @@ export function stepWorld(world: World, input: Input): void {
     world.outcome === 'alive' &&
     world.boss.spawned &&
     world.boss.active &&
-    world.time >= RUN_TIME_LIMIT &&
+    world.time >= rules.runTimeLimit &&
     !world.endless
   ) {
     world.outcome = 'timeout'
@@ -616,18 +665,22 @@ export function grantXp(world: World, amount: number): void {
   )
   const scaledAmount =
     amount * classMultiplier * pacingMultiplier * world.stats.xpGainMul
-  if (world.endless && world.progression.level >= MAX_LEVEL) {
-    world.endlessXp += scaledAmount
+  const overflow = addXp(
+    world.progression,
+    scaledAmount,
+    world.time,
+  )
+  if (
+    (world.endless ||
+      usesExtendedProgression(world.runConfig.difficulty)) &&
+    overflow > 0
+  ) {
+    world.endlessXp += overflow
     while (world.endlessXp >= 420) {
       world.endlessXp -= 420
       world.pendingEndlessSkillRanks += 1
     }
   }
-  addXp(
-    world.progression,
-    scaledAmount,
-    world.time,
-  )
   world.awaitingChoice =
     world.pendingRelicChoices > 0 ||
     world.pendingEndlessSkillRanks > 0 ||

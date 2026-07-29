@@ -1,7 +1,12 @@
-import type { RunMetaSnapshot } from '../sim/types.ts'
+import type {
+  PlayerClass,
+  RunDifficulty,
+  RunMetaSnapshot,
+} from '../sim/types.ts'
+import { loadRecords } from './records.ts'
 
 export const META_STORAGE_KEY = 'myeongwol-meta-v1'
-export const META_VERSION = 3
+export const META_VERSION = 4
 
 export type MetaStatId =
   | 'vitality'
@@ -33,6 +38,9 @@ export interface MetaProgress {
   moonlight: number
   lifetimeKills: number
   bossWins: number
+  normalWins: number
+  eclipseWins: number
+  fullMoonWins: number
   lifetimeScore: number
   completedRuns: number
   vitalityRank: number
@@ -257,6 +265,9 @@ function freshProgress(): MetaProgress {
     moonlight: 0,
     lifetimeKills: 0,
     bossWins: 0,
+    normalWins: 0,
+    eclipseWins: 0,
+    fullMoonWins: 0,
     lifetimeScore: 0,
     completedRuns: 0,
     vitalityRank: 0,
@@ -308,11 +319,20 @@ export function sanitizeMetaProgress(value: unknown): MetaProgress {
         ),
       ).slice(0, META_DOCTRINE_SLOT_MAX)
     : []
+  const bossWins = finiteInt(source.bossWins, 0, 999_999)
   return {
     version: META_VERSION,
     moonlight: finiteInt(source.moonlight, 0, 9_999_999),
     lifetimeKills: finiteInt(source.lifetimeKills, 0, 99_999_999),
-    bossWins: finiteInt(source.bossWins, 0, 999_999),
+    bossWins,
+    // v3까지는 난이도별 승리를 저장하지 않았다. 횟수를 지어내지 않고,
+    // 보스 승리 이력이 있다면 월식 해금에 필요한 최소 1승만 복원한다.
+    normalWins:
+      typeof source.normalWins === 'number'
+        ? finiteInt(source.normalWins, 0, 999_999)
+        : Math.min(1, bossWins),
+    eclipseWins: finiteInt(source.eclipseWins, 0, 999_999),
+    fullMoonWins: finiteInt(source.fullMoonWins, 0, 999_999),
     lifetimeScore: finiteInt(source.lifetimeScore, 0, 999_999_999),
     completedRuns: finiteInt(source.completedRuns, 0, 9_999_999),
     vitalityRank: finiteInt(
@@ -355,7 +375,40 @@ function write(progress: MetaProgress): MetaProgress {
 }
 
 export function loadMetaProgress(): MetaProgress {
-  return read()
+  const progress = read()
+  const classes: readonly PlayerClass[] = ['ranged', 'melee']
+  const hasVictory = (difficulty: RunDifficulty): boolean =>
+    classes.some((playerClass) =>
+      loadRecords(playerClass, difficulty).some((record) => record.victory),
+    )
+  const historicalNormalWin = hasVictory('normal')
+  const historicalEclipseWin = hasVictory('hard')
+  const historicalFullMoonWin = hasVictory('fullmoon')
+  if (
+    (!historicalNormalWin || progress.normalWins > 0) &&
+    (!historicalEclipseWin || progress.eclipseWins > 0) &&
+    (!historicalFullMoonWin || progress.fullMoonWins > 0)
+  ) {
+    return progress
+  }
+  return write({
+    ...progress,
+    bossWins: Math.max(
+      progress.bossWins,
+      historicalNormalWin || historicalEclipseWin || historicalFullMoonWin
+        ? 1
+        : 0,
+    ),
+    normalWins: Math.max(progress.normalWins, historicalNormalWin ? 1 : 0),
+    eclipseWins: Math.max(
+      progress.eclipseWins,
+      historicalEclipseWin ? 1 : 0,
+    ),
+    fullMoonWins: Math.max(
+      progress.fullMoonWins,
+      historicalFullMoonWin ? 1 : 0,
+    ),
+  })
 }
 
 export function isMetaUnlockActive(
@@ -370,7 +423,24 @@ export function isMetaUnlockActive(
 }
 
 export function isHardModeUnlocked(progress: MetaProgress): boolean {
-  return progress.bossWins >= 1
+  return progress.normalWins >= 1
+}
+
+export function isFullMoonModeUnlocked(progress: MetaProgress): boolean {
+  return progress.eclipseWins >= 1
+}
+
+export function totalMetaStatRanks(progress: MetaProgress): number {
+  return (
+    progress.vitalityRank +
+    progress.strideRank +
+    progress.mightRank +
+    progress.celerityRank +
+    progress.wardRank +
+    progress.harvestRank +
+    progress.mendingRank +
+    progress.fateRank
+  )
 }
 
 export function createRunMetaSnapshot(
@@ -403,6 +473,9 @@ export interface MetaRunAward {
   moonlight: number
   kills: number
   bossWins: number
+  normalWins?: number
+  eclipseWins?: number
+  fullMoonWins?: number
   score?: number
   runs?: number
 }
@@ -429,6 +502,12 @@ export function awardMetaRun(award: MetaRunAward): {
     lifetimeKills:
       before.lifetimeKills + finiteInt(award.kills, 0, 99_999_999),
     bossWins: before.bossWins + finiteInt(award.bossWins, 0, 999_999),
+    normalWins:
+      before.normalWins + finiteInt(award.normalWins, 0, 999_999),
+    eclipseWins:
+      before.eclipseWins + finiteInt(award.eclipseWins, 0, 999_999),
+    fullMoonWins:
+      before.fullMoonWins + finiteInt(award.fullMoonWins, 0, 999_999),
     lifetimeScore:
       before.lifetimeScore + finiteInt(award.score, 0, 999_999_999),
     completedRuns:
