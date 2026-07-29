@@ -2,9 +2,10 @@ import * as THREE from 'three'
 
 import { type ArenaArc, type ArenaVisual, createArena } from '../arena.ts'
 import { EnvAssetLoader } from './assets.ts'
+import { Atmosphere } from './atmosphere.ts'
 import { loadEnvManifest } from './manifest.ts'
 import { EnvMaterialFactory } from './materials.ts'
-import { PropField } from './props.ts'
+import { GroundSampler, PropField } from './props.ts'
 import { generatePlacements, SCATTER_KINDS, ScatterField } from './scatter.ts'
 
 /**
@@ -31,6 +32,13 @@ export interface EnvironmentVisual extends ArenaVisual {
    * @param playerX 플레이어 월드 X. 산포 필드가 이 주변만 GPU에 올린다.
    */
   update(dt: number, playerX: number, playerZ: number): void
+  /**
+   * 렌더 품질 단계.
+   *
+   * 렌더러의 적응형 정책이 프레임 간격을 보고 한 번 내린다. 지면 텍스처
+   * 블렌드(픽셀당 10샘플), 부유 입자, 안개 층 수를 함께 낮춘다.
+   */
+  setQuality(high: boolean): void
   /** 에셋 로딩이 끝나면 resolve. 테스트와 캡처가 기다린다. */
   readonly ready: Promise<EnvironmentStats>
 }
@@ -54,6 +62,37 @@ const SCATTER_SOURCES: Record<string, { asset: string; objects: string[]; shadow
   grass: { asset: 'foliage-kit', objects: ['grass-a', 'grass-b', 'grass-c'], shadow: false },
   fern: { asset: 'foliage-kit', objects: ['fern-a'], shadow: false },
   reed: { asset: 'foliage-kit', objects: ['reed-a'], shadow: false },
+  debris: {
+    asset: 'debris-kit',
+    objects: [
+      'slab-broken-a',
+      'slab-broken-b',
+      'column-drum-a',
+      'column-drum-b',
+      'beam-a',
+      'tile-pile-a',
+    ],
+    shadow: true,
+  },
+}
+
+/**
+ * 성벽 밖 자연물. 지형 높이를 따라가야 하므로 아레나 안 산포와 분리한다.
+ *
+ * 바위 5종은 각각 별도 GLB다 — 하나의 키트로 묶지 않은 것은 Blender 쪽
+ * 결정이고, 여기서는 로드한 뒤 변형 배열로 합친다.
+ */
+const OUTER_SOURCES: Record<
+  string,
+  { assets: string[]; objects: (string | null)[]; shadow: boolean }
+> = {
+  boulder: {
+    assets: ['boulder-a', 'boulder-b', 'boulder-c', 'boulder-d', 'boulder-e'],
+    objects: [null, null, null, null, null],
+    shadow: true,
+  },
+  pine: { assets: ['pine-tall', 'pine-bent'], objects: [null, null], shadow: true },
+  bamboo: { assets: ['bamboo-clump'], objects: [null], shadow: true },
 }
 
 /** 산포 종류별 배치 시드. 겹치면 자갈과 풀이 같은 자리에 난다. */
@@ -66,7 +105,20 @@ const SCATTER_SEED: Record<string, number> = {
   grass: 61_337,
   fern: 71_549,
   reed: 81_761,
+  debris: 91_997,
+  boulder: 102_181,
+  pine: 112_397,
+  bamboo: 122_609,
 }
+
+/**
+ * 성벽 24칸 중 문루·각루가 차지하는 자리.
+ *
+ * 네 방위(0/6/12/18)는 문루, 대각선(3/9/15/21)은 각루가 대신 선다. 이 칸에
+ * 성벽 조각을 그대로 두면 문 안에 벽이 박힌다.
+ */
+const GATE_SLOTS = new Set([0, 6, 12, 18])
+const TOWER_SLOTS = new Set([3, 9, 15, 21])
 
 export function createEnvironment(
   radius: number,
@@ -79,11 +131,18 @@ export function createEnvironment(
   const fallback = createArena(radius)
   group.add(fallback.group)
 
+  // 대기 연출은 Blender 에셋과 무관하다. 로딩을 기다릴 이유가 없고,
+  // 에셋이 하나도 없는 빌드에서도 공간감은 있어야 한다.
+  const atmosphere = new Atmosphere()
+  group.add(atmosphere.group)
+
   let factory: EnvMaterialFactory | null = null
   const fields: ScatterField[] = []
   let props: PropField | null = null
   let currentArc: Readonly<ArenaArc> | null = null
   let disposed = false
+  /** 에셋이 늦게 도착해도 이미 정해진 품질 단계를 따라가게 기억해 둔다. */
+  let highQuality = true
 
   const stats: EnvironmentStats = {
     loaded: [],
@@ -107,6 +166,7 @@ export function createEnvironment(
     )
     // 로딩 중에 아크가 이미 진행됐을 수 있다. 첫 프레임부터 색이 맞아야 한다.
     if (currentArc) factory.applyArc(currentArc)
+    factory.setQuality(highQuality)
 
     const loader = new EnvAssetLoader(manifest, factory, baseUrl)
 
@@ -122,6 +182,8 @@ export function createEnvironment(
     let replacedBoundary = false
     /** 프롭을 앉힐 지면. 레이캐스트 대상이라 발광 상감 같은 얇은 판은 뺀다. */
     const groundMeshes: THREE.Object3D[] = []
+    /** 성벽 밖 지형. 나무·바위를 앉힐 때 높이를 여기서 읽는다. */
+    const outerGround: THREE.Object3D[] = []
     for (const asset of terrain) {
       if (!asset) continue
       stats.loaded.push(asset.spec.name)
@@ -210,13 +272,10 @@ export function createEnvironment(
       }
 
       const buckets = availableWalls.map(() => [] as number[])
-      for (let i = 0; i < WALL_SEGMENTS; i++) buckets[pick(i)].push(i)
-
-      const matrix = new THREE.Matrix4()
-      const quaternion = new THREE.Quaternion()
-      const euler = new THREE.Euler()
-      const position = new THREE.Vector3(0, 0, 0)
-      const one = new THREE.Vector3(1, 1, 1)
+      for (let i = 0; i < WALL_SEGMENTS; i++) {
+        if (GATE_SLOTS.has(i) || TOWER_SLOTS.has(i)) continue
+        buckets[pick(i)].push(i)
+      }
 
       for (let v = 0; v < availableWalls.length; v++) {
         const asset = availableWalls[v]
@@ -225,30 +284,65 @@ export function createEnvironment(
         stats.loaded.push(`${asset.spec.name}×${indices.length}`)
         stats.staticTriangles += asset.spec.triangles * indices.length
 
+        // **인스턴싱하지 않는다.**
+        //
+        // InstancedMesh는 통째로 절두체 컬링된다. 성벽 24칸의 바운딩은
+        // 반경 34m 원 전체라 한 칸도 걸러지지 않아, 화면에 두세 칸만
+        // 보여도 24칸 × 3.5천 삼각형이 매 프레임(+ 그림자 패스에서 한 번 더)
+        // 전부 통과한다. 실측에서 이것 때문에 삼각형이 1.19M까지 올라갔다.
+        //
+        // 개별 메시로 두면 드로우콜은 늘지만 실제로 보이는 건 서너 칸뿐이라
+        // 정점 처리량이 5분의 1로 떨어진다. 브라우저 게임에서는 이쪽이 맞다.
         for (const [, mesh] of asset.objects) {
-          const instanced = new THREE.InstancedMesh(
-            mesh.geometry,
-            mesh.material,
-            indices.length,
-          )
-          instanced.name = `wall-${asset.spec.name}`
-          instanced.castShadow = true
-          instanced.receiveShadow = true
-          instanced.frustumCulled = false
-          for (let i = 0; i < indices.length; i++) {
+          for (const index of indices) {
+            const piece = new THREE.Mesh(mesh.geometry, mesh.material)
+            piece.name = `wall-${asset.spec.name}-${index}`
+            piece.castShadow = true
+            piece.receiveShadow = true
             // 조각은 이미 r=34에 굽은 상태로 만들어졌고 +Y를 중심으로 한다.
-            // 여기서는 Y축 회전만 주면 링이 닫힌다.
-            euler.set(0, -(indices[i] / WALL_SEGMENTS) * Math.PI * 2, 0)
-            quaternion.setFromEuler(euler)
-            matrix.compose(position, quaternion, one)
-            instanced.setMatrixAt(i, matrix)
+            piece.rotation.y = -(index / WALL_SEGMENTS) * Math.PI * 2
+            piece.updateMatrix()
+            piece.matrixAutoUpdate = false
+            group.add(piece)
           }
-          instanced.instanceMatrix.needsUpdate = true
-          group.add(instanced)
         }
       }
     } else {
       stats.missing.push('wall-*')
+    }
+
+    // --- 문루와 각루 -----------------------------------------------------
+    //
+    // 성벽 링의 빈 칸에 세운다. 조각과 같은 방식으로 이미 굽은 상태로
+    // 만들어졌으므로 Y축 회전만 준다.
+    for (const [assetName, slots] of [
+      ['gatehouse', GATE_SLOTS],
+      ['corner-tower', TOWER_SLOTS],
+    ] as const) {
+      const asset = await loader.load(assetName)
+      if (disposed) return stats
+      if (!asset) {
+        stats.missing.push(assetName)
+        continue
+      }
+      stats.loaded.push(`${assetName}×${slots.size}`)
+      stats.staticTriangles += asset.spec.triangles * slots.size
+
+      const indices = [...slots]
+      // 성벽과 같은 이유로 개별 메시다(위 주석 참조). 문루는 조각당
+      // 26,000 삼각형이라 컬링 여부의 차이가 특히 크다.
+      for (const [, mesh] of asset.objects) {
+        for (const index of indices) {
+          const piece = new THREE.Mesh(mesh.geometry, mesh.material)
+          piece.name = `structure-${assetName}-${index}`
+          piece.castShadow = true
+          piece.receiveShadow = true
+          piece.rotation.y = -(index / 24) * Math.PI * 2
+          piece.updateMatrix()
+          piece.matrixAutoUpdate = false
+          group.add(piece)
+        }
+      }
     }
 
     // --- 바깥 지형 -------------------------------------------------------
@@ -258,6 +352,7 @@ export function createEnvironment(
       stats.loaded.push(outer.spec.name)
       stats.staticTriangles += outer.spec.triangles
       for (const mesh of outer.objects.values()) {
+        outerGround.push(mesh)
         // 바깥 지형은 그림자를 받기만 한다. 성벽 밖으로 드리우는 그림자는
         // 화면에 거의 안 나오는데 그림자 카메라 범위만 넓힌다.
         mesh.castShadow = false
@@ -266,6 +361,45 @@ export function createEnvironment(
       }
     } else {
       stats.missing.push('outer-terrain')
+    }
+
+    // --- 성벽 밖 자연물 ---------------------------------------------------
+    //
+    // 바깥 지형은 r=48에서 -6m까지 떨어진다. 평지 가정으로 뿌리면 나무가
+    // 공중에 뜨므로 지형에 레이캐스트해 높이를 얻는다.
+    if (outerGround.length > 0) {
+      const sampler = new GroundSampler(outerGround)
+      const heightAt = (x: number, z: number): number => sampler.heightAt(x, z)
+
+      for (const [kindName, source] of Object.entries(OUTER_SOURCES)) {
+        const variants: THREE.Mesh[] = []
+        for (let i = 0; i < source.assets.length; i++) {
+          const asset = await loader.load(source.assets[i])
+          if (disposed) return stats
+          if (!asset) continue
+          const wanted = source.objects[i]
+          const mesh = wanted
+            ? asset.objects.get(wanted)
+            : asset.objects.values().next().value
+          if (mesh) variants.push(mesh)
+        }
+        if (variants.length === 0) {
+          stats.missing.push(`outer:${kindName}`)
+          continue
+        }
+        const placements = generatePlacements(
+          { ...SCATTER_KINDS[kindName], variants: variants.length },
+          SCATTER_SEED[kindName],
+        )
+        const field = new ScatterField(kindName, variants, placements, {
+          castShadow: source.shadow,
+          heightAt,
+        })
+        field.setQuality(highQuality)
+        fields.push(field)
+        group.add(field.group)
+        stats.loaded.push(`${kindName}×${placements.length}`)
+      }
     }
 
     // --- 배치형 프롭 -----------------------------------------------------
@@ -305,6 +439,7 @@ export function createEnvironment(
       factory?.applyArc(arc)
     },
     update(dt: number, playerX: number, playerZ: number): void {
+      if (currentArc) atmosphere.update(dt, playerX, playerZ, currentArc)
       if (!factory) return
       factory.advanceWind(dt)
       let resident = 0
@@ -315,9 +450,16 @@ export function createEnvironment(
       stats.scatterResident = resident
       if (props && currentArc) props.update(dt, playerX, playerZ, currentArc)
     },
+    setQuality(high: boolean): void {
+      highQuality = high
+      atmosphere.setQuality(high)
+      factory?.setQuality(high)
+      for (const field of fields) field.setQuality(high)
+    },
     dispose(): void {
       disposed = true
       fallback.dispose()
+      atmosphere.dispose()
       for (const field of fields) field.dispose()
       fields.length = 0
       props?.dispose()

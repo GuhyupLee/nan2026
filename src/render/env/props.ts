@@ -114,7 +114,7 @@ interface GlowSite {
  * 풀을 만들어 위치만 옮기면 그 비용이 0이 된다. 6개면 화면 안 등불을 전부
  * 덮는다 — 가시 범위가 플레이어 앞 11m뿐이라 그보다 많이 보이지 않는다.
  */
-const MAX_LIGHTS = 6
+const MAX_LIGHTS = 4
 
 /** 광원이 실제로 기여하는 거리. 이보다 멀면 켤 이유가 없다. */
 const LIGHT_RANGE = 13
@@ -125,7 +125,7 @@ const LIGHT_RANGE = 13
  * 위에서 아래로 레이를 쏴 지면 y를 구한다. 배치 시점에 한 번만 쓰므로
  * 성능은 문제가 되지 않고, 지형을 다시 구워도 프롭이 알아서 따라 올라온다.
  */
-class GroundSampler {
+export class GroundSampler {
   private readonly raycaster = new THREE.Raycaster()
   private readonly origin = new THREE.Vector3()
   private readonly down = new THREE.Vector3(0, -1, 0)
@@ -236,7 +236,14 @@ export class PropField {
       // 점광원 그림자는 큐브맵 6면이라 하나만 켜도 프레임이 무너진다.
       // 등불은 분위기 광원이고 그림자는 태양(달)이 담당한다.
       light.castShadow = false
-      light.visible = false
+      // **visible을 끄지 않는다.** three는 씬의 광원 개수가 바뀌면 모든
+      // 머티리얼의 셰이더를 다시 컴파일한다. 등불 배정은 플레이어가 셀을
+      // 넘을 때마다 일어나므로, 껐다 켰다 하면 이동 중에 주기적으로 수십
+      // 개 프로그램이 재컴파일되어 화면이 멎는다.
+      //
+      // 개수를 4로 고정하고 세기만 0으로 내린다. 기여가 없는 광원도 픽셀당
+      // 루프를 한 번 돌지만, 그 비용은 일정하고 예측 가능하다.
+      light.visible = true
       this.group.add(light)
       this.lights.push(light)
     }
@@ -264,7 +271,7 @@ export class PropField {
     const boost = 1 + arc.eclipse * 0.5 + arc.boss * 0.35
     for (let i = 0; i < this.lights.length; i++) {
       const light = this.lights[i]
-      if (!light.visible) continue
+      if ((light.userData.baseIntensity as number) <= 0) continue
       // 광원마다 다른 위상. 전부 같이 깜빡이면 불이 아니라 조광기로 보인다.
       const phase = i * 2.399
       const flicker =
@@ -290,7 +297,8 @@ export class PropField {
       const light = this.lights[i]
       const row = ranked[i]
       if (!row) {
-        light.visible = false
+        // 개수를 유지하려고 끄지 않는다(생성자 주석 참조). 세기만 0이다.
+        light.userData.baseIntensity = 0
         light.intensity = 0
         continue
       }
@@ -300,7 +308,6 @@ export class PropField {
       // 확실히 밝고 그 밖으로 부드럽게 떨어진다.
       light.userData.baseIntensity = 8
       light.intensity = 8
-      light.visible = true
     }
   }
 

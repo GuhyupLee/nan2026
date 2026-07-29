@@ -125,9 +125,13 @@ const SKY_FRAGMENT = /* glsl */ `
 
     float moonDot = dot(dir, uMoonDir);
 
+  #ifndef MW_SKY_IBL
     // --- 별 ------------------------------------------------------------
     // 셀 안에 점 하나. 밝기를 제곱으로 눌러 대부분은 아주 어둡고 몇 개만
     // 도드라지게 한다. 균일한 밝기의 점밭은 즉시 "노이즈 텍스처"로 읽힌다.
+    //
+    // IBL 경로에서는 통째로 건너뛴다. 프리필터가 어차피 뭉개서 기여가 0인데,
+    // 큐브 6면 × 픽셀마다 해시를 도는 비용만 남는다.
     vec3 starCell = dir * 190.0;
     vec3 cellId = floor(starCell);
     float star = hash13(cellId);
@@ -144,6 +148,7 @@ const SKY_FRAGMENT = /* glsl */ `
       // 별빛은 약간 푸르되 완전히 희지 않게. 색온도 차이가 깊이를 만든다.
       color += spark * uStarFade * mix(vec3(0.72, 0.80, 1.0), vec3(1.0, 0.94, 0.86), star);
     }
+  #endif
 
     // --- 달 -------------------------------------------------------------
     // 각반경 약 1.4°. 실제 달(0.52°)보다 크게 잡았다 — 실제 크기로 그리면
@@ -195,8 +200,12 @@ const SKY_FRAGMENT = /* glsl */ `
       float sheet = fbm(cloudCoord * 1.25);
       float density = smoothstep(0.50, 0.86, sheet);
       // 두 번째 층을 다른 속도로 흘려야 구름이 판이 아니라 부피로 읽힌다.
+      // IBL에서는 한 층이면 충분하다 — 프리필터를 통과하면 두 층의 차이가
+      // 남지 않는데 FBM 5옥타브를 한 번 더 도는 비용만 든다.
+      #ifndef MW_SKY_IBL
       float upper = smoothstep(0.56, 0.92, fbm(cloudCoord * 2.7 + vec3(11.0, 0.0, 5.0) - uTime * 0.006));
       density = clamp(density + upper * 0.42, 0.0, 1.0);
+      #endif
 
       // 달 쪽 가장자리만 밝게. 뒤에서 빛을 받는 구름의 은테두리다.
       float rim = pow(clamp(moonDot * 0.5 + 0.5, 0.0, 1.0), 5.0);
@@ -262,6 +271,7 @@ export class Sky {
 
   private readonly scene: THREE.Scene
   private readonly material: THREE.ShaderMaterial
+  private readonly iblMaterial: THREE.ShaderMaterial
   private readonly pmrem: THREE.PMREMGenerator
   private readonly iblScene: THREE.Scene
   private environmentTarget: THREE.WebGLRenderTarget | null = null
@@ -273,7 +283,11 @@ export class Sky {
 
   constructor(gl: THREE.WebGLRenderer, scene: THREE.Scene, options: SkyOptions = {}) {
     this.scene = scene
-    this.iblInterval = options.iblIntervalSec ?? 0.28
+    // 재생성 간격을 0.28초에서 크게 늘렸다. 아크는 5분에 걸쳐 변하므로
+    // 1.2초 단위 갱신은 눈에 띄지 않지만, 재생성 자체가 프레임을 16ms까지
+    // 밀어 올리는 스파이크였다. 측정에서 90프레임 중 10프레임이 8ms를
+    // 넘었는데 그 전부가 이 작업이었다.
+    this.iblInterval = options.iblIntervalSec ?? 1.2
 
     this.material = new THREE.ShaderMaterial({
       name: 'eclipse-sky',
@@ -309,10 +323,25 @@ export class Sky {
     this.mesh.frustumCulled = false
     scene.add(this.mesh)
 
-    // IBL용 씬은 같은 머티리얼을 공유하는 별도 돔이다. 본 씬을 그대로
-    // 구우면 캐릭터·이펙트까지 환경광에 섞여 프레임마다 색이 튄다.
+    // IBL용 씬은 **단순화된 머티리얼**을 쓰는 별도 돔이다.
+    //
+    // 본 씬을 그대로 구우면 캐릭터·이펙트까지 환경광에 섞여 프레임마다 색이
+    // 튄다. 그래서 하늘만 담은 씬을 따로 둔다.
+    //
+    // 화면용 머티리얼을 공유했더니 IBL 재생성이 프레임을 16ms까지 밀어
+    // 올렸다. 큐브 6면을 각각 그리는데 픽셀마다 별 해시와 5옥타브 구름
+    // FBM을 돌기 때문이다. **환경광에 별과 구름의 고주파는 아무 기여도
+    // 하지 않는다** — 프리필터가 어차피 뭉갠다. 저주파 성분만 남긴
+    // 별도 머티리얼을 쓰면 결과는 사실상 같고 비용은 몇 분의 일이 된다.
+    this.iblMaterial = this.material.clone()
+    this.iblMaterial.name = 'eclipse-sky-ibl'
+    // 공유 유니폼 객체를 그대로 물려 화면용과 항상 같은 색을 낸다.
+    this.iblMaterial.uniforms = this.material.uniforms
+    this.iblMaterial.defines = { MW_SKY_IBL: '' }
+    this.iblMaterial.needsUpdate = true
+
     this.iblScene = new THREE.Scene()
-    const iblDome = new THREE.Mesh(new THREE.SphereGeometry(100, 32, 24), this.material)
+    const iblDome = new THREE.Mesh(new THREE.SphereGeometry(100, 16, 12), this.iblMaterial)
     iblDome.frustumCulled = false
     this.iblScene.add(iblDome)
 
@@ -358,7 +387,7 @@ export class Sky {
       Math.abs(arc.eclipse - this.bakedArc.eclipse) +
       Math.abs(arc.boss - this.bakedArc.boss) +
       Math.abs(arc.phaseTwo - this.bakedArc.phaseTwo)
-    if (this.environmentTarget === null || (moved > 0.02 && this.iblCooldown <= 0)) {
+    if (this.environmentTarget === null || (moved > 0.06 && this.iblCooldown <= 0)) {
       this.bakeEnvironment(arc)
     }
   }
@@ -387,6 +416,7 @@ export class Sky {
   dispose(): void {
     this.mesh.geometry.dispose()
     this.material.dispose()
+    this.iblMaterial.dispose()
     this.environmentTarget?.dispose()
     this.environmentTarget = null
     this.scene.environment = null

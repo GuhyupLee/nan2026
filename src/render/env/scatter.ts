@@ -45,6 +45,15 @@ export interface ScatterPlacement {
   tiltZ: number
   /** 지면에 파묻히는 깊이(m). 자갈이 떠 있으면 즉시 가짜로 보인다. */
   sink: number
+  /**
+   * 지면 높이(m). 생성 시 **한 번만** 샘플링해 넣는다.
+   *
+   * 처음에는 update()에서 매번 레이캐스트했는데, 성벽 밖 지형이 47,000
+   * 삼각형이라 소나무·바위 수백 개를 배치할 때마다 그 메시를 수백 번
+   * 관통 검사했다. 셀이 바뀔 때마다 30ms 넘게 멈췄다. 배치는 결정적이라
+   * 높이도 변하지 않으므로 미리 구해 두면 된다.
+   */
+  groundY: number
   /** 어느 변형 메시에 속하는지. */
   variant: number
 }
@@ -190,8 +199,11 @@ export const SCATTER_KINDS: Record<string, ScatterKind> = {
     spacing: 0.85,
     minRadius: 6,
     maxRadius: 34,
-    scaleMin: 0.6,
-    scaleMax: 1.55,
+    // 원본 포기가 0.18~0.36m다. 기본 스케일로 뿌렸더니 부감 카메라에서
+    // 세로 12픽셀짜리 점이 되어 아예 안 보였다. 실제 마당 잡초 높이인
+    // 0.3~0.8m 구간으로 끌어올린다. 캐릭터(1.6m)를 가리지 않는 상한이다.
+    scaleMin: 1.5,
+    scaleMax: 3.1,
     maxTilt: 0.14,
     sinkMin: 0.005,
     sinkMax: 0.02,
@@ -210,8 +222,8 @@ export const SCATTER_KINDS: Record<string, ScatterKind> = {
     spacing: 3.6,
     minRadius: 20,
     maxRadius: 34,
-    scaleMin: 0.75,
-    scaleMax: 1.4,
+    scaleMin: 1.4,
+    scaleMax: 2.4,
     maxTilt: 0.16,
     sinkMin: 0.005,
     sinkMax: 0.02,
@@ -221,12 +233,82 @@ export const SCATTER_KINDS: Record<string, ScatterKind> = {
       return edge * Math.max(0, patchNoise(x * 0.08 + 15, z * 0.08, 6203) - 0.40) * 2.6
     },
   },
+  // --- 성벽 밖 (r=35~46) --------------------------------------------------
+  //
+  // 성벽(3.4m) 너머라 **하부만 보인다.** 그래도 실루엣이 겹치는 것만으로
+  // 깊이가 크게 늘어난다. 여기 있는 것들은 전부 지형 높이를 따라간다.
+  debris: {
+    spacing: 3.4,
+    minRadius: 34.5,
+    maxRadius: 44,
+    scaleMin: 0.7,
+    scaleMax: 1.5,
+    maxTilt: 0.42,
+    sinkMin: 0.02,
+    sinkMax: 0.12,
+    variants: 6,
+    density(radius, x, z) {
+      // 성벽 바로 아래가 가장 많다 — 위에서 떨어진 것들이다.
+      const nearWall = 1 - THREE.MathUtils.smoothstep(radius, 35, 42)
+      return (0.15 + nearWall * 0.75) * (0.2 + patchNoise(x * 0.06 + 5, z * 0.06, 6607) * 1.3)
+    },
+  },
+  boulder: {
+    spacing: 5.6,
+    minRadius: 35.5,
+    maxRadius: 46,
+    scaleMin: 0.65,
+    scaleMax: 1.5,
+    maxTilt: 0.16,
+    sinkMin: 0.1,
+    sinkMax: 0.4,
+    variants: 5,
+    density(radius, x, z) {
+      const out = THREE.MathUtils.smoothstep(radius, 35, 44)
+      return (0.2 + out * 0.7) * (0.25 + patchNoise(x * 0.045 - 20, z * 0.045, 7013) * 1.2)
+    },
+  },
+  pine: {
+    spacing: 7.2,
+    minRadius: 36,
+    maxRadius: 46,
+    scaleMin: 0.7,
+    scaleMax: 1.25,
+    maxTilt: 0.07,
+    sinkMin: 0.05,
+    sinkMax: 0.2,
+    variants: 2,
+    density(radius, x, z) {
+      const out = THREE.MathUtils.smoothstep(radius, 36, 43)
+      // 문 앞 시야 통로에는 나무를 두지 않는다. 네 방위에서 밖을 볼 때
+      // 나무가 정면을 막으면 성문 밖이 그냥 벽이 된다.
+      const lane = THREE.MathUtils.smoothstep(Math.min(Math.abs(x), Math.abs(z)), 2.5, 8)
+      return out * lane * Math.max(0, patchNoise(x * 0.05 + 70, z * 0.05, 8123) - 0.30) * 2.4
+    },
+  },
+  bamboo: {
+    spacing: 6.4,
+    minRadius: 36,
+    maxRadius: 45,
+    scaleMin: 0.75,
+    scaleMax: 1.3,
+    maxTilt: 0.05,
+    sinkMin: 0.05,
+    sinkMax: 0.18,
+    variants: 1,
+    density(radius, x, z) {
+      const out = THREE.MathUtils.smoothstep(radius, 36, 43)
+      const lane = THREE.MathUtils.smoothstep(Math.min(Math.abs(x), Math.abs(z)), 2.5, 8)
+      // 대나무는 무리 지어 난다. 임계를 세게 걸어 군락 몇 개만 만든다.
+      return out * lane * Math.max(0, patchNoise(x * 0.04 - 88, z * 0.04, 9311) - 0.46) * 3.6
+    },
+  },
   reed: {
     spacing: 3.0,
     minRadius: 24,
     maxRadius: 34,
-    scaleMin: 0.8,
-    scaleMax: 1.5,
+    scaleMin: 1.6,
+    scaleMax: 2.9,
     maxTilt: 0.2,
     sinkMin: 0.005,
     sinkMax: 0.015,
@@ -280,6 +362,8 @@ export function generatePlacements(
         tiltX: (r5 - 0.5) * 2 * kind.maxTilt,
         tiltZ: (r6 - 0.5) * 2 * kind.maxTilt,
         sink: kind.sinkMin + (kind.sinkMax - kind.sinkMin) * r5,
+        // 평지가 기본값. 지형이 있는 곳은 ScatterField가 생성 시 덮어쓴다.
+        groundY: 0,
         variant: Math.floor(r6 * kind.variants) % kind.variants,
       })
     }
@@ -319,13 +403,35 @@ export class ScatterField {
   /** 실제로 GPU에 올라간 인스턴스 수. 예산 감사에 쓴다. */
   residentCount = 0
 
+  /**
+   * 상주 인스턴스 비율. 저사양에서 낮춘다.
+   *
+   * 밀도를 줄이는 게 아니라 **가까운 것부터 채우고 잘라 낸다**. 밀도를
+   * 낮추면 배치가 통째로 달라져 같은 자리에 갔을 때 풀이 사라졌다 나타나고,
+   * 그건 성능 저하보다 더 눈에 띈다.
+   */
+  private budget = 1
+
+  /**
+   * 지면 높이 함수. 평지가 아닌 곳(성벽 밖 지형)에 뿌릴 때 넘긴다.
+   *
+   * 아레나 안은 z가 ±0.05 안이라 무시해도 되지만, 바깥 지형은 r=48에서
+   * -6m까지 떨어진다. 그대로 y=0에 놓으면 소나무가 공중에 뜬다.
+   */
   constructor(
     name: string,
     variants: THREE.Mesh[],
     placements: ScatterPlacement[],
-    options: { castShadow: boolean },
+    options: { castShadow: boolean; heightAt?: (x: number, z: number) => number },
   ) {
     this.group.name = `scatter-${name}`
+    // 지형 높이는 여기서 한 번만 굽는다. 매 갱신마다 레이캐스트하면
+    // 셀을 넘을 때마다 프레임이 30ms 넘게 멈춘다(placement.groundY 주석 참조).
+    if (options.heightAt) {
+      for (const placement of placements) {
+        placement.groundY = options.heightAt(placement.x, placement.z)
+      }
+    }
 
     // 변형별로 셀에 묶는다. 최대 상주 수를 미리 알아야 InstancedMesh 용량을
     // 잡을 수 있으므로, 가장 붐비는 위치를 실제로 훑어 상한을 구한다.
@@ -377,19 +483,25 @@ export class ScatterField {
     let total = 0
     for (const bucket of this.buckets) {
       let written = 0
-      for (let dz = -span; dz <= span; dz++) {
-        for (let dx = -span; dx <= span; dx++) {
-          const list = bucket.cells.get(cellKey(cellX + dx, cellZ + dz))
-          if (!list) continue
-          for (const placement of list) {
-            if (written >= bucket.capacity) break
-            this.position.set(placement.x, -placement.sink, placement.z)
-            this.euler.set(placement.tiltX, placement.rotation, placement.tiltZ)
-            this.quaternion.setFromEuler(this.euler)
-            this.scaleVec.setScalar(placement.scale)
-            this.matrix.compose(this.position, this.quaternion, this.scaleVec)
-            bucket.mesh.setMatrixAt(written, this.matrix)
-            written++
+      const limit = Math.max(1, Math.floor(bucket.capacity * this.budget))
+      // 가까운 셀부터 채운다. 예산이 모자라면 먼 것이 잘린다.
+      for (let ring = 0; ring <= span && written < limit; ring++) {
+        for (let dz = -ring; dz <= ring && written < limit; dz++) {
+          for (let dx = -ring; dx <= ring && written < limit; dx++) {
+            // 이번 링의 테두리만 본다. 안쪽은 이전 반복에서 이미 처리했다.
+            if (Math.max(Math.abs(dx), Math.abs(dz)) !== ring) continue
+            const list = bucket.cells.get(cellKey(cellX + dx, cellZ + dz))
+            if (!list) continue
+            for (const placement of list) {
+              if (written >= limit) break
+              this.position.set(placement.x, placement.groundY - placement.sink, placement.z)
+              this.euler.set(placement.tiltX, placement.rotation, placement.tiltZ)
+              this.quaternion.setFromEuler(this.euler)
+              this.scaleVec.setScalar(placement.scale)
+              this.matrix.compose(this.position, this.quaternion, this.scaleVec)
+              bucket.mesh.setMatrixAt(written, this.matrix)
+              written++
+            }
           }
         }
       }
@@ -398,6 +510,20 @@ export class ScatterField {
       total += written
     }
     this.residentCount = total
+  }
+
+  /**
+   * 저사양 경로. 상주 비율을 낮추고 즉시 다시 채운다.
+   *
+   * `lastCell`을 무효화해야 다음 update가 실제로 다시 쓴다 — 안 그러면
+   * 플레이어가 셀을 넘을 때까지 예전 개수가 남는다.
+   */
+  setQuality(high: boolean): void {
+    const next = high ? 1 : 0.45
+    if (next === this.budget) return
+    this.budget = next
+    this.lastCellX = Number.NaN
+    this.lastCellZ = Number.NaN
   }
 
   dispose(): void {

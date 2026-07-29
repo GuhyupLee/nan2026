@@ -222,9 +222,17 @@ const FOLIAGE_VERTEX = /* glsl */ `
   transformed.y -= abs( sway ) * amount * 0.22;
 `
 
-/** 잎 끝을 밝게 만드는 그라디언트. 단색 식생은 즉시 플라스틱으로 읽힌다. */
+/**
+ * 잎 끝을 밝게 만드는 그라디언트. 단색 식생은 즉시 플라스틱으로 읽힌다.
+ *
+ * 배수를 크게 잡은 이유가 있다. 이 게임은 월식 밤이라 주광이 약한데,
+ * 식생 알베도까지 어두우면(0.16, 0.19, 0.11) 화면에서 완전히 사라진다.
+ * 처음 뿌렸을 때 800포기가 한 포기도 안 보였다. 실제 식물은 얇아서 **빛이
+ * 통과한다** — 뒤에서 받은 달빛이 잎을 통해 새어 나오는 그 밝기가 여기 담긴
+ * 값이고, 물리적으로도 근거가 있다.
+ */
 const FOLIAGE_COLOR_FRAGMENT = /* glsl */ `
-  diffuseColor.rgb *= mix( vec3( 0.62, 0.66, 0.58 ), vec3( 1.24, 1.20, 0.94 ), vColor.r );
+  diffuseColor.rgb *= mix( vec3( 1.05, 1.15, 0.92 ), vec3( 2.35, 2.30, 1.62 ), vColor.r );
   diffuseColor.rgb *= mix( vec3( 1.0 ), uArcTint, uArcAmount );
 `
 
@@ -433,6 +441,7 @@ export class EnvMaterialFactory {
       shader.uniforms.uArcAmount = { value: 0 }
       shader.uniforms.uBlendEnabled = { value: enabled ? 1 : 0 }
       material.userData.arcUniform = shader.uniforms.uArcAmount
+      if (enabled) material.userData.blendUniform = shader.uniforms.uBlendEnabled
 
       shader.fragmentShader = shader.fragmentShader
         .replace('void main() {', `${STONE_PARS}\nvoid main() {`)
@@ -517,6 +526,24 @@ export class EnvMaterialFactory {
   /** 바람 시계. 렌더 프레임 간격으로 진행시킨다. */
   advanceWind(dt: number): void {
     this.shared.windTime.value += dt
+  }
+
+  /**
+   * 저사양 경로.
+   *
+   * `stone` 셰이더는 화면의 대부분을 덮으면서 픽셀마다 텍스처를 10번
+   * 읽는다. 통합 그래픽에서는 이것 하나가 프레임 예산을 넘긴다. 낮은
+   * 단계에서는 마모·이끼 블렌드를 꺼서 3번으로 줄인다. 정점 컬러가 만드는
+   * 변주는 사라지지만 화면은 그대로 돌아간다 — 이게 옳은 트레이드다.
+   *
+   * 유니폼만 바꾸므로 셰이더 재컴파일이 없다. `#define`으로 분기하면 단계를
+   * 바꿀 때마다 프로그램이 다시 만들어져 오히려 멈춘다.
+   */
+  setQuality(high: boolean): void {
+    for (const material of this.built.values()) {
+      const uniform = material.userData.blendUniform as { value: number } | undefined
+      if (uniform) uniform.value = high ? 1 : 0
+    }
   }
 
   setWindStrength(strength: number): void {

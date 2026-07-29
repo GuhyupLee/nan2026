@@ -1076,6 +1076,9 @@ export class Renderer {
     this.battlefieldPickupRenderer.setQuality(nextConstrained ? 0.45 : 1)
     this.xpGemRenderer.setQuality(nextConstrained ? 0.45 : 1)
     this.skillFx.setQuality(nextConstrained ? 0.45 : 1)
+    // 환경 레이어에서 가장 비싼 것은 지면 셰이더의 픽셀당 10 텍스처 샘플과
+    // 부유 입자·안개 층의 오버드로다. 제한 tier에서 셋 다 내린다.
+    this.arena.setQuality(!nextConstrained)
     let changed = nextConstrained !== this.constrained
     this.constrained = nextConstrained
 

@@ -1,6 +1,151 @@
 {
   "assets": [
     {
+      "name": "bamboo-clump",
+      "path": "env/bamboo-clump.glb",
+      "triangles": 3708,
+      "bytes": 37984,
+      "objects": [
+        "bamboo-clump"
+      ],
+      "animated": false,
+      "notes": "9 individually kinked culms with protruding node rings and geometric lanceolate leaves; FLOAT_COLOR Col.R reaches 1.0 at leaf/culm tips",
+      "extras": {
+        "culmCount": 9,
+        "heightRange": [
+          3.2,
+          5.4
+        ],
+        "diameterRange": [
+          0.05,
+          0.09
+        ],
+        "windTipWeight": 1.0,
+        "windClass": "bamboo"
+      }
+    },
+    {
+      "name": "banner",
+      "path": "env/banner.glb",
+      "triangles": 1144,
+      "bytes": 9344,
+      "objects": [
+        "banner",
+        "banner-cloth"
+      ],
+      "animated": false,
+      "notes": "3.6m timber banner; separate 12x20 cloth grid with two static sine wrinkles, ragged sawtooth hem and FLOAT_COLOR Col.R wind weight"
+    },
+    {
+      "name": "bell-pavilion",
+      "path": "env/bell-pavilion.glb",
+      "triangles": 5870,
+      "bytes": 51132,
+      "objects": [
+        "bell-pavilion",
+        "bell"
+      ],
+      "animated": false,
+      "notes": "4.2m four-column bell pavilion; 1.1m separate bell with 4 nipple panels, 36 nipples, 2 striking pads, dragon loop and sound tube; bell origin is suspension axis"
+    },
+    {
+      "name": "bell-swing",
+      "path": "env/bell-swing.glb",
+      "triangles": 2016,
+      "bytes": 190756,
+      "objects": [
+        "bell-swing",
+        "bell-swing-armature"
+      ],
+      "animated": true,
+      "notes": "one-bone skinned bell; non-looping 2.4s exponential damped oscillation, 0.62s period, 12deg to 0.5deg with subtle secondary twist"
+    },
+    {
+      "name": "boulder-a",
+      "path": "env/boulder-a.glb",
+      "triangles": 690,
+      "bytes": 9372,
+      "objects": [
+        "boulder-a"
+      ],
+      "animated": false,
+      "notes": "single instancing source; planar fracture cuts, geometric parallel joint grooves, flat ground contact; FLOAT_COLOR Col.G stores north-face/groove moss",
+      "extras": {
+        "instancingSource": true,
+        "mossChannel": "G",
+        "northAxis": "+Y",
+        "jointCount": 2
+      }
+    },
+    {
+      "name": "boulder-b",
+      "path": "env/boulder-b.glb",
+      "triangles": 616,
+      "bytes": 8300,
+      "objects": [
+        "boulder-b"
+      ],
+      "animated": false,
+      "notes": "single instancing source; planar fracture cuts, geometric parallel joint grooves, flat ground contact; FLOAT_COLOR Col.G stores north-face/groove moss",
+      "extras": {
+        "instancingSource": true,
+        "mossChannel": "G",
+        "northAxis": "+Y",
+        "jointCount": 2
+      }
+    },
+    {
+      "name": "boulder-c",
+      "path": "env/boulder-c.glb",
+      "triangles": 644,
+      "bytes": 8740,
+      "objects": [
+        "boulder-c"
+      ],
+      "animated": false,
+      "notes": "single instancing source; planar fracture cuts, geometric parallel joint grooves, flat ground contact; FLOAT_COLOR Col.G stores north-face/groove moss",
+      "extras": {
+        "instancingSource": true,
+        "mossChannel": "G",
+        "northAxis": "+Y",
+        "jointCount": 3
+      }
+    },
+    {
+      "name": "boulder-d",
+      "path": "env/boulder-d.glb",
+      "triangles": 632,
+      "bytes": 8672,
+      "objects": [
+        "boulder-d"
+      ],
+      "animated": false,
+      "notes": "single instancing source; planar fracture cuts, geometric parallel joint grooves, flat ground contact; FLOAT_COLOR Col.G stores north-face/groove moss",
+      "extras": {
+        "instancingSource": true,
+        "mossChannel": "G",
+        "northAxis": "+Y",
+        "jointCount": 3
+      }
+    },
+    {
+      "name": "boulder-e",
+      "path": "env/boulder-e.glb",
+      "triangles": 604,
+      "bytes": 8160,
+      "objects": [
+        "boulder-e"
+      ],
+      "animated": false,
+      "notes": "single instancing source; planar fracture cuts, geometric parallel joint grooves, flat ground contact; FLOAT_COLOR Col.G stores north-face/groove moss",
+      "extras": {
+        "instancingSource": true,
+        "mossChannel": "G",
+        "northAxis": "+Y",
+        "jointCount": 3
+      }
+    },
+    {
       "name": "brazier",
       "path": "env/brazier.glb",
       "triangles": 1956,
@@ -12,6 +157,63 @@
       ],
       "animated": false,
       "notes": "0.92m three-legged cast brazier; curved sweep legs, charcoal mound, separate emissive hemisphere"
+    },
+    {
+      "name": "censer",
+      "path": "env/censer.glb",
+      "triangles": 2288,
+      "bytes": 22768,
+      "objects": [
+        "censer",
+        "offering-stone"
+      ],
+      "animated": false,
+      "notes": "0.55m three-legged bronze censer and separate 1.2x0.8x0.22m beveled offering-stone with shallow 12-petal lotus relief"
+    },
+    {
+      "name": "corner-tower",
+      "path": "env/corner-tower.glb",
+      "triangles": 16652,
+      "bytes": 122244,
+      "objects": [
+        "corner-tower"
+      ],
+      "animated": false,
+      "notes": "r=34 curved diagonal corner pavilion; battered masonry base, four asymmetric entasis columns, four real two-tier brackets, open balustrades, and swept upturned pyramidal roof",
+      "extras": {
+        "zMin": 0.0,
+        "zMax": 7.592525,
+        "radius": 34.0,
+        "facings": "+Y outward",
+        "storeys": 1,
+        "baseHeight": 3.4,
+        "pavilionHeight": 2.4,
+        "roofHeight": 1.7999999999999998,
+        "placementDegrees": [
+          45,
+          135,
+          225,
+          315
+        ],
+        "vertexColor": "Col: R wear, G moss/damp shade, B crack proximity"
+      }
+    },
+    {
+      "name": "debris-kit",
+      "path": "env/debris-kit.glb",
+      "triangles": 4356,
+      "bytes": 67964,
+      "objects": [
+        "slab-broken-a",
+        "slab-broken-b",
+        "column-drum-a",
+        "column-drum-b",
+        "beam-a",
+        "tile-pile-a",
+        "step-fragment-a"
+      ],
+      "animated": false,
+      "notes": "7 independent wall-and-corridor debris props; broken slabs, two column drums, rotten beam, 12-piece tile pile and stair fragment; existing materials mixed per polygon"
     },
     {
       "name": "foliage-kit",
@@ -27,6 +229,59 @@
       ],
       "animated": false,
       "notes": "5 independent geometry-foliage variants; FLOAT_COLOR Col.R stores wind weight"
+    },
+    {
+      "name": "gate-swing",
+      "path": "env/gate-swing.glb",
+      "triangles": 568,
+      "bytes": 53076,
+      "objects": [
+        "gate-swing",
+        "gate-swing-armature"
+      ],
+      "animated": true,
+      "notes": "one-bone skinned 1.6s gate; heavy delayed start, 86deg overshoot and 82deg settling rebound"
+    },
+    {
+      "name": "gatehouse",
+      "path": "env/gatehouse.glb",
+      "triangles": 24316,
+      "bytes": 206040,
+      "objects": [
+        "gatehouse",
+        "gatehouse-door-l",
+        "gatehouse-door-r"
+      ],
+      "animated": false,
+      "notes": "r=34 curved gatehouse; through elliptical arch, 13 radial voussoirs and oversized keystone; hinge-pivoted double timber doors; eight entasis columns, four real bracket sets, open balusters, swept curved hip-and-gable roof",
+      "extras": {
+        "zMin": 0.0,
+        "zMax": 8.3859,
+        "width": 7.176,
+        "radius": 34.0,
+        "facings": "+Y outward",
+        "arch": {
+          "width": 3.6,
+          "spring": 2.0,
+          "apex": 3.1,
+          "throughSightRays": 9
+        },
+        "doors": {
+          "objects": [
+            "gatehouse-door-l",
+            "gatehouse-door-r"
+          ],
+          "thickness": 0.12,
+          "pivot": "hinge axis; Blender Z / glTF Y rotation"
+        },
+        "placementDegrees": [
+          0,
+          90,
+          180,
+          270
+        ],
+        "vertexColor": "Col: R wear, G moss/damp shade, B crack proximity"
+      }
     },
     {
       "name": "haetae",
@@ -95,6 +350,36 @@
         "radiusMax": 48.000002,
         "outerEdgeZ": -6.0,
         "vertexColor": "Col: R wear, G shaded rock/stream damp, B cliff/outcrop cracks"
+      }
+    },
+    {
+      "name": "pine-bent",
+      "path": "env/pine-bent.glb",
+      "triangles": 1792,
+      "bytes": 26756,
+      "objects": [
+        "pine-bent"
+      ],
+      "animated": false,
+      "notes": "Korean red pine; 24 geometric needle bundles at 20 tris each; FLOAT_COLOR Col.R stores root-to-tip wind weight",
+      "extras": {
+        "needleBundles": 24,
+        "windTipWeight": 1.0
+      }
+    },
+    {
+      "name": "pine-tall",
+      "path": "env/pine-tall.glb",
+      "triangles": 2048,
+      "bytes": 30108,
+      "objects": [
+        "pine-tall"
+      ],
+      "animated": false,
+      "notes": "Korean red pine; 28 geometric needle bundles at 20 tris each; FLOAT_COLOR Col.R stores root-to-tip wind weight",
+      "extras": {
+        "needleBundles": 28,
+        "windTipWeight": 1.0
       }
     },
     {
@@ -752,7 +1037,7 @@
         1.0,
         1.0
       ],
-      "roughness": 0.88,
+      "roughness": 0.84,
       "metalness": 0.0,
       "emission": null,
       "emissionStrength": 0.0,
@@ -762,12 +1047,12 @@
         "orm": "env/tex/arch/cloth_orm.webp"
       },
       "normalScale": 1.0,
-      "uvScale": 0.8,
+      "uvScale": 1.0,
       "transparent": false,
       "alphaTest": 0.0,
-      "doubleSided": false,
+      "doubleSided": true,
       "shader": "cloth",
-      "arcResponse": 0.85
+      "arcResponse": 1.0
     },
     {
       "name": "mw/arch/masonry",
@@ -877,7 +1162,7 @@
         1.0,
         1.0
       ],
-      "roughness": 0.82,
+      "roughness": 0.78,
       "metalness": 0.0,
       "emission": null,
       "emissionStrength": 0.0,
@@ -887,12 +1172,12 @@
         "orm": "env/tex/arch/timber_orm.webp"
       },
       "normalScale": 1.0,
-      "uvScale": 0.45,
+      "uvScale": 0.72,
       "transparent": false,
       "alphaTest": 0.0,
       "doubleSided": false,
       "shader": "default",
-      "arcResponse": 0.9
+      "arcResponse": 1.0
     },
     {
       "name": "mw/ground/granite-slab",
@@ -1136,6 +1421,56 @@
         1.0
       ],
       "roughness": 0.88,
+      "metalness": 0.0,
+      "emission": null,
+      "emissionStrength": 0.0,
+      "maps": {
+        "baseColor": null,
+        "normal": null,
+        "orm": null
+      },
+      "normalScale": 1.0,
+      "uvScale": 1.0,
+      "transparent": false,
+      "alphaTest": 0.0,
+      "doubleSided": true,
+      "shader": "foliage",
+      "arcResponse": 1.0
+    },
+    {
+      "name": "mw/nature/culm",
+      "baseColor": [
+        0.22,
+        0.26,
+        0.14,
+        1.0
+      ],
+      "roughness": 0.62,
+      "metalness": 0.0,
+      "emission": null,
+      "emissionStrength": 0.0,
+      "maps": {
+        "baseColor": null,
+        "normal": null,
+        "orm": null
+      },
+      "normalScale": 1.0,
+      "uvScale": 1.0,
+      "transparent": false,
+      "alphaTest": 0.0,
+      "doubleSided": false,
+      "shader": "default",
+      "arcResponse": 1.0
+    },
+    {
+      "name": "mw/nature/needle",
+      "baseColor": [
+        0.09,
+        0.13,
+        0.07,
+        1.0
+      ],
+      "roughness": 0.85,
       "metalness": 0.0,
       "emission": null,
       "emissionStrength": 0.0,
