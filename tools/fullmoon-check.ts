@@ -7,7 +7,10 @@ import {
   stepBossEncounter,
 } from '../src/sim/boss.ts'
 import { DT } from '../src/sim/constants.ts'
-import { damageEnemy } from '../src/sim/damage.ts'
+import {
+  FULLMOON_BOSS_SINGLE_HIT_DAMAGE_CAP_RATIO,
+  damageEnemy,
+} from '../src/sim/damage.ts'
 import { difficultyRules } from '../src/sim/difficulty.ts'
 import {
   BOSS_MAX_HP,
@@ -33,7 +36,7 @@ import { createWorld, grantXp, stepWorld } from '../src/sim/world.ts'
 const rules = difficultyRules('fullmoon')
 assert.equal(rules.bossSpawnTime, 600)
 assert.equal(rules.runTimeLimit, 720)
-assert.equal(rules.bossMaxHp, 14_400)
+assert.equal(rules.bossMaxHp, 19_152)
 assert.equal(rules.bossPhaseCount, 3)
 assert.equal(rules.enemySpeedMultiplier, 1.18)
 assert.equal(rules.contactDamageMultiplier, 1.5)
@@ -103,12 +106,18 @@ function bossWorld(seed: number): { world: World; bossIndex: number } {
   const { world, bossIndex } = bossWorld(92)
   const phaseTwoHp = bossPhaseTwoThreshold(world)
   const phaseThreeHp = bossPhaseThreeThreshold(world)
-  assert.equal(phaseTwoHp, 9_600)
-  assert.equal(phaseThreeHp, 4_800)
+  assert.equal(phaseTwoHp, 12_768)
+  assert.equal(phaseThreeHp, 6_384)
 
   damageEnemy(world, bossIndex, rules.bossMaxHp * 4)
   assert.equal(world.boss.phaseTwoAt, -1)
-  assert.equal(world.boss.hp, 10_368)
+  assert.equal(
+    world.boss.hp,
+    Math.fround(
+      rules.bossMaxHp *
+        (1 - FULLMOON_BOSS_SINGLE_HIT_DAMAGE_CAP_RATIO),
+    ),
+  )
   damageEnemy(world, bossIndex, rules.bossMaxHp * 4)
   assert.equal(world.boss.hp, phaseTwoHp)
   assert.equal(world.boss.phaseTwoAt, world.time)
@@ -130,7 +139,13 @@ function bossWorld(seed: number): { world: World; bossIndex: number } {
   world.time = world.boss.invulnerableUntil
   world.tick = Math.round(world.time / DT)
   damageEnemy(world, bossIndex, rules.bossMaxHp * 4)
-  assert.equal(world.boss.hp, 5_568)
+  assert.equal(
+    world.boss.hp,
+    Math.fround(
+      phaseTwoHp -
+        rules.bossMaxHp * FULLMOON_BOSS_SINGLE_HIT_DAMAGE_CAP_RATIO,
+    ),
+  )
   assert.equal(world.boss.phaseThreeAt, -1)
   damageEnemy(world, bossIndex, rules.bossMaxHp * 4)
   assert.equal(world.boss.hp, phaseThreeHp)
@@ -197,5 +212,5 @@ function bossWorld(seed: number): { world: World; bossIndex: number } {
 }
 
 console.log(
-  'fullmoon-check: 10:00 spawn, 12:00 deadline, 14.4k HP, gated phase 2/3, triple hazards, extended growth, and score multiplier ok',
+  'fullmoon-check: 10:00 spawn, 12:00 deadline, 19,152 HP, gated phase 2/3, triple hazards, extended growth, and score multiplier ok',
 )

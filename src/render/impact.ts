@@ -3,56 +3,21 @@ import * as THREE from 'three'
 import { MAX_ENEMIES } from '../sim/enemies.ts'
 
 /**
- * 타격감 — 히트스톱 · 화면 흔들림 · 데미지 숫자 · 피격 플래시.
+ * 타격감 — 화면 흔들림 · 데미지 숫자 · 피격 플래시.
  *
  * 뱀서라이크에서 "때리는 맛"은 피해량 숫자가 아니라 **때린 순간 세계가
- * 반응한다는 신호**에서 온다. 그 신호를 만드는 네 장치를 한 모듈에 모았다.
- * 넷 다 같은 순간에 같은 세기로 터져야 하나의 타격으로 읽히기 때문에,
+ * 반응한다는 신호**에서 온다. 그 신호를 만드는 세 장치를 한 모듈에 모았다.
+ * 셋 다 같은 순간에 같은 세기로 터져야 하나의 타격으로 읽히기 때문에,
  * 세기 계산과 상한을 한 곳에서 잡는 것이 흩어놓는 것보다 훨씬 안전하다.
  *
  * 이 모듈은 **아무것도 직접 조작하지 않는다.**
- * - 시뮬 시간을 멈추지 않는다. 배율(`timeScale`)만 내놓고 호출부가 쓴다.
- *   시뮬은 고정 60Hz 결정론이라 내부에서 느려질 방법이 없고, 있어서도 안 된다.
  * - 카메라를 옮기지 않는다. 오프셋(`offset`/`roll`)만 내놓고 렌더러가 더한다.
  * - 적 색을 칠하지 않는다. "누가 언제까지 번쩍이는가"만 들고 있고
  *   적 렌더러가 읽어 간다.
  *
- * 시간 기준: 전부 **벽시계**다. 히트스톱으로 늦춰진 시간을 여기에 다시
- * 먹이면 화면이 멈춘 동안 흔들림과 숫자까지 같이 멈춰서, 타격감이 아니라
- * 프레임 드랍으로 읽힌다. 그건 정확히 반대 효과다.
+ * 시간 기준은 전부 **벽시계**다. 타격 피드백은 조작·이동·쿨다운을 늦추지 않고
+ * 화면 위에서만 끝난다.
  */
-
-// ---------------------------------------------------------------------------
-// 히트스톱
-// ---------------------------------------------------------------------------
-
-/**
- * 한 번의 히트스톱이 가질 수 있는 최대 길이(초).
- *
- * 0.12초 = 60Hz에서 7틱. 이보다 길면 "묵직하다"가 아니라 "끊긴다"로 넘어간다.
- * 격투 게임의 히트스톱이 대체로 3~8프레임인 것과 같은 이유다.
- */
-const HITSTOP_MAX_DURATION = 0.12
-
-/**
- * 최대 강도에서 남기는 시간 배율.
- *
- * 완전한 0으로 얼리지 않는 이유는 입력 때문이다. 시뮬 틱이 아예 안 돌면
- * 그동안의 조작이 통째로 버려져서, 히트스톱이 강할수록 조작이 씹힌다.
- * 0.06이면 화면은 멈춘 것처럼 보이면서 입력은 흘러간다.
- */
-const HITSTOP_FLOOR = 0.06
-
-/**
- * 히트스톱 예산(초)과 초당 회복량.
- *
- * "겹치면 강한 쪽이 이긴다"만으로는 연타를 못 막는다. 평타 간격 0.28초에
- * 관통 5까지 있으면 초당 수십 번 요청이 들어오고, 매번 조금씩 이기면서
- * 슬로모션에 갇힌다. 그래서 총량에 하드 리밋을 건다 — 장기적으로 벽시계의
- * 22%까지만 히트스톱에 쓸 수 있고, 순간 몰림은 0.14초까지 허용한다.
- */
-const HITSTOP_BUDGET = 0.14
-const HITSTOP_BUDGET_REFILL = 0.22
 
 // ---------------------------------------------------------------------------
 // 화면 흔들림
@@ -335,15 +300,9 @@ void main() {
  * 타격 피드백 묶음.
  *
  * 드로우콜은 데미지 숫자 1개만 늘어난다(글리프 전부가 한 InstancedMesh다).
- * 히트스톱·흔들림·플래시는 그리는 것이 없어 0이다.
+ * 흔들림·플래시는 그리는 것이 없어 0이다.
  */
 export class ImpactFx {
-  // --- 히트스톱 ---
-  private hitstopRemain = 0
-  private hitstopStrength = 0
-  private hitstopSpent = 0
-  private timeScaleValue = 1
-
   // --- 흔들림 ---
   private trauma = 0
   /** 0이면 "설정 안 됨". 첫 요청이 값을 정하고, 트라우마가 마르면 다시 0으로 돌아간다. */
@@ -359,11 +318,6 @@ export class ImpactFx {
   private readonly reducedMotion = window.matchMedia('(prefers-reduced-motion: reduce)')
   private readonly onMotionPreference = (): void => {
     this.applyShakeScale()
-    if (this.reducedMotion.matches) {
-      this.hitstopRemain = 0
-      this.hitstopStrength = 0
-      this.timeScaleValue = 1
-    }
   }
   private readonly offsetVec = new THREE.Vector3()
   private rollValue = 0
@@ -461,61 +415,6 @@ export class ImpactFx {
   }
 
   // -------------------------------------------------------------------------
-  // 히트스톱
-  // -------------------------------------------------------------------------
-
-  /**
-   * 히트스톱을 요청한다.
-   *
-   * @param strength    0..1. 1이면 거의 정지.
-   * @param durationSec 0..0.12로 잘린다.
-   *
-   * 누적 규칙은 두 겹이다.
-   * 1) 진행 중인 히트스톱보다 약한 요청은 통째로 무시한다. 약한 잔타가
-   *    큰 타격의 정지를 계속 연장하면 슬로모션에 갇힌다.
-   * 2) 그래도 같은 세기 연타는 막지 못하므로 예산으로 총량을 자른다.
-   */
-  requestHitstop(strength: number, durationSec: number): void {
-    const motionScale = this.reducedMotion.matches ? 0.25 : 1
-    const s = THREE.MathUtils.clamp(strength * motionScale, 0, 1)
-    const d = Math.min(Math.max(durationSec * motionScale, 0), HITSTOP_MAX_DURATION)
-    if (s <= 0 || d <= 0) return
-    if (this.hitstopRemain > 0 && s < this.hitstopStrength) return
-
-    // 예산은 요청 길이가 아니라 **실제로 늘어난 정지 시간**만 쓴다.
-    // 같은 프레임의 관통 5타가 각각 0.04초를 요청해도 화면에 생기는 정지는
-    // 0.04초 하나뿐이다. 예전에는 0.20초를 쓴 것으로 계산해 다음 타격이
-    // 통째로 사라졌다. 남은 정지보다 긴 부분만 청구하고 예산도 넘지 않는다.
-    const extension = Math.max(0, d - this.hitstopRemain)
-    const admitted = Math.min(
-      extension,
-      Math.max(0, HITSTOP_BUDGET - this.hitstopSpent),
-    )
-    if (extension > 0 && admitted <= 0) return
-
-    this.hitstopSpent += admitted
-    this.hitstopRemain += admitted
-    this.hitstopStrength = s
-    // 요청 프레임의 다음 시뮬레이션 스텝부터 바로 감속한다. update()에서만
-    // 값을 계산하면 피격 프레임 뒤에 한 프레임이 더 지나 타격 정지가 늦게 느껴진다.
-    this.timeScaleValue = Math.min(
-      this.timeScaleValue,
-      1 - s * (1 - HITSTOP_FLOOR),
-    )
-  }
-
-  /**
-   * 시뮬에 넘길 dt에 곱할 배율. 1이면 평소 속도.
-   *
-   * update()에서 갱신되므로 한 프레임 늦게 반영된다. 타격은 시뮬 틱 안에서
-   * 일어나고 정지는 그 다음 프레임부터 걸리는 셈인데, 8~16ms라 눈에 안 잡히고
-   * 오히려 "맞는 순간 → 멈춤" 순서가 자연스럽다.
-   */
-  get timeScale(): number {
-    return this.timeScaleValue
-  }
-
-  // -------------------------------------------------------------------------
   // 화면 흔들림
   // -------------------------------------------------------------------------
 
@@ -562,7 +461,7 @@ export class ImpactFx {
 
   /**
    * 흔들림 세기 배수(0..1). 모바일 품질 강등과 접근성 설정의 손잡이다.
-   * 히트스톱과 숫자는 건드리지 않는다 — 멀미의 원인은 흔들림이다.
+   * 숫자는 건드리지 않는다 — 멀미의 원인은 흔들림이다.
    */
   setShakeScale(scale: number): void {
     this.qualityShakeScale = THREE.MathUtils.clamp(scale, 0, 1)
@@ -688,33 +587,26 @@ export class ImpactFx {
 
   /**
    * @param now 벽시계 초. flashAmount에 넘기는 값과 같은 시계여야 한다.
-   * @param dt  벽시계 경과 초. **히트스톱으로 스케일하지 않은 값**을 넘긴다.
-   *            여기서 다시 느려지면 흔들림과 숫자가 같이 멈춰서
-   *            타격감이 아니라 프레임 드랍으로 보인다.
+   * @param dt  벽시계 경과 초.
    */
   update(now: number, dt: number): void {
     this.now = now
-    this.updateHitstop(dt)
     this.updateShake(dt)
     this.updateNumbers(dt)
   }
 
   /**
    * 현재 프레임에 막 추가된 흔들림·숫자를 시간 경과 없이 즉시 샘플링한다.
-   * update() 뒤 이벤트를 소비하는 렌더 순서에서 이전 프레임의 dt가 새 히트스톱
-   * 수명을 깎지 않으면서도, 접촉 프레임의 시각 피드백은 늦지 않게 한다.
+   * update() 뒤 이벤트를 소비하는 렌더 순서에서도 접촉 프레임의 시각 피드백이
+   * 한 프레임 늦지 않게 한다.
    */
   refreshPresentation(): void {
     this.updateShake(0)
     this.updateNumbers(0)
   }
 
-  /** 새 런이 직전 판의 정지·흔들림·숫자·플래시를 물려받지 않게 한다. */
+  /** 새 런이 직전 판의 흔들림·숫자·플래시를 물려받지 않게 한다. */
   reset(): void {
-    this.hitstopRemain = 0
-    this.hitstopStrength = 0
-    this.hitstopSpent = 0
-    this.timeScaleValue = 1
     this.trauma = 0
     this.traumaDecay = 0
     this.frequency = SHAKE_DEFAULT_FREQUENCY
@@ -726,21 +618,6 @@ export class ImpactFx {
     this.mesh.count = 0
     this.flashEnd.fill(0)
     this.flashSpan.fill(0)
-  }
-
-  private updateHitstop(dt: number): void {
-    this.hitstopSpent = Math.max(0, this.hitstopSpent - dt * HITSTOP_BUDGET_REFILL)
-
-    if (this.hitstopRemain > 0) {
-      this.hitstopRemain -= dt
-      if (this.hitstopRemain <= 0) {
-        this.hitstopRemain = 0
-        this.hitstopStrength = 0
-      }
-    }
-
-    this.timeScaleValue =
-      this.hitstopRemain > 0 ? 1 - this.hitstopStrength * (1 - HITSTOP_FLOOR) : 1
   }
 
   private updateShake(dt: number): void {
@@ -864,9 +741,6 @@ export class ImpactFx {
  *
  *         this.impact.update(now, dt)
  *
- *     히트스톱으로 스케일한 dt 를 넘기면 안 된다. 시뮬이 멈춘 동안에도
- *     흔들림과 숫자는 계속 움직여야 그 정지가 "타격"으로 읽힌다.
- *
  * [3] 카메라 흔들림 — `this.positionCamera()` (renderer.ts:327) **다음 줄**.
  *
  *         this.positionCamera()
@@ -880,21 +754,7 @@ export class ImpactFx {
  *     리사이즈한 그 한 프레임만 흔들림이 빠지고 다음 render 에서 복구된다.
  *     offset 은 내부 필드를 그대로 돌려주므로 호출부에서 변형하지 마라.
  *
- * [4] 히트스톱 배선 — Renderer 에 게터 하나를 뚫고, main.ts:156 에서 곱한다.
- *
- *         // renderer.ts
- *         get simTimeScale(): number { return this.impact.timeScale }
- *
- *         // main.ts:156
- *         accumulator +=
- *           Math.min(rawDt, DT * MAX_TICKS_PER_FRAME) * renderer.simTimeScale
- *
- *     시뮬 자체는 고정 DT 그대로 돈다. 누적기에 들어가는 양만 줄어서
- *     "틱이 덜 도는" 형태로 시간이 늦춰진다 — 결정론은 손대지 않는다.
- *     lastTime 은 계속 갱신되므로 히트스톱이 끝난 뒤 시간이 튀지도 않는다.
- *     (tools/sim-check.ts 는 stepWorld 를 직접 돌리므로 영향 없음.)
- *
- * [5] 이벤트 → 이펙트 배선 — render() 안, drainEvents(main.ts:189) 보다
+ * [4] 이벤트 → 이펙트 배선 — render() 안, drainEvents(main.ts:189) 보다
  *     앞이면 어디든 된다. 이벤트를 **읽기만** 하고 배열을 비우지 마라.
  *     audio.update(main.ts:187)가 같은 배열을 뒤에서 다시 읽는다.
  *
@@ -908,7 +768,6 @@ export class ImpactFx {
  *           if (d.type === 2) this.impact.shake(0.22, 0.26)          // 브루트
  *           else if (d.type === TYPE_BOSS) {                          // 보스
  *             this.impact.shake(0.9, 1.1, 12)
- *             this.impact.requestHitstop(0.9, 0.12)
  *           }
  *         }
  *
@@ -916,7 +775,6 @@ export class ImpactFx {
  *         for (const r of world.rings) {
  *           if (r.kind !== 2 && r.kind !== 3) continue
  *           this.impact.shake(Math.min(0.45, r.radius * 0.05), 0.3)
- *           this.impact.requestHitstop(0.45, 0.06)
  *         }
  *
  *         // 궁극기 시전.
@@ -943,7 +801,7 @@ export class ImpactFx {
  *         }
  *         this.lastTotalXp = xp
  *
- * [6] 적 피격 플래시 — enemies.ts 의 drawEnemies() 에서 sim 플래시와 합친다.
+ * [5] 적 피격 플래시 — enemies.ts 의 drawEnemies() 에서 sim 플래시와 합친다.
  *     sim 의 pool.flash 는 swap-remove 때 같이 옮겨져서 항상 정확하다.
  *     이쪽은 렌더 전용 추가 채널이므로 **둘 중 큰 값**을 쓴다.
  *
@@ -954,7 +812,7 @@ export class ImpactFx {
  *     now 를 하나 더 넘기거나, ImpactFx 를 생성자에 주입해야 한다.
  *     (이번 라운드에서 enemies.ts 는 다른 에이전트가 잡고 있다.)
  *
- * [7] 품질 손잡이 — renderer.ts:336 updateRenderQuality() 안에서
+ * [6] 품질 손잡이 — renderer.ts:336 updateRenderQuality() 안에서
  *     좁은 화면·터치 기기면 흔들림을 줄인다. 그리는 것이 없어 성능 문제는
  *     아니지만, 작은 화면에서 같은 진폭은 훨씬 크게 느껴진다.
  *
@@ -963,7 +821,7 @@ export class ImpactFx {
  *     생성자에서 prefers-reduced-motion 이 켜져 있으면 이미 0.3 이 들어가
  *     있으므로, 접근성 설정을 존중하려면 이 호출은 그때 건너뛰는 편이 낫다.
  *
- * [8] 정리 — renderer.ts dispose() 안, this.enemyRenderer.dispose() 옆.
+ * [7] 정리 — renderer.ts dispose() 안, this.enemyRenderer.dispose() 옆.
  *
  *         this.impact.dispose()
  *

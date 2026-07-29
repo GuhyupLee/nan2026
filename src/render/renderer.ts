@@ -650,8 +650,8 @@ export class Renderer {
       this.outcomePresentationAt = now
     }
 
-    // 지난 프레임의 실제 경과만 먼저 소비한다. 아래에서 새 타격을 받은 뒤
-    // 다시 dt를 빼면 짧은 히트스톱이 다음 시뮬레이션 스텝 전에 사라진다.
+    // 지난 프레임의 실제 경과를 먼저 소비하고, 아래에서 이번 프레임의
+    // 타격 피드백을 추가한 뒤 시간 경과 없이 다시 샘플링한다.
     this.impact.update(now, dt)
 
     // VRM 다운로드가 스킬 도중 끝나 절차 리그를 교체한 경우, 시작 이벤트는
@@ -812,7 +812,7 @@ export class Renderer {
 
   /**
    * 맞은 적의 시뮬레이션 좌표를 건드리지 않고 공격자 루트만 잠깐 전진시킨다.
-   * 히트스톱과 같은 벽시계 경로라 정지 중에도 2~3프레임 안에 원위치로 풀린다.
+   * 벽시계 경로라 시뮬레이션 진행과 무관하게 2~3프레임 안에 원위치로 풀린다.
    */
   private applyAttackImpactPresentation(world: World, now: number): void {
     if (world.outcome !== 'alive') return
@@ -930,12 +930,10 @@ export class Renderer {
       const d = world.deaths[i]!
       if (d.type === TYPE_BOSS) {
         this.impact.shake(0.9, 1.1, 12)
-        this.impact.requestHitstop(0.9, 0.12)
         this.post.flash(0xffffff, 0.5, 0.6)
         this.pulseBloom(2.45)
       } else if (d.type === TYPE_ELITE) {
         this.impact.shake(0.52, 0.46, 9)
-        this.impact.requestHitstop(0.5, 0.055)
         this.post.flash(0xe4bd70, 0.17, 0.3)
         this.pulseBloom(1.78)
       } else if (d.type === 2 && !bombPickupTriggered) {
@@ -965,7 +963,6 @@ export class Renderer {
       this.lastBossPhaseTwoAt < 0
     ) {
       this.impact.shake(0.86, 0.82, 11)
-      this.impact.requestHitstop(0.72, 0.075)
       this.post.flash(0xff4f86, 0.34, 0.5)
       this.pulseBloom(2.2)
     }
@@ -976,7 +973,6 @@ export class Renderer {
       this.lastBossPhaseThreeAt < 0
     ) {
       this.impact.shake(1.05, 0.95, 13)
-      this.impact.requestHitstop(0.78, 0.09)
       this.post.flash(0xe8d7ff, 0.42, 0.58)
       this.pulseBloom(2.55)
     }
@@ -1078,7 +1074,6 @@ export class Renderer {
       this.battlefieldPickupRenderer.triggerActivation(PICKUP_BOMB, px, pz)
       this.impactParticles.burst(px, pz, world.player.facing, 0xff7a18)
       this.impact.shake(0.82, 0.62, 13)
-      this.impact.requestHitstop(0.78, 0.09)
       this.post.flash(0xff8a1f, 0.43, 0.48)
       this.pulseBloom(2.3)
     }
@@ -1131,10 +1126,6 @@ export class Renderer {
     if (!discreteImpact) return
 
     const lethalLift = kill === null ? 0 : 1
-    this.impact.requestHitstop(
-      0.12 + strongestPower * 0.44 + lethalLift * 0.04,
-      0.012 + strongestPower * 0.04 + lethalLift * 0.006,
-    )
     this.impact.shake(
       0.09 + strongestPower * 0.18 + lethalLift * 0.025,
       0.18 + strongestPower * 0.13,
@@ -1489,7 +1480,7 @@ export class Renderer {
       const startedAt = action.startedAt
       // 평타 판정은 sim에서 즉시지만 리그의 접촉 키는 일반 0.10초·강화
       // 0.22초 뒤다. 이벤트를 받은 프레임에 접촉 키를 바로 샘플해야 새
-      // 히트스톱이 준비 자세가 아니라 실제 충돌 자세를 붙잡는다.
+      // 흔들림·파티클이 준비 자세가 아니라 실제 충돌 자세와 맞물리게 한다.
       const presentationStartedAt =
         action.kind === 'attack' || action.kind === 'empowered'
           ? startedAt -
@@ -1625,12 +1616,6 @@ export class Renderer {
   }
 
   /**
-   * 히트스톱 배율. main.ts가 시뮬 누적기에 곱한다.
-   *
-   * 시뮬 자체를 멈추지 않는 이유는 결정론 때문이다 — 고정 DT는 그대로 두고
-   * "이번 프레임에 얼마나 시간이 흘렀는가"만 줄인다.
-   */
-  /**
    * 궤적 리본을 현재 리그의 무기에 붙인다.
    *
    * 프로시저럴 폴백 리그에는 앵커가 없다. 그때는 소스를 비워 리본이 조용히
@@ -1641,10 +1626,6 @@ export class Renderer {
     this.weaponTrail.setSource(b?.base ?? null, b?.tip ?? null)
     // 이전 무기의 마지막 위치와 이어 붙어 화면을 가로지르는 띠가 생기는 것을 끊는다.
     this.weaponTrail.reset()
-  }
-
-  get simTimeScale(): number {
-    return this.impact.timeScale
   }
 
   /** 새 판의 첫 시뮬레이션 스텝 전에 직전 판의 순간 연출을 끊는다. */

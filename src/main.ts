@@ -11,6 +11,7 @@ import {
   shouldUseVrmModels,
 } from './render/vrm-rig.ts'
 import { ARENA_RADIUS, DT, MAX_TICKS_PER_FRAME } from './sim/constants.ts'
+import { advanceSimulationAccumulator } from './sim/frame-clock.ts'
 import { bossPhaseTwoThreshold } from './sim/boss.ts'
 import { difficultyRules } from './sim/difficulty.ts'
 import { BOSS_MAX_HP, spawnBoss } from './sim/enemies.ts'
@@ -234,7 +235,7 @@ function requestMenuWarmup(): void {
 
 /**
  * 결말 판정은 고정 틱에서 이미 끝났다. 이후에는 시뮬·입력·HUD만 즉시 잠그고,
- * 보스 사망 플래시·히트스톱·카메라 셰이크 같은 실시간 렌더 효과만 마무리한다.
+ * 보스 사망 플래시·카메라 셰이크 같은 실시간 렌더 효과만 마무리한다.
  */
 function beginOutcomeTransition(now: number, revealDelayOverride?: number): void {
   if (
@@ -382,11 +383,9 @@ function frame(now: number): void {
   if (running) {
     // 탭이 백그라운드에 있다 돌아오면 rawDt가 수 초가 된다.
     // 그대로 누적하면 수백 틱을 한 프레임에 밀어넣어 멈춘 것처럼 보인다.
-    //
-    // 히트스톱은 시뮬을 멈추지 않고 **누적되는 시간에 배율만 건다**. 큰 타격
-    // 순간 틱이 덜 도는 형태라 고정 DT 결정론이 그대로 유지된다 —
-    // 헤드리스 밸런싱과 sim-check는 stepWorld를 직접 돌리므로 영향이 없다.
-    accumulator += Math.min(rawDt, DT * MAX_TICKS_PER_FRAME) * renderer.simTimeScale
+    // 타격 연출과 무관하게 이동·입력·전투 시간은 항상 벽시계 1:1로 흐른다.
+    // 전역 시간 배율은 접촉 중 자동공격과 겹치면 피격 감속처럼 느껴져 사용하지 않는다.
+    accumulator = advanceSimulationAccumulator(accumulator, rawDt)
 
     let ticks = 0
     while (accumulator >= DT && ticks < MAX_TICKS_PER_FRAME) {

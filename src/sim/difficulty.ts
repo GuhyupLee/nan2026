@@ -70,7 +70,8 @@ const RULES: Record<RunDifficulty, DifficultyRules> = {
     // 10분을 버틴 뒤 최종 보스가 열리고, 3페이즈를 읽을 2분을 준다.
     bossSpawnTime: 600,
     runTimeLimit: 720,
-    bossMaxHp: 14_400,
+    // 기본 보스와 같은 33% 상향을 적용해 난이도 사이 상대 배율을 유지한다.
+    bossMaxHp: 19_152,
     bossPhaseCount: 3,
     bossPhaseTwoRatio: 2 / 3,
     bossPhaseThreeRatio: 1 / 3,

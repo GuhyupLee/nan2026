@@ -1104,6 +1104,32 @@ for (const mode of ['instant', 'release'] as const) {
   )
 }
 
+// Losing HP must never alter movement. Hit feedback is render-only, so two
+// otherwise identical worlds cover the same distance and advance the same
+// cooldown/time even when one starts the probe damaged.
+{
+  const unhurt = createWorld(9_010, 'melee')
+  const damaged = createWorld(9_010, 'melee')
+  for (const world of [unhurt, damaged]) {
+    world.spawnEnabled = false
+    world.player.attackCooldown = Number.POSITIVE_INFINITY
+  }
+  damaged.player.hp -= 30
+
+  const move = idleAt(10, 0)
+  move.move.x = 1
+  for (let tick = 0; tick < 60; tick += 1) {
+    stepWorld(unhurt, move)
+    stepWorld(damaged, move)
+  }
+
+  approx(damaged.time, unhurt.time, 'damage does not slow world time')
+  approx(damaged.player.pos.x, unhurt.player.pos.x, 'damage does not slow movement')
+  approx(damaged.player.pos.y, unhurt.player.pos.y, 'damage preserves movement path')
+  approx(damaged.player.vel.x, unhurt.player.vel.x, 'damage does not reduce velocity')
+  approx(damaged.player.vel.y, unhurt.player.vel.y, 'damage preserves velocity direction')
+}
+
 console.log(
-  'control-check: targeting, locked aim, analog touch, FIFO, buffer, flash guards, dash immunity, W→F origin, Q volley, and deferred Q cooldown ok',
+  'control-check: targeting, locked aim, analog touch, FIFO, buffer, flash guards, dash immunity, W→F origin, Q volley, deferred Q cooldown, and damage-speed invariance ok',
 )

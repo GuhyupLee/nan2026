@@ -735,7 +735,7 @@ function startPhaseTwoForHazardTest(
 }
 
 {
-  assert.equal(BOSS_PHASE_TWO_THRESHOLD, 1300)
+  assert.equal(BOSS_PHASE_TWO_THRESHOLD, 1729)
   assert.equal(BOSS_PHASE_TWO_THRESHOLD, BOSS_MAX_HP / 2)
   // 비율을 그대로 박아 두지 않는다. 이 검사가 지켜야 할 것은 특정 숫자가
   // 아니라 **한 방에 2페이즈 게이트를 건너뛸 수 없다**는 성질이다. 상한이
@@ -760,9 +760,10 @@ function startPhaseTwoForHazardTest(
   world.enemies.bossChargeCycle[bossIndex] = 6
 
   const hitCap = BOSS_MAX_HP * BOSS_SINGLE_HIT_DAMAGE_CAP_RATIO
+  const hpAfterCappedHit = Math.fround(BOSS_MAX_HP - hitCap)
   assert.equal(damageEnemy(world, bossIndex, BOSS_MAX_HP * 4), false)
-  assert.equal(world.enemies.hp[bossIndex], BOSS_MAX_HP - hitCap)
-  assert.equal(world.boss.hp, BOSS_MAX_HP - hitCap)
+  assert.equal(world.enemies.hp[bossIndex], hpAfterCappedHit)
+  assert.equal(world.boss.hp, hpAfterCappedHit)
   assert.equal(world.boss.phaseTwoAt, -1)
   assert.ok(world.enemies.hp[bossIndex]! > BOSS_PHASE_TWO_THRESHOLD)
   assert.deepEqual(
@@ -771,7 +772,7 @@ function startPhaseTwoForHazardTest(
       x: 0,
       y: 0,
       amount: hitCap,
-      hpAfter: BOSS_MAX_HP - hitCap,
+      hpAfter: hpAfterCappedHit,
       maxHp: BOSS_MAX_HP,
       enemyType: TYPE_BOSS,
       lethal: false,
