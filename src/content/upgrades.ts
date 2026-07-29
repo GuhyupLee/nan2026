@@ -315,7 +315,7 @@ const RANGED_UPGRADES: readonly UpgradeDef[] = [
       {
         rank: 3,
         displayName: '지속 광로',
-        oneLiner: 'Q 삼중 굴절의 지속시간이 5초에서 7초로 늘어납니다.',
+        oneLiner: 'Q 삼중 굴절이 7초로 늘고, 평타 공격 간격이 12% 감소합니다.',
         trait: 'orbital-prism',
         awakeningName: '지속 광로',
       },
@@ -323,7 +323,10 @@ const RANGED_UPGRADES: readonly UpgradeDef[] = [
     effects: [
       (w) => scaleSkillCooldown(w, 'q', 0.88),
       (w) => scaleSkillCooldown(w, 'q', 0.88),
-      (w) => awakenSkill(w, 'q', 'orbital-prism'),
+      (w) => {
+        w.stats.atkIntervalMul *= 0.88
+        awakenSkill(w, 'q', 'orbital-prism')
+      },
     ],
   }),
   defineUpgrade({
@@ -340,7 +343,7 @@ const RANGED_UPGRADES: readonly UpgradeDef[] = [
       {
         rank: 3,
         displayName: '이중 붕괴',
-        oneLiner: 'W 견인이 두 배 오래 이어지고 끝에서 중심 폭발을 일으킵니다.',
+        oneLiner: '공격 피해 +14%. W 견인이 두 배 이어지고 중심 폭발을 일으킵니다.',
         trait: 'double-collapse',
         awakeningName: '이중 붕괴',
       },
@@ -348,7 +351,10 @@ const RANGED_UPGRADES: readonly UpgradeDef[] = [
     effects: [
       (w) => scaleSkillCooldown(w, 'w', 0.9),
       (w) => scaleSkillCooldown(w, 'w', 0.9),
-      (w) => awakenSkill(w, 'w', 'double-collapse'),
+      (w) => {
+        w.stats.atkDamageMul *= 1.14
+        awakenSkill(w, 'w', 'double-collapse')
+      },
     ],
   }),
   defineUpgrade({
@@ -538,7 +544,7 @@ const MELEE_UPGRADES: readonly UpgradeDef[] = [
       {
         rank: 3,
         displayName: '교차 발도',
-        oneLiner: 'Q를 벤 뒤 같은 경로를 거슬러 교차 참격이 되돌아옵니다.',
+        oneLiner: '공격 피해 +14%. Q를 벤 뒤 같은 경로로 교차 참격이 돌아옵니다.',
         trait: 'returning-draw-cut',
         awakeningName: '교차 발도',
       },
@@ -546,7 +552,10 @@ const MELEE_UPGRADES: readonly UpgradeDef[] = [
     effects: [
       (w) => scaleSkillCooldown(w, 'q', 0.88),
       (w) => scaleSkillCooldown(w, 'q', 0.88),
-      (w) => awakenSkill(w, 'q', 'returning-draw-cut'),
+      (w) => {
+        w.stats.atkDamageMul *= 1.14
+        awakenSkill(w, 'q', 'returning-draw-cut')
+      },
     ],
   }),
   defineUpgrade({
@@ -613,7 +622,7 @@ const MELEE_UPGRADES: readonly UpgradeDef[] = [
       {
         rank: 3,
         displayName: '월하 결계',
-        oneLiner: 'R의 마지막 타격이 넓은 만월 결계를 남겨 적을 연속으로 벱니다.',
+        oneLiner: '평타 간격 -12%. R의 마지막 타격이 만월 결계를 남깁니다.',
         trait: 'fullmoon-domain',
         awakeningName: '월하 결계',
       },
@@ -621,7 +630,10 @@ const MELEE_UPGRADES: readonly UpgradeDef[] = [
     effects: [
       (w) => scaleSkillCooldown(w, 'r', 0.92),
       (w) => scaleSkillCooldown(w, 'r', 0.92),
-      (w) => awakenSkill(w, 'r', 'fullmoon-domain'),
+      (w) => {
+        w.stats.atkIntervalMul *= 0.88
+        awakenSkill(w, 'r', 'fullmoon-domain')
+      },
     ],
   }),
 ] as const
@@ -640,7 +652,7 @@ const RANGED_EXPANSION_UPGRADES: readonly UpgradeDef[] = [
       {
         rank: 3,
         displayName: '종단 간섭',
-        oneLiner: '마지막 관통 지점에서 간섭 폭발을 일으킵니다.',
+        oneLiner: '평타 관통 +1. 마지막 관통 지점에서 간섭 폭발을 일으킵니다.',
         trait: 'interference-burst',
         awakeningName: '종단 간섭',
       },
@@ -652,7 +664,9 @@ const RANGED_EXPANSION_UPGRADES: readonly UpgradeDef[] = [
       (w) => {
         w.stats.atkPierce += 1
       },
-      () => {},
+      (w) => {
+        w.stats.atkPierce += 1
+      },
     ],
   }),
   defineUpgrade({
@@ -678,12 +692,18 @@ const RANGED_EXPANSION_UPGRADES: readonly UpgradeDef[] = [
       {
         rank: 3,
         displayName: '자율 초점',
-        oneLiner: '보조 광선이 가까운 별도 표적을 자동 추적합니다.',
+        oneLiner: '평타 간격 -12%. 보조 광선이 가까운 별도 표적을 추적합니다.',
         trait: 'auxiliary-tracking',
         awakeningName: '자율 초점',
       },
     ],
-    effects: [() => {}, () => {}, () => {}],
+    effects: [
+      () => {},
+      () => {},
+      (w) => {
+        w.stats.atkIntervalMul *= 0.88
+      },
+    ],
   }),
   defineUpgrade({
     id: 'collector-array',
@@ -754,7 +774,7 @@ const MELEE_EXPANSION_UPGRADES: readonly UpgradeDef[] = [
       {
         rank: 3,
         displayName: '참수',
-        oneLiner: '체력 18% 이하 일반 적을 평타로 즉시 처형합니다.',
+        oneLiner: '평타 간격 -10%. 체력 18% 이하 일반 적을 즉시 처형합니다.',
         trait: 'decapitation',
         awakeningName: '참수',
       },
@@ -766,7 +786,9 @@ const MELEE_EXPANSION_UPGRADES: readonly UpgradeDef[] = [
       (w) => {
         w.stats.basicAttackDamageMul *= 1.12
       },
-      () => {},
+      (w) => {
+        w.stats.atkIntervalMul *= 0.9
+      },
     ],
   }),
   defineUpgrade({
@@ -826,12 +848,18 @@ const MELEE_EXPANSION_UPGRADES: readonly UpgradeDef[] = [
       {
         rank: 3,
         displayName: '쌍살',
-        oneLiner: '앞뒤 적을 동시에 처치하면 게이지를 8 얻습니다.',
+        oneLiner: '공격 피해 +12%. 앞뒤 적을 동시에 처치하면 게이지를 8 얻습니다.',
         trait: 'dual-kill-gauge',
         awakeningName: '쌍살',
       },
     ],
-    effects: [() => {}, () => {}, () => {}],
+    effects: [
+      () => {},
+      () => {},
+      (w) => {
+        w.stats.atkDamageMul *= 1.12
+      },
+    ],
   }),
   defineUpgrade({
     id: 'blood-feast-step',
@@ -879,11 +907,16 @@ const FUSION_UPGRADES: readonly UpgradeDef[] = [
       {
         rank: 1,
         displayName: '연쇄 초신성',
-        oneLiner: '종단 폭발이 커지고 보조 광선이 양방향으로 연쇄됩니다.',
+        oneLiner: '공격 피해 +18%, 관통 +1. 종단 폭발과 보조 광선이 연쇄됩니다.',
         trait: 'supernova-chain',
       },
     ],
-    effects: [() => {}],
+    effects: [
+      (w) => {
+        w.stats.atkDamageMul *= 1.18
+        w.stats.atkPierce += 1
+      },
+    ],
   }),
   defineUpgrade({
     id: 'eclipse-execution-array',
@@ -900,11 +933,16 @@ const FUSION_UPGRADES: readonly UpgradeDef[] = [
       {
         rank: 1,
         displayName: '연쇄 처형',
-        oneLiner: '처형이 주변의 빈사 상태 일반 적에게 퍼집니다.',
+        oneLiner: '피해 +18%, 평타 간격 -12%. 처형이 주변 빈사 적에게 퍼집니다.',
         trait: 'execution-spread',
       },
     ],
-    effects: [() => {}],
+    effects: [
+      (w) => {
+        w.stats.atkDamageMul *= 1.18
+        w.stats.atkIntervalMul *= 0.88
+      },
+    ],
   }),
   defineUpgrade({
     id: 'singularity-interferometer',
@@ -925,12 +963,14 @@ const FUSION_UPGRADES: readonly UpgradeDef[] = [
       {
         rank: 1,
         displayName: '특이점 중첩',
-        oneLiner: 'Q 양옆 광선이 중심 적 쪽으로 끌고, W의 이중 붕괴도 유지됩니다.',
+        oneLiner: '피해 +16%, 평타 간격 -10%. Q 견인과 W 이중 붕괴를 유지합니다.',
         trait: 'singularity-interference',
       },
     ],
     effects: [
       (w) => {
+        w.stats.atkDamageMul *= 1.16
+        w.stats.atkIntervalMul *= 0.9
         awakenSkill(w, 'q', 'singularity-interference')
         awakenSkill(w, 'w', 'singularity-interference')
       },
@@ -955,12 +995,14 @@ const FUSION_UPGRADES: readonly UpgradeDef[] = [
       {
         rank: 1,
         displayName: '월식 합일',
-        oneLiner: '두 각성을 유지한 채 R의 모든 난격에 교차 발도를 더합니다.',
+        oneLiner: '피해 +18%, 평타 간격 -12%. R의 모든 난격에 교차 발도를 더합니다.',
         trait: 'eclipse-sword-domain',
       },
     ],
     effects: [
       (w) => {
+        w.stats.atkDamageMul *= 1.18
+        w.stats.atkIntervalMul *= 0.88
         awakenSkill(w, 'q', 'eclipse-sword-domain')
         awakenSkill(w, 'r', 'eclipse-sword-domain')
       },

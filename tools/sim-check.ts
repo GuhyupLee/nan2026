@@ -40,6 +40,11 @@ import {
   TYPE_BRUTE,
   TYPE_ELITE,
   TYPE_WALKER,
+  WAVE_INCOMING_FRACTION,
+  WAVE_LULL_MULTIPLIER,
+  WAVE_PEAK_MULTIPLIER,
+  WAVE_PERIOD,
+  baseTargetAliveCount,
   bossPhaseAt,
   createEnemyHash,
   createEnemyPool,
@@ -50,6 +55,8 @@ import {
   spawnEnemy,
   targetAliveCount,
   updateSpawner,
+  waveEnvelopeMultiplier,
+  wavePhaseAt,
   type EnemyPool,
 } from '../src/sim/enemies.ts'
 import { queryCircle } from '../src/sim/query.ts'
@@ -1215,17 +1222,42 @@ console.log('\nsim smoke check\n')
   // 초반 목표 마릿수는 4. 스폰이 폭주하지 않아야 한다.
   check('목표 마릿수를 크게 넘지 않는다', w.enemies.count <= 8, `count=${w.enemies.count}`)
 
-  // 적이 접근하면 자동 공격이 잡기 시작한다
-  for (let i = 0; i < 60 * 20; i++) stepWorld(w, input)
-  check('20초 후에도 살아있다', w.outcome === 'alive', `outcome=${w.outcome} hp=${w.player.hp.toFixed(1)}`)
+  // 첫 파고가 19.5초에 시작한 뒤 스폰 링에서 접근할 시간까지 관찰한다.
+  for (let i = 0; i < 60 * 30; i++) stepWorld(w, input)
+  check('첫 웨이브 후에도 살아있다', w.outcome === 'alive', `outcome=${w.outcome} hp=${w.player.hp.toFixed(1)}`)
   check('자동 공격이 적을 잡아 XP가 오른다', w.progression.totalXp > 0, `xp=${w.progression.totalXp}`)
   check('레벨이 올랐다', w.progression.level >= 2, `lv=${w.progression.level}`)
 }
 
 // --- 스폰 커브가 비트 시트와 맞는가 ---
 {
-  check('0초 목표는 5마리', Math.round(targetAliveCount(0)) === 5)
-  check('3:20 목표가 최대(135)', Math.round(targetAliveCount(200)) === 135)
+  check('기준 곡선의 0초 목표는 5마리', baseTargetAliveCount(0) === 5)
+  check('기준 곡선의 3:20 목표는 135마리', baseTargetAliveCount(200) === 135)
+  check('웨이브 주기는 24~30초다', WAVE_PERIOD >= 24 && WAVE_PERIOD <= 30)
+  check(
+    '밀려오는 구간은 주기의 약 35%다',
+    Math.abs(WAVE_INCOMING_FRACTION - 0.35) < 1e-9,
+  )
+  check(
+    '포락선은 파고 1.5~1.8배·소강 0.4~0.5배다',
+    WAVE_PEAK_MULTIPLIER >= 1.5 &&
+      WAVE_PEAK_MULTIPLIER <= 1.8 &&
+      WAVE_LULL_MULTIPLIER >= 0.4 &&
+      WAVE_LULL_MULTIPLIER <= 0.5,
+  )
+  check(
+    '런 시작은 수확 소강이고 3:20은 파고다',
+    waveEnvelopeMultiplier(0) === WAVE_LULL_MULTIPLIER &&
+      waveEnvelopeMultiplier(200) === WAVE_PEAK_MULTIPLIER,
+  )
+  check(
+    '웨이브 위상은 월드 시각만으로 반복된다',
+    wavePhaseAt(37.25) === wavePhaseAt(37.25 + WAVE_PERIOD),
+  )
+  check(
+    '3:20 실제 파고 목표는 230마리다',
+    Math.round(targetAliveCount(200)) === 230,
+  )
   check(
     '보스 등장(3:30)에 잡몹이 줄어든다',
     targetAliveCount(210) < targetAliveCount(200),
@@ -1471,6 +1503,11 @@ console.log('\nsim smoke check\n')
     '보스 피격 시 World 체력이 즉시 동기화된다',
     Math.abs(w.boss.hp - BOSS_MAX_HP / 2) < 1e-3,
     `hp=${w.boss.hp}`,
+  )
+  check(
+    '서지 중 포락선은 소강값으로 눌린다',
+    targetAliveCount(200, false, true) ===
+      baseTargetAliveCount(200) * WAVE_LULL_MULTIPLIER,
   )
   w.tick = Math.round(
     (w.boss.phaseTwoAt + BOSS_PHASE_TWO_TRANSITION_DURATION) / DT,

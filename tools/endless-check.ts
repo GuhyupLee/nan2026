@@ -2,6 +2,7 @@ import assert from 'node:assert/strict'
 import {
   TYPE_ELITE,
   TYPE_WALKER,
+  baseTargetAliveCount,
   enemyHealthMultiplier,
   spawnEnemy,
   targetAliveCount,
@@ -87,9 +88,12 @@ function addEnemy(world: World, x: number, y: number): number {
   assert.equal(world.nextEndlessEliteAt, 320)
   assert.ok(!continueIntoEndless(world), '무한전을 중복 시작함')
 
-  assert.equal(targetAliveCount(300, true), 95)
-  assert.equal(targetAliveCount(330, true), 107)
-  assert.equal(targetAliveCount(360, true), 119)
+  assert.equal(baseTargetAliveCount(300, true), 95)
+  assert.equal(baseTargetAliveCount(330, true), 107)
+  assert.equal(baseTargetAliveCount(360, true), 119)
+  assert.equal(targetAliveCount(300, true), 47.5)
+  assert.equal(targetAliveCount(330, true), 53.5)
+  assert.equal(targetAliveCount(360, true), 59.5)
   assert.ok(
     enemyHealthMultiplier(600, true) > enemyHealthMultiplier(300, true),
     '무한전 체력 배율이 계속 오르지 않음',

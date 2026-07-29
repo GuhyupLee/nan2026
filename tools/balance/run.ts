@@ -1,7 +1,13 @@
 import { MAX_LEVEL, TARGET_LEVEL_TIMES } from '../../src/sim/progression.ts'
+import {
+  WAVE_LULL_MULTIPLIER,
+  WAVE_PEAK_MULTIPLIER,
+  baseTargetAliveCount,
+} from '../../src/sim/enemies.ts'
 import type { PlayerClass } from '../../src/sim/types.ts'
 import {
   BALANCE_SEEDS,
+  DPS_HEALTH_SAMPLE_TIMES,
   levelCurveMae,
   median,
   runBalanceScenario,
@@ -64,7 +70,82 @@ function printCurves(results: readonly BalanceRunResult[]): void {
   }
 }
 
+function printDpsHealthRatios(
+  qwer: readonly BalanceRunResult[],
+  autoOnly: readonly BalanceRunResult[],
+): void {
+  console.log('\n유효 DPS ÷ 해당 시점 워커 체력 (초당 워커 환산 처치력)\n')
+  console.log('time    ranged QWER  ranged auto   melee QWER   melee auto')
+
+  for (let i = 0; i < DPS_HEALTH_SAMPLE_TIMES.length; i += 1) {
+    const med = (
+      results: readonly BalanceRunResult[],
+      playerClass: PlayerClass,
+    ): number =>
+      median(
+        results
+          .filter((result) => result.playerClass === playerClass)
+          .map((result) => result.dpsHealthRatios[i]!),
+      )
+    console.log(
+      `${formatTime(DPS_HEALTH_SAMPLE_TIMES[i]!).padStart(6)}  ` +
+        `${med(qwer, 'ranged').toFixed(2).padStart(12)}  ` +
+        `${med(autoOnly, 'ranged').toFixed(2).padStart(11)}  ` +
+        `${med(qwer, 'melee').toFixed(2).padStart(11)}  ` +
+        `${med(autoOnly, 'melee').toFixed(2).padStart(10)}`,
+    )
+  }
+}
+
+function assertDpsHealthGrowth(
+  qwer: readonly BalanceRunResult[],
+  autoOnly: readonly BalanceRunResult[],
+): void {
+  for (const playerClass of CLASSES) {
+    const qwerCurve = DPS_HEALTH_SAMPLE_TIMES.map((_, i) =>
+      median(
+        qwer
+          .filter((result) => result.playerClass === playerClass)
+          .map((result) => result.dpsHealthRatios[i]!),
+      ),
+    )
+    for (let i = 1; i < qwerCurve.length; i += 1) {
+      if (qwerCurve[i]! <= qwerCurve[i - 1]!) {
+        throw new Error(
+          `${playerClass}: 유효 DPS/체력 비율이 ` +
+            `${formatTime(DPS_HEALTH_SAMPLE_TIMES[i - 1]!)} ` +
+            `${qwerCurve[i - 1]!.toFixed(2)} → ` +
+            `${formatTime(DPS_HEALTH_SAMPLE_TIMES[i]!)} ` +
+            `${qwerCurve[i]!.toFixed(2)}로 성장하지 않았습니다.`,
+        )
+      }
+    }
+
+    const autoCurve = DPS_HEALTH_SAMPLE_TIMES.map((_, i) =>
+      median(
+        autoOnly
+          .filter((result) => result.playerClass === playerClass)
+          .map((result) => result.dpsHealthRatios[i]!),
+      ),
+    )
+    const earlyGap = qwerCurve[1]! / autoCurve[1]!
+    const lateGap = qwerCurve.at(-1)! / autoCurve.at(-1)!
+    if (lateGap <= earlyGap) {
+      throw new Error(
+        `${playerClass}: 조합 격차가 1:30 ${earlyGap.toFixed(2)}x → ` +
+          `4:30 ${lateGap.toFixed(2)}x로 벌어지지 않았습니다.`,
+      )
+    }
+  }
+}
+
 console.log(`고정 시드 ${BALANCE_SEEDS.length}개 × 2클래스 × QWER on/off 측정 중...`)
+const peakDensityBaseline = baseTargetAliveCount(200)
+console.log(
+  `3:20 기준선 ${peakDensityBaseline.toFixed(0)}마리의 웨이브 목표 진폭 ` +
+    `${Math.floor(peakDensityBaseline * WAVE_LULL_MULTIPLIER)} ↔ ` +
+    `${Math.floor(peakDensityBaseline * WAVE_PEAK_MULTIPLIER)}마리`,
+)
 
 const qwerResults = CLASSES.flatMap((playerClass) =>
   BALANCE_SEEDS.map((seed) => runBalanceScenario(playerClass, seed)),
@@ -77,6 +158,8 @@ const autoOnlyResults = CLASSES.flatMap((playerClass) =>
 
 printSeedResults(qwerResults, autoOnlyResults)
 printCurves(qwerResults)
+printDpsHealthRatios(qwerResults, autoOnlyResults)
+assertDpsHealthGrowth(qwerResults, autoOnlyResults)
 
 for (const playerClass of CLASSES) {
   const qwerRates = qwerResults

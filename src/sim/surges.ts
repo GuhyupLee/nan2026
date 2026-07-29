@@ -8,6 +8,8 @@ import {
 import type { World } from './types.ts'
 
 export const SURGE_WARNING_DURATION = 3
+/** 각본 편대가 들어온 뒤 일반 웨이브 포락선을 소강값으로 누르는 시간. */
+export const SURGE_WAVE_SUPPRESSION_DURATION = 12
 // 서지 몹은 목표 마릿수에 포함되어 일반 스폰을 잠시 대체한다. 대군 이벤트의
 // 중복 농사를 막되 4:52 성장 비트를 밀어내지 않는 24시드 측정값이다.
 export const SURGE_XP_SCALE = 0.6

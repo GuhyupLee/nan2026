@@ -15,16 +15,32 @@ export const BOSS_PHASE_TWO_THRESHOLD = BOSS_MAX_HP / 2
 export const BOSS_PHASE_TWO_KNOCKBACK_RADIUS = 8.5
 export const BOSS_PHASE_TWO_KNOCKBACK_IMPULSE = 32
 
-/** 2페이즈 매 주기 시작에 현재 위치와 예측 위치에 놓는 2원 장판. */
+/** 2페이즈 압박 펄스마다 현재 위치와 예측 위치에 놓는 2원 장판. */
 export const BOSS_PHASE_ZONE_RADIUS = 3.5
 export const BOSS_PHASE_ZONE_WARNING_DURATION = 1.1
 export const BOSS_PHASE_ZONE_DAMAGE = 24
 export const BOSS_PHASE_ZONE_PREDICTION_SECONDS = 0.65
+/** 돌진 사이에도 공간을 계속 바꾸는 2페이즈 장판 주기. */
+export const BOSS_PHASE_ZONE_INTERVAL = 2.2
+
+/** 2페이즈 문턱에서 보스 주변을 비우게 하는 확장 충격파. */
+export const BOSS_PHASE_SHOCKWAVE_INNER_RADIUS = 5.5
+export const BOSS_PHASE_SHOCKWAVE_INNER_WARNING_DURATION = 0.45
+export const BOSS_PHASE_SHOCKWAVE_INNER_DAMAGE = 80
+export const BOSS_PHASE_SHOCKWAVE_RADIUS = 9
+export const BOSS_PHASE_SHOCKWAVE_WARNING_DURATION = 0.9
+export const BOSS_PHASE_SHOCKWAVE_DAMAGE = 28
 
 /** 돌진이 끝난 자리를 잠시 뒤 다시 위험하게 만드는 종점 폭발. */
 export const BOSS_RECOVER_BLAST_RADIUS = 2.2
 export const BOSS_RECOVER_BLAST_WARNING_DURATION = 0.7
 export const BOSS_RECOVER_BLAST_DAMAGE = 16
+/** 돌진 궤적 뒤에 세 구간으로 남아 직선 왕복을 막는 장판. */
+export const BOSS_CHARGE_TRAIL_RADIUS = 2
+export const BOSS_CHARGE_TRAIL_WARNING_DURATION = 0.95
+export const BOSS_CHARGE_TRAIL_DAMAGE = 24
+export const BOSS_CHARGE_TRAIL_SPACING = 3.2
+export const BOSS_CHARGE_TRAIL_COUNT = 3
 
 const MAX_HOSTILE_HAZARDS = 8
 
@@ -95,6 +111,27 @@ export function triggerBossPhaseTwo(
   const pool = world.enemies
   const bx = pool.x[bossIndex]!
   const by = pool.y[bossIndex]!
+  pushHazard(world, {
+    kind: 'phase-shockwave',
+    x: bx,
+    y: by,
+    radius: BOSS_PHASE_SHOCKWAVE_INNER_RADIUS,
+    damage: BOSS_PHASE_SHOCKWAVE_INNER_DAMAGE,
+    telegraphAt: world.time,
+    detonateAt:
+      world.time + BOSS_PHASE_SHOCKWAVE_INNER_WARNING_DURATION,
+    volley: nextVolley(world),
+  })
+  pushHazard(world, {
+    kind: 'phase-shockwave',
+    x: bx,
+    y: by,
+    radius: BOSS_PHASE_SHOCKWAVE_RADIUS,
+    damage: BOSS_PHASE_SHOCKWAVE_DAMAGE,
+    telegraphAt: world.time,
+    detonateAt: world.time + BOSS_PHASE_SHOCKWAVE_WARNING_DURATION,
+    volley: nextVolley(world),
+  })
   if (world.rings.length < 32) {
     world.rings.push({
       x: bx,
@@ -183,6 +220,17 @@ function schedulePhaseZones(world: World, cycle: number): void {
   })
 }
 
+function phaseZonePulse(world: World): number {
+  const startedAt =
+    world.boss.phaseTwoAt + BOSS_PHASE_TWO_TRANSITION_DURATION
+  return Math.max(
+    0,
+    Math.floor(
+      (world.time - startedAt + 1e-9) / BOSS_PHASE_ZONE_INTERVAL,
+    ),
+  )
+}
+
 function scheduleRecoverBlast(
   world: World,
   bossIndex: number,
@@ -207,6 +255,35 @@ function scheduleRecoverBlast(
     detonateAt: world.time + BOSS_RECOVER_BLAST_WARNING_DURATION,
     volley: nextVolley(world),
   })
+
+  const trailVolley = nextVolley(world)
+  let dirX = world.enemies.bossChargeDirX[bossIndex]!
+  let dirY = world.enemies.bossChargeDirY[bossIndex]!
+  const directionLength = Math.hypot(dirX, dirY)
+  if (directionLength > 1e-6) {
+    dirX /= directionLength
+    dirY /= directionLength
+    for (let step = 1; step <= BOSS_CHARGE_TRAIL_COUNT; step += 1) {
+      const trail = clampHazardCenter(
+        world,
+        world.enemies.x[bossIndex]! -
+          dirX * BOSS_CHARGE_TRAIL_SPACING * step,
+        world.enemies.y[bossIndex]! -
+          dirY * BOSS_CHARGE_TRAIL_SPACING * step,
+        BOSS_CHARGE_TRAIL_RADIUS,
+      )
+      pushHazard(world, {
+        kind: 'charge-trail',
+        x: trail.x,
+        y: trail.y,
+        radius: BOSS_CHARGE_TRAIL_RADIUS,
+        damage: BOSS_CHARGE_TRAIL_DAMAGE,
+        telegraphAt: world.time,
+        detonateAt: world.time + BOSS_CHARGE_TRAIL_WARNING_DURATION,
+        volley: trailVolley,
+      })
+    }
+  }
 }
 
 function detonateHazards(world: World): number {
@@ -276,7 +353,7 @@ export function stepBossEncounter(world: World): number {
       boss.spawnedAt,
       boss.phaseTwoAt,
     )
-    schedulePhaseZones(world, cycle)
+    schedulePhaseZones(world, phaseZonePulse(world))
     if (phase === 'recover') {
       scheduleRecoverBlast(world, bossIndex, cycle)
     }

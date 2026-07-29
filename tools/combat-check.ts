@@ -7,8 +7,19 @@ import { PLAYER_ACTION_BUFFER_WINDOW } from '../src/sim/actions.ts'
 import { playerActionTiming } from '../src/sim/action-timing.ts'
 import {
   BOSS_PHASE_TWO_KNOCKBACK_RADIUS,
+  BOSS_PHASE_SHOCKWAVE_DAMAGE,
+  BOSS_PHASE_SHOCKWAVE_INNER_DAMAGE,
+  BOSS_PHASE_SHOCKWAVE_INNER_RADIUS,
+  BOSS_PHASE_SHOCKWAVE_INNER_WARNING_DURATION,
+  BOSS_PHASE_SHOCKWAVE_RADIUS,
+  BOSS_PHASE_SHOCKWAVE_WARNING_DURATION,
   BOSS_PHASE_TWO_THRESHOLD,
   BOSS_PHASE_TWO_TRANSITION_DURATION,
+  BOSS_CHARGE_TRAIL_COUNT,
+  BOSS_CHARGE_TRAIL_DAMAGE,
+  BOSS_CHARGE_TRAIL_RADIUS,
+  BOSS_CHARGE_TRAIL_SPACING,
+  BOSS_CHARGE_TRAIL_WARNING_DURATION,
   BOSS_PHASE_ZONE_DAMAGE,
   BOSS_PHASE_ZONE_PREDICTION_SECONDS,
   BOSS_PHASE_ZONE_RADIUS,
@@ -27,6 +38,7 @@ import {
   BOSS_CYCLE_TIME,
   BOSS_INTRO_DURATION,
   BOSS_MAX_HP,
+  BOSS_PHASE_TWO_OPENING_CYCLE_AT,
   BOSS_RECOVER_AT,
   BOSS_WINDUP_AT,
   TYPE_BOSS,
@@ -760,6 +772,23 @@ function startPhaseTwoForHazardTest(
       },
     ],
   )
+  const shockwaves = world.hostileHazards.filter(
+    (hazard) => hazard.kind === 'phase-shockwave',
+  )
+  assert.equal(shockwaves.length, 2)
+  assert.equal(shockwaves[0]?.radius, BOSS_PHASE_SHOCKWAVE_INNER_RADIUS)
+  assert.equal(shockwaves[0]?.damage, BOSS_PHASE_SHOCKWAVE_INNER_DAMAGE)
+  assert.equal(
+    shockwaves[0]?.detonateAt,
+    world.time + BOSS_PHASE_SHOCKWAVE_INNER_WARNING_DURATION,
+  )
+  assert.equal(shockwaves[1]?.radius, BOSS_PHASE_SHOCKWAVE_RADIUS)
+  assert.equal(shockwaves[1]?.damage, BOSS_PHASE_SHOCKWAVE_DAMAGE)
+  assert.equal(
+    shockwaves[1]?.detonateAt,
+    world.time + BOSS_PHASE_SHOCKWAVE_WARNING_DURATION,
+  )
+  assert.notEqual(shockwaves[0]?.volley, shockwaves[1]?.volley)
 
   const transitionAt = world.boss.phaseTwoAt
   const hpAtGate = world.enemies.hp[bossIndex]
@@ -773,11 +802,11 @@ function startPhaseTwoForHazardTest(
   world.time = world.boss.invulnerableUntil
   assert.equal(
     bossPhaseAt(world.time, world.boss.spawnedAt, world.boss.phaseTwoAt),
-    'orbit',
+    'windup',
   )
   assert.equal(
     bossCycleTime(world.time, world.boss.spawnedAt, world.boss.phaseTwoAt),
-    0,
+    BOSS_PHASE_TWO_OPENING_CYCLE_AT,
   )
   assert.equal(
     bossCycleIndex(world.time, world.boss.spawnedAt, world.boss.phaseTwoAt),
@@ -903,7 +932,8 @@ function startPhaseTwoForHazardTest(
   startPhaseTwoForHazardTest(world)
   const patternStart =
     world.boss.phaseTwoAt + BOSS_PHASE_TWO_TRANSITION_DURATION
-  world.time = patternStart + BOSS_RECOVER_AT
+  world.time =
+    patternStart + BOSS_RECOVER_AT - BOSS_PHASE_TWO_OPENING_CYCLE_AT
   world.tick = Math.round(world.time / DT)
   world.boss.hazardCycle = 0
   world.enemies.x[bossIndex] = 10
@@ -912,6 +942,8 @@ function startPhaseTwoForHazardTest(
   world.enemies.prevY[bossIndex] = -4
   world.enemies.vx[bossIndex] = 18
   world.enemies.vy[bossIndex] = 3
+  world.enemies.bossChargeDirX[bossIndex] = 1
+  world.enemies.bossChargeDirY[bossIndex] = 0
 
   stepWorld(world, fixedInput(0, 0))
   const blast = world.hostileHazards.find(
@@ -934,6 +966,27 @@ function startPhaseTwoForHazardTest(
       .length,
     1,
   )
+  const trail = world.hostileHazards.filter(
+    (hazard) => hazard.kind === 'charge-trail',
+  )
+  assert.equal(trail.length, BOSS_CHARGE_TRAIL_COUNT)
+  for (let i = 0; i < trail.length; i += 1) {
+    assert.equal(trail[i]?.radius, BOSS_CHARGE_TRAIL_RADIUS)
+    assert.equal(trail[i]?.damage, BOSS_CHARGE_TRAIL_DAMAGE)
+    assert.ok(
+      Math.abs(
+        trail[i]!.x -
+          (10 - BOSS_CHARGE_TRAIL_SPACING * (i + 1)),
+      ) < 1e-6,
+    )
+    assert.ok(
+      Math.abs(
+        trail[i]!.detonateAt -
+          trail[i]!.telegraphAt -
+          BOSS_CHARGE_TRAIL_WARNING_DURATION,
+      ) < 1e-9,
+    )
+  }
 
   world.player.pos.x = blast.x
   world.player.pos.y = blast.y

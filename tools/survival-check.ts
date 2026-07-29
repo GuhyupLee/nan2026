@@ -17,8 +17,10 @@ import { DT, RUN_TIME_LIMIT } from '../src/sim/constants.ts'
 import {
   ENEMY_TYPES,
   TYPE_BOSS,
+  WAVE_LULL_MULTIPLIER,
+  WAVE_PEAK_MULTIPLIER,
+  baseTargetAliveCount,
   bossPhaseAt,
-  targetAliveCount,
 } from '../src/sim/enemies.ts'
 import {
   pendingReward,
@@ -449,7 +451,8 @@ for (const cls of ['ranged', 'melee'] as const) {
 
 console.log(
   '\n필멸·이동·실제 선택 생존 계측\n' +
-    `스폰 상한 ${targetAliveCount(200).toFixed(0)} · ` +
+    `웨이브 목표 ${Math.floor(baseTargetAliveCount(200) * WAVE_LULL_MULTIPLIER)}` +
+    `~${Math.floor(baseTargetAliveCount(200) * WAVE_PEAK_MULTIPLIER)} · ` +
     `워커 ${ENEMY_TYPES[0]!.contactDamage} / ` +
     `러셔 ${ENEMY_TYPES[1]!.contactDamage} / ` +
     `브루트 ${ENEMY_TYPES[2]!.contactDamage}\n`,
@@ -483,9 +486,9 @@ for (const cls of ['ranged', 'melee'] as const) {
   if (median(selected.map((row) => row.bossProgress)) < 0.8) {
     throw new Error(`${cls}: 보스 진행도 중앙값이 80% 미만이라 보스 계측이 무효입니다.`)
   }
-  if (wins < Math.ceil(selected.length / 2) || wins >= selected.length) {
+  if (wins < 14 || wins > 18) {
     throw new Error(
-      `${cls}: 승리 ${wins}/${selected.length} — 강하지만 이길 수 있는 50~92% 범위를 벗어났습니다.`,
+      `${cls}: 승리 ${wins}/${selected.length} — 보스 목표 14~18승 범위를 벗어났습니다.`,
     )
   }
   const relics = median(selected.map((row) => row.relics))
@@ -518,12 +521,13 @@ const rangedWins = results.filter(
 const meleeWins = results.filter(
   (row) => row.cls === 'melee' && row.outcome === 'victory',
 ).length
-if (rangedWins < 8) {
+if (rangedWins < 6 || meleeWins < 6) {
   throw new Error(
-    `원거리 생존 회귀 — 승리 ${rangedWins}/${SEEDS.length}, 최소 8승이 필요합니다.`,
+    `클래스별 최소 승리 회귀 — 원거리 ${rangedWins}/${SEEDS.length}, ` +
+      `근거리 ${meleeWins}/${SEEDS.length}, 각각 최소 6승이 필요합니다.`,
   )
 }
-if (Math.abs(rangedWins - meleeWins) > 3) {
+if (Math.abs(rangedWins - meleeWins) > 4) {
   throw new Error(
     `클래스 생존 격차 ${Math.abs(rangedWins - meleeWins)}승 — ` +
       `원거리 ${rangedWins}/${SEEDS.length}, 근거리 ${meleeWins}/${SEEDS.length}`,

@@ -56,7 +56,10 @@ import { createRng } from './rng.ts'
 import { stepEliteRewardBeats, stepRelicDrops } from './rewards.ts'
 import { createSkillBook, tickSkills, unlockSkill } from './skills.ts'
 import { createStats } from './stats.ts'
-import { stepSurgeBeats } from './surges.ts'
+import {
+  SURGE_WAVE_SUPPRESSION_DURATION,
+  stepSurgeBeats,
+} from './surges.ts'
 import type {
   Input,
   Player,
@@ -336,7 +339,14 @@ export function stepWorld(world: World, input: Input): void {
         const bossIndex = world.enemies.count - 1
         const bx = world.enemies.x[bossIndex]!
         const by = world.enemies.y[bossIndex]!
-        thinEnemiesForBoss(world.enemies, targetAliveCount(world.time))
+        const surgeSuppressed =
+          world.surgeStartedAt >= 0 &&
+          world.time - world.surgeStartedAt <
+            SURGE_WAVE_SUPPRESSION_DURATION
+        thinEnemiesForBoss(
+          world.enemies,
+          targetAliveCount(world.time, false, surgeSuppressed),
+        )
 
         // 렌더 전용 균열 파동. 시뮬 판정에는 관여하지 않는다.
         if (world.rings.length < 32) {
@@ -348,14 +358,19 @@ export function stepWorld(world: World, input: Input): void {
       ? enemyHealthMultiplier(world.time, true) /
         enemyHealthMultiplier(world.time)
       : 1
+    const surgeSuppressed =
+      world.surgeStartedAt >= 0 &&
+      world.time - world.surgeStartedAt <
+        SURGE_WAVE_SUPPRESSION_DURATION
     updateSpawner(
       world.enemies,
       world.rng,
       world.time,
       p.pos.x,
       p.pos.y,
-      targetAliveCount(world.time, world.endless),
+      targetAliveCount(world.time, world.endless, surgeSuppressed),
       endlessHealthScale,
+      surgeSuppressed,
     )
   }
 

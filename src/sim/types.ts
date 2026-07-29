@@ -269,7 +269,7 @@ export interface BossState {
   phaseTwoAt: number
   /** 전환 연출 동안 보스가 피해를 받지 않는 마지막 시각. */
   invulnerableUntil: number
-  /** 마지막으로 2원 장판을 예약한 2페이즈 패턴 주기. */
+  /** 마지막으로 2원 장판을 예약한 2페이즈 압박 펄스. */
   hazardCycle: number
   /** 마지막으로 돌진 종점 폭발을 예약한 2페이즈 패턴 주기. */
   recoverBlastCycle: number
@@ -281,7 +281,11 @@ export interface BossState {
   hazardDetonations: number
 }
 
-export type BossHazardKind = 'phase-zone' | 'charge-end'
+export type BossHazardKind =
+  | 'phase-zone'
+  | 'phase-shockwave'
+  | 'charge-trail'
+  | 'charge-end'
 
 /** 보스가 예고 뒤 플레이어에게 피해를 주는 작은 고정 용량 장판. */
 export interface BossHazard {

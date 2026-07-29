@@ -66,8 +66,8 @@ export const ENEMY_TYPES: readonly EnemyTypeDef[] = [
     hp: 2600,
     speed: 2.45,
     radius: 1.55,
-    // 돌진 중 붙어도 회피 한 번을 쓸 시간은 남도록 초당 피해를 낮게 잡는다.
-    contactDamage: 12,
+    // 정예보다 강한 보스의 몸 자체가 위험해야 한다. 돌진 배율은 별도로 적용된다.
+    contactDamage: 26,
     xp: 0,
     knockbackResist: 0.92,
   },
@@ -105,6 +105,11 @@ export const BOSS_CYCLE_TIME = 7
 export const BOSS_WINDUP_AT = 3.8
 export const BOSS_CHARGE_AT = 4.6
 export const BOSS_RECOVER_AT = 6.35
+/**
+ * 2페이즈 전환 직후에는 긴 선회를 반복하지 않고 바로 돌진 예고로 들어간다.
+ * 이후 주기는 기존 7초 문법을 유지해 회피 타이밍 자체는 바꾸지 않는다.
+ */
+export const BOSS_PHASE_TWO_OPENING_CYCLE_AT = BOSS_WINDUP_AT
 /** 예고를 보고 옆으로 피할 수 있지만 직선 도주로는 따돌릴 수 없는 속도다. */
 export const BOSS_CHARGE_SPEED = 24
 /** 직선 돌진에 맞은 실수가 일반 선회 접촉과 같은 값으로 끝나지 않게 한다. */
@@ -128,16 +133,30 @@ function bossPatternStart(spawnedAt: number, phaseTwoAt: number): number {
     : spawnedAt + BOSS_INTRO_DURATION
 }
 
+function bossPatternElapsedTicks(
+  now: number,
+  spawnedAt: number,
+  phaseTwoAt: number,
+): number {
+  const openingOffset =
+    phaseTwoAt >= 0
+      ? Math.round(BOSS_PHASE_TWO_OPENING_CYCLE_AT / DT)
+      : 0
+  return (
+    Math.max(
+      0,
+      Math.round((now - bossPatternStart(spawnedAt, phaseTwoAt)) / DT),
+    ) + openingOffset
+  )
+}
+
 export function bossCycleTime(
   now: number,
   spawnedAt = BOSS_SPAWN_TIME,
   phaseTwoAt = -1,
 ): number {
   const cycleTicks = Math.round(BOSS_CYCLE_TIME / DT)
-  const elapsedTicks = Math.max(
-    0,
-    Math.round((now - bossPatternStart(spawnedAt, phaseTwoAt)) / DT),
-  )
+  const elapsedTicks = bossPatternElapsedTicks(now, spawnedAt, phaseTwoAt)
   return (elapsedTicks % cycleTicks) * DT
 }
 
@@ -147,10 +166,7 @@ export function bossCycleIndex(
   phaseTwoAt = -1,
 ): number {
   const cycleTicks = Math.round(BOSS_CYCLE_TIME / DT)
-  const elapsedTicks = Math.max(
-    0,
-    Math.round((now - bossPatternStart(spawnedAt, phaseTwoAt)) / DT),
-  )
+  const elapsedTicks = bossPatternElapsedTicks(now, spawnedAt, phaseTwoAt)
   return Math.floor(elapsedTicks / cycleTicks)
 }
 
@@ -331,7 +347,57 @@ const SPAWN_CURVE: ReadonlyArray<readonly [number, number]> = [
   [300, 95], // 5:00  보스전 내내 측면 압박은 유지한다
 ]
 
-export function targetAliveCount(time: number, endless = false): number {
+/** 한 파동은 10.5초간 밀려오고 19.5초간 수확 시간을 남긴다. */
+export const WAVE_PERIOD = 30
+export const WAVE_INCOMING_FRACTION = 0.35
+export const WAVE_PEAK_MULTIPLIER = 1.7
+export const WAVE_LULL_MULTIPLIER = 0.5
+/**
+ * 소강에 신규 스폰을 멈춘 만큼 한 파동의 수확 가치가 줄지 않게 보정한다.
+ * 각본 서지는 자체 XP 배율을 쓰므로 이 값과 중첩되지 않는다.
+ */
+export const WAVE_XP_SCALE = 2
+/**
+ * 런 시작은 소강, 3:20은 파고, 3:30 보스 등장은 다시 소강이 되게 맞춘다.
+ * 월드 시각 이외의 상태나 난수를 읽지 않는 결정적 위상이다.
+ */
+const WAVE_PHASE_OFFSET = WAVE_PERIOD * WAVE_INCOMING_FRACTION
+/** 편대·보스가 들어갈 슬롯을 항상 남긴다. */
+const MAX_WAVE_TARGET = MAX_ENEMIES - 24
+/** 소강에도 완전히 빈 화면으로 고정되지 않게 두는 최소 보충 간격. */
+const WAVE_LULL_SPAWN_INTERVAL = 0.75
+
+function positiveModulo(value: number, divisor: number): number {
+  return ((value % divisor) + divisor) % divisor
+}
+
+/** 현재 파동의 0..1 위상. 0..0.35가 밀려오는 구간이다. */
+export function wavePhaseAt(time: number): number {
+  if (!Number.isFinite(time)) return WAVE_INCOMING_FRACTION
+  return (
+    positiveModulo(Math.max(0, time) + WAVE_PHASE_OFFSET, WAVE_PERIOD) /
+    WAVE_PERIOD
+  )
+}
+
+/**
+ * 기준 곡선 위에 얹는 파동 포락선.
+ *
+ * 서지 중에는 각본 편대가 파고 역할을 대신하므로 일반 웨이브를 소강값으로
+ * 누른다. 별도 난수나 누적 상태 없이 시각과 명시적 서지 상태만 읽는다.
+ */
+export function waveEnvelopeMultiplier(
+  time: number,
+  surgeSuppressed = false,
+): number {
+  if (surgeSuppressed) return WAVE_LULL_MULTIPLIER
+  return wavePhaseAt(time) < WAVE_INCOMING_FRACTION
+    ? WAVE_PEAK_MULTIPLIER
+    : WAVE_LULL_MULTIPLIER
+}
+
+/** 포락선을 씌우기 전의 장기 밀도 곡선. 무한전 증분도 여기에 붙는다. */
+export function baseTargetAliveCount(time: number, endless = false): number {
   const c = SPAWN_CURVE
   if (time <= c[0]![0]) return c[0]![1]
   for (let i = 1; i < c.length; i++) {
@@ -347,6 +413,18 @@ export function targetAliveCount(time: number, endless = false): number {
   return Math.min(
     MAX_ENEMIES - 24,
     finalCount + Math.floor((time - RUN_TIME_LIMIT) / 30) * 12,
+  )
+}
+
+export function targetAliveCount(
+  time: number,
+  endless = false,
+  surgeSuppressed = false,
+): number {
+  return Math.min(
+    MAX_WAVE_TARGET,
+    baseTargetAliveCount(time, endless) *
+      waveEnvelopeMultiplier(time, surgeSuppressed),
   )
 }
 
@@ -529,6 +607,7 @@ export function spawnEnemy(
   type: number,
   time = 0,
   healthScale = 1,
+  xpScale = 1,
 ): void {
   if (pool.count >= MAX_ENEMIES) return
 
@@ -543,7 +622,7 @@ export function spawnEnemy(
   )
   const limit = ARENA_RADIUS - def.radius - 0.5
   const spawn = safeSpawnPosition(px, py, a, d, limit)
-  writeEnemy(pool, type, spawn.x, spawn.y, time, 1, healthScale)
+  writeEnemy(pool, type, spawn.x, spawn.y, time, xpScale, healthScale)
 }
 
 /**
@@ -1002,13 +1081,34 @@ export function updateSpawner(
   py: number,
   target = targetAliveCount(time),
   healthScale = 1,
+  surgeSuppressed = false,
 ): void {
   const deficit = Math.floor(target) - pool.count
   if (deficit <= 0) return
 
-  const budget = Math.min(deficit, 3)
+  const incoming =
+    !surgeSuppressed && wavePhaseAt(time) < WAVE_INCOMING_FRACTION
+  let spawnBudget = incoming ? 6 : 0
+  if (!incoming) {
+    const intervalTicks = Math.max(
+      1,
+      Math.round(WAVE_LULL_SPAWN_INTERVAL / DT),
+    )
+    const tick = Math.max(0, Math.round(time / DT))
+    if (tick % intervalTicks === 0) spawnBudget = 1
+  }
+  const budget = Math.min(deficit, spawnBudget)
   for (let k = 0; k < budget; k++) {
-    spawnEnemy(pool, rng, px, py, rollType(rng, time), time, healthScale)
+    spawnEnemy(
+      pool,
+      rng,
+      px,
+      py,
+      rollType(rng, time),
+      time,
+      healthScale,
+      WAVE_XP_SCALE,
+    )
   }
 }
 

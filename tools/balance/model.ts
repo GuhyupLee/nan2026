@@ -9,9 +9,15 @@ import {
 import { getSkillDef } from '../../src/content/skills.ts'
 import { DT, RUN_TIME_LIMIT } from '../../src/sim/constants.ts'
 import {
+  ENEMY_TYPES,
+  TYPE_WALKER,
+  enemyHealthMultiplier,
+} from '../../src/sim/enemies.ts'
+import {
   TARGET_LEVEL_TIMES,
   pendingReward,
   rollUpgrades,
+  upgradeTraitToken,
 } from '../../src/sim/progression.ts'
 import {
   SKILL_E,
@@ -21,8 +27,13 @@ import {
   lockedChoosableSkills,
   rankUpSkill,
   rankableSkills,
+  skillDamageMul,
   unlockSkill,
 } from '../../src/sim/skills.ts'
+import {
+  effectiveBasicAttackDamage,
+  effectiveAtkInterval,
+} from '../../src/sim/stats.ts'
 import { createInput, type PlayerClass, type World } from '../../src/sim/types.ts'
 import {
   createWorld,
@@ -41,6 +52,8 @@ export const BALANCE_SEEDS = [1, 5, 11, 17, 23, 31, 47, 59, 71, 89, 101, 127] as
 export const REGRESSION_SEEDS = [1, 17, 59] as const
 
 const QWER_MASK = SKILL_Q | SKILL_W | SKILL_E | SKILL_R
+/** Requested build-power checkpoints across the five-minute run. */
+export const DPS_HEALTH_SAMPLE_TIMES = [30, 90, 150, 210, 270] as const
 
 export interface BalanceRunOptions {
   /** false면 같은 선택 정책에서 QWER 입력만 빼 자동 공격 기준선을 잰다. */
@@ -67,6 +80,151 @@ export interface BalanceRunResult {
   totalXp: number
   elapsed: number
   outcome: World['outcome']
+  /**
+   * Current effective damage throughput divided by a current walker HP.
+   * This is a build snapshot rather than applied damage, so a harvest lull or
+   * an empty screen cannot make a stronger character appear weaker.
+   */
+  dpsHealthRatios: number[]
+}
+
+function hasTrait(world: World, trait: string): boolean {
+  return world.upgradesTaken.has(upgradeTraitToken(trait))
+}
+
+function skillDamagePerCast(world: World, id: 'q' | 'w' | 'e' | 'r'): number {
+  const runtime = world.skills[id]
+  if (!runtime.unlocked) return 0
+  const def = getSkillDef(world.playerClass, id)
+  if (!def || def.damage.length === 0) return 0
+
+  const [first = 0, second = 0] = def.damage
+  let base = 0
+  switch (def.damagePattern) {
+    case 'zone-12':
+      base = first * 12
+      break
+    case 'burst-zone-12':
+      base = first + second * 12
+      break
+    case 'first-following':
+      // One lead target plus two representative follow-through targets.
+      base = first + second * 2
+      break
+    case 'path-landing':
+      base = first + second
+      break
+    case 'five-finisher':
+      base = first * 5 + second
+      break
+    default:
+      base = def.damage.reduce((sum, value) => sum + value, 0)
+      break
+  }
+
+  const attackDamage = effectiveBasicAttackDamage(world.stats)
+  if (world.playerClass === 'ranged') {
+    if (
+      id === 'w' &&
+      (hasTrait(world, 'double-collapse') ||
+        hasTrait(world, 'singularity-interference'))
+    ) {
+      base += 7 * 12 * 0.45
+    } else if (id === 'e' && hasTrait(world, 'afterimage-aperture')) {
+      base += 160 * 0.35
+    } else if (id === 'r' && hasTrait(world, 'heliostat-chain')) {
+      base += 1700 * 0.25
+    }
+  } else if (id === 'q' && (
+    hasTrait(world, 'returning-draw-cut') ||
+    hasTrait(world, 'eclipse-sword-domain')
+  )) {
+    base += 96 * 0.55
+  } else if (id === 'w') {
+    if (hasTrait(world, 'returning-sheath')) base += 60 * 0.55
+    if (hasTrait(world, 'afterimage-step')) base += attackDamage * 0.65
+  } else if (id === 'e' && hasTrait(world, 'mirror-counter')) {
+    base += 140 * 0.7
+  } else if (id === 'r') {
+    if (hasTrait(world, 'eclipse-sword-domain')) {
+      base += 260 * 0.35 * 5 + 430 * 0.35
+    }
+    if (
+      hasTrait(world, 'fullmoon-domain') ||
+      hasTrait(world, 'eclipse-sword-domain')
+    ) {
+      base += 430 * 0.08 * 8
+    }
+  }
+
+  return (
+    base *
+    skillDamageMul(world.skills, id) *
+    world.stats.atkDamageMul
+  )
+}
+
+/**
+ * A deterministic build-power snapshot used only by the balance harness.
+ *
+ * Basic attacks include their authored pierce, split, auxiliary and backstrike
+ * throughput. QWER contributes damage per cast over current cooldown. This is
+ * deliberately independent of current enemy count and hit-point truncation.
+ */
+function effectiveDpsHealthRatio(world: World, time: number): number {
+  const stats = world.stats
+  const attackDamage = effectiveBasicAttackDamage(stats)
+  const pierce = Math.max(1, stats.atkPierce)
+  let attackPerShot = 0
+
+  for (let hit = 0; hit < pierce; hit += 1) {
+    const amplification =
+      hasTrait(world, 'pierce-amplification') ? 1 + hit * 0.12 : 1
+    attackPerShot += attackDamage * amplification
+  }
+  if (hasTrait(world, 'auxiliary-beam')) attackPerShot += attackDamage * 0.4
+  if (hasTrait(world, 'supernova-chain')) attackPerShot += attackDamage * 0.4
+  if (hasTrait(world, 'interference-burst')) {
+    attackPerShot +=
+      attackDamage *
+      (hasTrait(world, 'supernova-chain') ? 0.8 * 3 : 0.45 * 2)
+  }
+  if (hasTrait(world, 'backstrike')) {
+    attackPerShot +=
+      attackDamage * (hasTrait(world, 'backstrike-focus') ? 0.75 : 0.5)
+  }
+  if (hasTrait(world, 'split-refraction')) {
+    attackPerShot += attackDamage * 0.5 * 2 * pierce / 3
+  }
+  if (hasTrait(world, 'horizon-focus')) attackPerShot += attackDamage * 0.4
+  if (hasTrait(world, 'decapitation')) attackPerShot /= 0.82
+  if (hasTrait(world, 'execution-spread')) attackPerShot *= 1.15
+
+  if (world.playerClass === 'ranged' && world.skills.q.unlocked) {
+    const duration = hasTrait(world, 'orbital-prism') ||
+      hasTrait(world, 'singularity-interference')
+      ? 7
+      : 5
+    const duty = duration / (duration + world.skills.q.maxCooldown)
+    const splitMultiplier =
+      0.3 *
+      skillDamageMul(world.skills, 'q') *
+      (hasTrait(world, 'split-refraction') ? 1.25 : 1)
+    attackPerShot += attackDamage * splitMultiplier * 2 * pierce * duty
+    attackPerShot += stats.markBonus * pierce * duty
+  }
+
+  let effectiveDps = attackPerShot / effectiveAtkInterval(stats)
+  for (const id of ['q', 'w', 'e', 'r'] as const) {
+    const perCast = skillDamagePerCast(world, id)
+    if (perCast > 0) {
+      effectiveDps += perCast / Math.max(DT, world.skills[id].maxCooldown)
+    }
+  }
+
+  const referenceHealth =
+    ENEMY_TYPES[TYPE_WALKER]!.hp * enemyHealthMultiplier(time)
+  return effectiveDps / referenceHealth
 }
 
 function upgradeCandidates(world: World, relic = false) {
@@ -226,7 +384,9 @@ export function runBalanceScenario(
   const world = createWorld(seed, playerClass)
   const input = createInput()
   const xpAtTargets = Array<number>(TARGET_LEVEL_TIMES.length).fill(0)
+  const dpsHealthRatios = Array<number>(DPS_HEALTH_SAMPLE_TIMES.length).fill(0)
   let nextTarget = 1
+  let nextDpsSample = 0
   let observedOutcome: World['outcome'] = 'alive'
 
   if (options.invulnerable ?? true) {
@@ -258,6 +418,14 @@ export function runBalanceScenario(
     input.skillsPressed = useQwer ? QWER_MASK : 0
     stepWorld(world, input)
 
+    const sampleAt = DPS_HEALTH_SAMPLE_TIMES[nextDpsSample]
+    world.damageFeedback.length = 0
+    if (sampleAt !== undefined && world.time + 1e-9 >= sampleAt) {
+      dpsHealthRatios[nextDpsSample] =
+        effectiveDpsHealthRatio(world, sampleAt)
+      nextDpsSample += 1
+    }
+
     while (
       nextTarget < TARGET_LEVEL_TIMES.length &&
       world.time >= TARGET_LEVEL_TIMES[nextTarget]!
@@ -282,6 +450,7 @@ export function runBalanceScenario(
     totalXp: world.progression.totalXp,
     elapsed: world.time,
     outcome: observedOutcome === 'alive' ? world.outcome : observedOutcome,
+    dpsHealthRatios,
   }
 }
 
