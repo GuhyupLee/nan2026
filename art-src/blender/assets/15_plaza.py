@@ -499,6 +499,32 @@ for record in records:
         )
         piece_total += 1
 
+# 판석 아래를 막는 기반층(基盤層).
+#
+# 판석은 각각 분리된 섬이라 이음매 홈과 파손 조각 사이가 **뚫려 있다.**
+# 부감 카메라에서 그 틈으로 배경이 그대로 비쳐 바닥에 검은 쐐기가 생긴다
+# (형광 배경으로 찍어 확인했다 — 그림자가 아니라 구멍이었다).
+#
+# 틈마다 벽을 세우는 대신 아래에 원판 하나를 깐다. 삼각형 128개면 끝나고,
+# 원인이 이음매든 파손이든 링 경계든 전부 한 번에 막힌다.
+SUBSTRATE_Z = -0.075
+SUBSTRATE_SEGMENTS = 128
+substrate_verts = [(0.0, 0.0, SUBSTRATE_Z)]
+for i in range(SUBSTRATE_SEGMENTS):
+    angle = math.tau * i / SUBSTRATE_SEGMENTS
+    substrate_verts.append(
+        (math.cos(angle) * (MAX_RADIUS + 0.4), math.sin(angle) * (MAX_RADIUS + 0.4), SUBSTRATE_Z)
+    )
+substrate_faces = [
+    (0, 1 + i, 1 + (i + 1) % SUBSTRATE_SEGMENTS) for i in range(SUBSTRATE_SEGMENTS)
+]
+plaza_substrate = mw.new_mesh("plaza-substrate", substrate_verts, substrate_faces)
+mw.assign(plaza_substrate, granite)
+mw.uv_box(plaza_substrate, 1.0)
+# 정점 컬러는 셰이더가 요구하므로 반드시 있어야 한다. 완전히 닳고 젖은
+# 그늘로 채워 틈 사이로 보일 때 어두운 흙바닥처럼 읽히게 한다.
+mw.set_vertex_colors(plaza_substrate, lambda world, normal: (1.0, 0.75, 0.4))
+
 plaza_floor = mw.new_mesh("plaza-floor", floor_verts, floor_faces)
 set_corner_colors(plaza_floor, floor_colors)
 mw.assign(plaza_floor, granite)
@@ -671,7 +697,7 @@ if z_min < -0.050001 or z_max > 0.040001:
 
 mw.export_glb(
     "plaza-floor",
-    [plaza_floor, plaza_inlay],
+    [plaza_floor, plaza_substrate, plaza_inlay],
     max_triangles=95_000,
     notes="동심 판석, 실제 이음매 홈/베벨, 파손 조각, RGB 지면 블렌드 마스크, 발광 상감",
     extras={

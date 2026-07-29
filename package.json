@@ -24,6 +24,7 @@
     "check:meta": "tsx tools/meta-check.ts",
     "check:animation": "tsx tools/animation-check.ts",
     "animation": "tsx tools/generate-vrma.ts",
+    "animation:blender": "tsx tools/vrma-from-blender.ts",
     "art": "tsx tools/optimize-art.ts",
     "balance": "tsx tools/balance/run.ts",
     "balance:calibrate": "tsx tools/balance/calibrate.ts",

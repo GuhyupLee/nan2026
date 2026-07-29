@@ -385,10 +385,11 @@
     {
       "name": "plaza-floor",
       "path": "env/plaza-floor.glb",
-      "triangles": 93124,
-      "bytes": 1013348,
+      "triangles": 93252,
+      "bytes": 1015412,
       "objects": [
         "plaza-floor",
+        "plaza-substrate",
         "plaza-inlay"
       ],
       "animated": false,
