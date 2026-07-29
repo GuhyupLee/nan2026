@@ -8,11 +8,12 @@ import {
   TYPE_ELITE,
   type EnemyPool,
 } from './enemies.ts'
-import { tryEmpoweredAttack } from './kits.ts'
+import { MARK_DURATION, tryEmpoweredAttack } from './kits.ts'
 import { upgradeTraitToken } from './progression.ts'
 import type { SpatialHash } from './spatial.ts'
+import { skillDamageMul } from './skills.ts'
 import { effectiveBasicAttackDamage, effectiveAtkInterval } from './stats.ts'
-import { isMarked } from './status.ts'
+import { applyMark, applyPull, isMarked } from './status.ts'
 import type { TracerEvent, World } from './types.ts'
 
 const ATTACK_WIDTH = 0.35
@@ -26,10 +27,15 @@ const RANGED_CLUSTER_SCORE_WEIGHT = 0.22
 // 적보다 실제 거리 기준 30% 안쪽이면, 관통 효율이 높은 밀집 방향을 고른다.
 const RANGED_CLUSTER_DISTANCE_WINDOW = 1.3 * 1.3
 const hitBuf: number[] = []
+const splitHitBuf: number[] = []
 const clusterBuf = new Int32Array(MAX_ENEMIES)
 
 function hasTrait(world: World, trait: string): boolean {
   return world.upgradesTaken.has(upgradeTraitToken(trait))
+}
+
+function hasSkillTrait(world: World, slot: 'q' | 'w' | 'e' | 'r', trait: string): boolean {
+  return world.skills[slot].branch === trait || hasTrait(world, trait)
 }
 
 function basicDamage(world: World): number {
@@ -213,6 +219,9 @@ function resolveSplitRay(
   angle: number,
   excluded: ReadonlySet<number>,
   damaged: Set<number>,
+  damageMultiplier: number,
+  pullX?: number,
+  pullY?: number,
 ): void {
   const p = world.player
   const pool = world.enemies
@@ -220,9 +229,7 @@ function resolveSplitRay(
   const dy = Math.sin(angle)
   const ex = p.pos.x + dx * world.stats.atkRange
   const ey = p.pos.y + dy * world.stats.atkRange
-  let target = -1
-  let targetDistance = Number.POSITIVE_INFINITY
-
+  splitHitBuf.length = 0
   for (let i = 0; i < pool.count; i++) {
     if (pool.hp[i]! <= 0 || excluded.has(i) || damaged.has(i)) continue
     const radius = ENEMY_TYPES[pool.type[i]!]!.radius + 0.28
@@ -238,12 +245,7 @@ function resolveSplitRay(
     ) {
       continue
     }
-    const distance =
-      (pool.x[i]! - p.pos.x) ** 2 + (pool.y[i]! - p.pos.y) ** 2
-    if (distance < targetDistance) {
-      target = i
-      targetDistance = distance
-    }
+    splitHitBuf.push(i)
   }
 
   if (tracers.length < 64) {
@@ -256,14 +258,30 @@ function resolveSplitRay(
       kind: 0,
     })
   }
-  if (target < 0) return
+  splitHitBuf.sort((a, b) => {
+    const adx = pool.x[a]! - p.pos.x
+    const ady = pool.y[a]! - p.pos.y
+    const bdx = pool.x[b]! - p.pos.x
+    const bdy = pool.y[b]! - p.pos.y
+    return adx * adx + ady * ady - (bdx * bdx + bdy * bdy)
+  })
 
-  damaged.add(target)
-  const base = basicDamage(world) * 0.5
-  const damage = isMarked(pool, target, world.time)
-    ? base + world.stats.markBonus * 0.5
-    : base
-  damageEnemy(world, target, damage)
+  const base = basicDamage(world) * damageMultiplier
+  const hitCount = Math.min(splitHitBuf.length, world.stats.atkPierce)
+  for (let k = 0; k < hitCount; k += 1) {
+    const target = splitHitBuf[k]!
+    damaged.add(target)
+    const damage = isMarked(pool, target, world.time)
+      ? base + world.stats.markBonus * damageMultiplier
+      : base
+    damageEnemy(world, target, damage)
+    if (world.time < world.player.rangedVolleyUntil) {
+      applyMark(pool, target, world.time, MARK_DURATION)
+    }
+    if (pullX !== undefined && pullY !== undefined) {
+      applyPull(pool, target, world.time, pullX, pullY, 0.45, 8, 0.7)
+    }
+  }
 }
 
 function resolveAuxiliaryRay(
@@ -388,6 +406,8 @@ function resolveAutoAttack(
 
   const p = world.player
   const s = world.stats
+  const qVolleyActive =
+    world.playerClass === 'ranged' && world.time < p.rangedVolleyUntil
   const dx = Math.cos(angle)
   const dy = Math.sin(angle)
 
@@ -397,7 +417,12 @@ function resolveAutoAttack(
   if (world.attacks.length < 16) {
     world.attacks.push({
       angle,
-      kind: world.playerClass === 'melee' ? 'melee' : 'ranged',
+      kind:
+        world.playerClass === 'melee'
+          ? 'melee'
+          : qVolleyActive
+            ? 'empowered'
+            : 'ranged',
     })
   }
 
@@ -445,6 +470,7 @@ function resolveAutoAttack(
     ) {
       primaryKill = true
     }
+    if (qVolleyActive) applyMark(pool, i, world.time, MARK_DURATION)
   }
 
   if (hasTrait(world, 'interference-burst') && count > 0) {
@@ -518,25 +544,48 @@ function resolveAutoAttack(
     }
   }
 
-  if (hasTrait(world, 'split-refraction')) {
+  const splitRefraction = hasTrait(world, 'split-refraction')
+  if (splitRefraction) {
     world.basicAttackSequence += 1
-    if (world.basicAttackSequence % 3 === 0) {
-      const splitTargets = new Set<number>()
-      resolveSplitRay(
-        world,
-        tracers,
-        angle + 0.24,
-        primaryTargets,
-        splitTargets,
-      )
-      resolveSplitRay(
-        world,
-        tracers,
-        angle - 0.24,
-        primaryTargets,
-        splitTargets,
-      )
-    }
+  }
+  const passiveSplit =
+    splitRefraction && world.basicAttackSequence % 3 === 0
+  if (qVolleyActive || passiveSplit) {
+    const splitTargets = new Set<number>()
+    const qRankMultiplier = qVolleyActive
+      ? skillDamageMul(world.skills, 'q')
+      : 1
+    const splitMultiplier =
+      (qVolleyActive ? 0.3 : 0.5) *
+      qRankMultiplier *
+      (qVolleyActive && splitRefraction ? 1.25 : 1)
+    const singularity =
+      qVolleyActive &&
+      hasSkillTrait(world, 'q', 'singularity-interference') &&
+      count > 0
+    const pullTarget = singularity ? hitBuf[0]! : -1
+    const pullX = pullTarget >= 0 ? pool.x[pullTarget]! : undefined
+    const pullY = pullTarget >= 0 ? pool.y[pullTarget]! : undefined
+    resolveSplitRay(
+      world,
+      tracers,
+      angle + 0.24,
+      primaryTargets,
+      splitTargets,
+      splitMultiplier,
+      pullX,
+      pullY,
+    )
+    resolveSplitRay(
+      world,
+      tracers,
+      angle - 0.24,
+      primaryTargets,
+      splitTargets,
+      splitMultiplier,
+      pullX,
+      pullY,
+    )
   }
 }
 

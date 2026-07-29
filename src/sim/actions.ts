@@ -5,11 +5,23 @@ import type {
   PlayerActionSource,
   World,
 } from './types.ts'
+import {
+  resolveTargeting,
+  type TargetingSolution,
+} from './targeting.ts'
 
 const TIME_EPSILON = 1e-9
-export const PLAYER_ACTION_BUFFER_WINDOW = 0.15
+export const PLAYER_ACTION_BUFFER_WINDOW = 0.25
+export const PLAYER_COOLDOWN_BUFFER_WINDOW = 0.18
 
 type BufferedSkillSlot = Exclude<PendingPlayerAction['slot'], null>
+const retargetedAim: TargetingSolution = {
+  x: 0,
+  y: 0,
+  angle: 0,
+  distance: 0,
+  snapped: false,
+}
 
 export function emitActionStart(
   world: World,
@@ -94,36 +106,54 @@ export function retargetPendingImpact(
   world: World,
   action: PendingPlayerAction,
 ): void {
-  if (action.meleeDash) return
+  if (action.skillDash) return
 
-  const targetX = world.lastAim.x
-  const targetY = world.lastAim.y
-  const dx = targetX - world.player.pos.x
-  const dy = targetY - world.player.pos.y
-
-  action.targetX = targetX
-  action.targetY = targetY
-  if (dx * dx + dy * dy > 1e-8) {
-    action.angle = Math.atan2(dy, dx)
-    world.player.facing = action.angle
-  }
+  if (action.slot === null) return
+  const target = resolveTargeting(world, action.slot, retargetedAim)
+  action.targetX = target.x
+  action.targetY = target.y
+  action.angle = target.angle
+  world.player.facing = target.angle
 }
 
 /**
- * 후딜 마지막 0.15초의 입력만 기억해 오래 전에 누른 키가 뒤늦게 나가지 않게 한다.
+ * 조준 가능한 동작은 선딜 동안 커서를 따라가며, 판정과 캐릭터 시선이 같은
+ * 해석 결과를 공유한다. 이동 경로가 이미 확정된 월아 W는 예외다.
+ */
+export function trackPlayerActionAim(world: World): void {
+  const action = world.playerAction
+  if (
+    !action ||
+    action.source !== 'skill' ||
+    action.resolved ||
+    action.skillDash ||
+    action.slot === null
+  ) {
+    return
+  }
+  retargetPendingImpact(world, action)
+}
+
+/**
+ * 후딜 마지막 0.25초와 쿨 종료 0.18초 전 입력만 기억해 오래 전에 누른 키가
+ * 뒤늦게 나가지 않게 한다.
  */
 export function bufferPlayerSkill(
   world: World,
   slot: BufferedSkillSlot,
 ): boolean {
   const action = world.playerAction
-  if (!action || world.ult.active) return false
+  const runtime = world.skills[slot]
+  if (!runtime.unlocked) return false
+  if (world.ult.active && slot !== 'd') return false
 
-  const remaining = action.endAt - world.time
-  if (
-    remaining < -TIME_EPSILON ||
-    remaining > PLAYER_ACTION_BUFFER_WINDOW + TIME_EPSILON
-  ) {
+  const remaining = action ? Math.max(0, action.endAt - world.time) : 0
+  const cooldownLeft = Math.max(0, runtime.cooldown)
+  if (action) {
+    if (cooldownLeft > remaining + PLAYER_ACTION_BUFFER_WINDOW + TIME_EPSILON) {
+      return false
+    }
+  } else if (cooldownLeft > PLAYER_COOLDOWN_BUFFER_WINDOW + TIME_EPSILON) {
     return false
   }
 
@@ -139,21 +169,38 @@ export function bufferPlayerSkill(
   world.bufferedSkill = {
     slot,
     queuedAt: world.time,
-    expiresAt: world.time + PLAYER_ACTION_BUFFER_WINDOW,
+    expiresAt: action
+      ? Math.max(action.endAt, world.time + cooldownLeft) +
+        PLAYER_ACTION_BUFFER_WINDOW
+      : world.time + PLAYER_COOLDOWN_BUFFER_WINDOW,
   }
   return true
 }
 
 /** 잠금이 풀린 첫 틱에만 버퍼를 꺼내 연속 입력의 리듬을 보존한다. */
 export function takeBufferedPlayerSkill(world: World): BufferedSkillSlot | null {
-  if (world.playerAction || world.ult.active) return null
-
   const buffered = world.bufferedSkill
   if (!buffered) return null
+  if (buffered.expiresAt + TIME_EPSILON < world.time) {
+    world.bufferedSkill = null
+    return null
+  }
+  if (world.playerAction) return null
+  if (
+    world.ult.active &&
+    buffered.slot !== 'd'
+  ) {
+    return null
+  }
+  const runtime = world.skills[buffered.slot]
+  if (!runtime.unlocked) {
+    world.bufferedSkill = null
+    return null
+  }
+  if (runtime.cooldown > TIME_EPSILON) return null
+
   world.bufferedSkill = null
-  return buffered.expiresAt + TIME_EPSILON >= world.time
-    ? buffered.slot
-    : null
+  return buffered.slot
 }
 
 export function markPlayerActionResolved(

@@ -96,8 +96,8 @@ const UPGRADE_TARGETS: Readonly<Record<string, readonly string[]>> = {
   'diffraction-prism': ['기본 공격 속도', '기본 공격 속도', '기본 공격'],
   'telescopic-aperture': ['기본 공격 사거리', '기본 공격 사거리', '원거리 기본 공격'],
   'photon-core': ['체력과 공격', '받는 피해', '생존'],
-  'orbit-lens': ['Q · 낙광', 'Q · 낙광', 'Q · 낙광'],
-  'gravity-prism': ['W · 굴절', 'W · 굴절', 'W · 굴절'],
+  'orbit-lens': ['Q · 삼중 굴절', 'Q · 삼중 굴절', 'Q · 삼중 굴절'],
+  'gravity-prism': ['W · 광도약', 'W · 광도약', 'W · 광도약'],
   'phase-aperture': ['E · 분광', 'E · 분광', 'E · 분광'],
   'heliostat-core': ['R · 일현', 'R · 일현', 'R · 일현'],
   'crescent-honing': ['모든 공격', '모든 공격', '패시브 · 월참'],
@@ -216,7 +216,12 @@ function rankCards(world: World): LevelUpCard[] {
       slotLabel: def.key,
       tag: `스킬 강화 · Lv${next}`,
       name: `${def.name} +1`,
-      desc: '피해 20% 증가 · 재사용 대기시간 5% 감소',
+      desc:
+        world.playerClass === 'ranged' && id === 'q'
+          ? '양옆 광선 피해 20% 증가 · 재사용 대기시간 5% 감소'
+          : world.playerClass === 'ranged' && id === 'w'
+            ? '렌즈 피해 20% 증가 · 재사용 대기시간 5% 감소'
+            : '피해 20% 증가 · 재사용 대기시간 5% 감소',
       pathName: def.name,
       stepName: `Lv${world.skills[id].rank} → Lv${next}`,
       target: `${def.key} · ${def.name}`,

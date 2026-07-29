@@ -64,6 +64,7 @@ interface SlotView {
   fallback: HTMLSpanElement
   cd: HTMLDivElement
   cdText: HTMLDivElement
+  stateLabel: HTMLSpanElement
   /** 직전 프레임에 사용 가능했는가. 쿨다운이 막 끝난 순간을 잡는다. */
   wasReady: boolean
 }
@@ -108,6 +109,7 @@ export interface SkillBarHandlers {
   start: (id: SkillId) => void
   release: (id: SkillId) => void
   cancel: (id: SkillId) => void
+  aim: (clientX: number, clientY: number) => void
 }
 
 export class SkillBar {
@@ -293,11 +295,16 @@ export class SkillBar {
       slot.setAttribute('aria-keyshortcuts', m.key)
 
       const face = appendSlotFace(slot, m.key, m.glyph)
+      const stateLabel = document.createElement('span')
+      stateLabel.className = 'skill-state-label'
+      stateLabel.hidden = true
+      slot.appendChild(stateLabel)
 
       const view: SlotView = {
         meta: m,
         root: slot,
         ...face,
+        stateLabel,
         wasReady: false,
       }
       let activePointerId: number | null = null
@@ -347,7 +354,9 @@ export class SkillBar {
         if (activePointerId !== null) return
 
         const isTouch = e.pointerType === 'touch'
-        const canCast = slot.dataset.state === 'ready'
+        const canCast =
+          slot.dataset.state === 'ready' &&
+          slot.dataset.busy !== 'true'
         if (!isTouch && !canCast) return
 
         activePointerId = e.pointerId
@@ -407,7 +416,6 @@ export class SkillBar {
         clearPointer(true)
       }
       slot.addEventListener('pointercancel', cancelPointer)
-      slot.addEventListener('pointerleave', cancelPointer)
       slot.addEventListener('lostpointercapture', (e) => {
         if (e.pointerId !== activePointerId) return
         clearPointer(true)
@@ -416,16 +424,6 @@ export class SkillBar {
       // 있다. 캡처 중에도 좌표를 직접 검사해 버튼 밖 드래그를 취소한다.
       slot.addEventListener('pointermove', (e) => {
         if (e.pointerId !== activePointerId) return
-        const bounds = slot.getBoundingClientRect()
-        if (
-          e.clientX < bounds.left ||
-          e.clientX > bounds.right ||
-          e.clientY < bounds.top ||
-          e.clientY > bounds.bottom
-        ) {
-          cancelPointer(e)
-          return
-        }
         if (
           activePointerIsTouch &&
           Math.hypot(e.clientX - touchStartX, e.clientY - touchStartY) >
@@ -440,6 +438,7 @@ export class SkillBar {
           clearLongPressTimer()
           beginPointerCast()
         }
+        if (pointerCastStarted) handlers.aim(e.clientX, e.clientY)
       })
 
       // 포인터 click은 pointerdown/up에서 이미 처리했다. 키보드와 보조기술이
@@ -520,6 +519,49 @@ export class SkillBar {
 
     for (const view of this.slots) {
       const s = book[view.meta.id]
+      const queued = world?.bufferedSkill?.slot === view.meta.id
+      const qRemaining =
+        world?.playerClass === 'ranged' && view.meta.id === 'q'
+          ? Math.max(0, world.player.rangedVolleyUntil - world.time)
+          : 0
+      const wDashing =
+        view.meta.id === 'w' &&
+        world?.playerAction?.slot === 'w' &&
+        world.playerAction.skillDash !== undefined &&
+        world.time <
+          world.playerAction.startedAt +
+            world.playerAction.skillDash.moveEnd
+      const wGuardRemaining =
+        world?.playerClass === 'ranged' && view.meta.id === 'w'
+          ? Math.max(0, world.player.rangedDashInvulnUntil - world.time)
+          : 0
+      const busy =
+        world?.ult.active === true &&
+        view.meta.id !== 'd'
+      view.root.dataset.queued = String(queued)
+      view.root.dataset.active = String(
+        qRemaining > 0 || wDashing || wGuardRemaining > 0,
+      )
+      view.root.dataset.busy = String(busy)
+      if (qRemaining > 0) {
+        view.stateLabel.textContent = `3갈래 ${qRemaining.toFixed(1)}`
+        view.stateLabel.hidden = false
+      } else if (wDashing) {
+        view.stateLabel.textContent = '도약 중'
+        view.stateLabel.hidden = false
+      } else if (wGuardRemaining > 0) {
+        view.stateLabel.textContent = `잔광 ${wGuardRemaining.toFixed(1)}`
+        view.stateLabel.hidden = false
+      } else if (queued) {
+        view.stateLabel.textContent = '예약'
+        view.stateLabel.hidden = false
+      } else if (busy) {
+        view.stateLabel.textContent = '동작 중'
+        view.stateLabel.hidden = false
+      } else {
+        view.stateLabel.hidden = true
+        view.stateLabel.textContent = ''
+      }
 
       if (!s.unlocked) {
         view.root.setAttribute('aria-disabled', 'true')
@@ -533,7 +575,7 @@ export class SkillBar {
       }
 
       const ready = s.cooldown <= 0
-      view.root.setAttribute('aria-disabled', String(!ready))
+      view.root.setAttribute('aria-disabled', String(!ready || busy))
 
       if (ready) {
         if (view.root.dataset.state !== 'ready') {
@@ -691,9 +733,15 @@ export class SkillBar {
 
     const runtime = this.tooltipBook?.[view.meta.id]
     const world = this.tooltipWorld
+    const rankMultiplier =
+      runtime && view.meta.kind === 'core'
+        ? skillDamageMul(this.tooltipBook!, view.meta.id)
+        : 1
     const damageMultiplier =
       runtime && view.meta.kind === 'core'
-        ? skillDamageMul(this.tooltipBook!, view.meta.id) * (world?.stats.atkDamageMul ?? 1)
+        ? playerClass === 'ranged' && view.meta.id === 'q'
+          ? rankMultiplier
+          : rankMultiplier * (world?.stats.atkDamageMul ?? 1)
         : 1
     const damage = getSkillDamageBreakdown(playerClass, view.meta.id, {
       damageMultiplier,
@@ -706,8 +754,29 @@ export class SkillBar {
     })
     const cooldown = runtime?.maxCooldown ?? def.cooldown
     const cooldownLeft = runtime?.cooldown ?? 0
+    const qActiveRemaining =
+      playerClass === 'ranged' && view.meta.id === 'q' && world
+        ? Math.max(0, world.player.rangedVolleyUntil - world.time)
+        : 0
+    const wDashing =
+      view.meta.id === 'w' &&
+      world?.playerAction?.slot === 'w' &&
+      world.playerAction.skillDash !== undefined &&
+      world.time <
+        world.playerAction.startedAt +
+          world.playerAction.skillDash.moveEnd
+    const wGuardRemaining =
+      playerClass === 'ranged' && view.meta.id === 'w' && world
+        ? Math.max(0, world.player.rangedDashInvulnUntil - world.time)
+        : 0
     const status = !runtime?.unlocked
       ? '미해금'
+      : qActiveRemaining > 0
+        ? `3갈래 강화 ${formatSeconds(qActiveRemaining)} · 재사용 ${formatSeconds(cooldownLeft)}`
+      : wDashing
+        ? '도약 중 · 무적'
+      : wGuardRemaining > 0
+        ? `잔광 무적 ${formatSeconds(wGuardRemaining)}`
       : cooldownLeft > 0
         ? `재사용 ${formatSeconds(cooldownLeft)}`
         : '사용 가능'
@@ -723,10 +792,16 @@ export class SkillBar {
 
     let enhancement = `재사용 대기시간 ${formatSeconds(cooldown)}`
     if (view.meta.kind === 'core' && runtime) {
-      const rankBonus = Math.round((skillDamageMul(this.tooltipBook!, view.meta.id) - 1) * 100)
+      const rankBonus = Math.round((rankMultiplier - 1) * 100)
       const attackBonus = Math.round(((world?.stats.atkDamageMul ?? 1) - 1) * 100)
+      const damageLabel =
+        playerClass === 'ranged' && view.meta.id === 'q'
+          ? '양옆 광선 피해'
+          : playerClass === 'ranged' && view.meta.id === 'w'
+            ? '렌즈 피해'
+            : '스킬 피해'
       enhancement =
-        `강화 ${runtime.rank}/${MAX_SKILL_RANK} · 랭크 피해 +${rankBonus}%` +
+        `강화 ${runtime.rank}/${MAX_SKILL_RANK} · ${damageLabel} +${rankBonus}%` +
         (attackBonus !== 0 ? ` · 공격 강화 ${attackBonus > 0 ? '+' : ''}${attackBonus}%` : '') +
         ` · 재사용 ${formatSeconds(cooldown)}`
       if (runtime.branch) enhancement += ` · ${describeBranch(runtime.branch, view.meta.id)}`

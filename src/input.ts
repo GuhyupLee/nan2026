@@ -18,12 +18,14 @@ const SKILL_KEYS: Record<string, SkillId> = {
   KeyF: 'f',
 }
 
-const MOVE_DEADZONE = 0.6
+const MOVE_STOP_RADIUS = 0.55
+const MOVE_SLOW_RADIUS = 2.6
 // 112px 베이스와 48px 노브 안에서 노브가 정확히 가장자리까지 움직인다.
 const TOUCH_STICK_RADIUS = 32
 const TOUCH_STICK_DEADZONE = 8
 const TOUCH_AIM_DISTANCE = 12
 const CAST_MODE_STORAGE_KEY = 'prototype-cast-mode-v1'
+const AIM_ASSIST_STORAGE_KEY = 'prototype-aim-assist-v1'
 
 export type CastMode = 'instant' | 'release'
 
@@ -32,6 +34,14 @@ function readCastMode(): CastMode {
     return localStorage.getItem(CAST_MODE_STORAGE_KEY) === 'release' ? 'release' : 'instant'
   } catch {
     return 'instant'
+  }
+}
+
+function readAimAssist(): boolean {
+  try {
+    return localStorage.getItem(AIM_ASSIST_STORAGE_KEY) !== 'off'
+  } catch {
+    return true
   }
 }
 
@@ -48,8 +58,11 @@ export class InputState {
 
   private readonly held = new Set<string>()
   private pendingSkills = 0
+  private readonly pendingSkillOrder: SkillId[] = []
   private castMode: CastMode = readCastMode()
+  private aimAssist = readAimAssist()
   private targetedSkill: SkillId | null = null
+  private skillPointerAimActive = false
   private readonly surface: HTMLElement
   private readonly previousTouchAction: string
 
@@ -69,6 +82,9 @@ export class InputState {
     this.surface = surface
     this.previousTouchAction = surface.style.touchAction
     surface.style.touchAction = 'none'
+    const bounds = surface.getBoundingClientRect()
+    this.pointerX = bounds.left + bounds.width * 0.5
+    this.pointerY = bounds.top + bounds.height * 0.5
 
     this.touchStick = document.createElement('div')
     this.touchStick.className = 'touchstick'
@@ -84,6 +100,7 @@ export class InputState {
     window.addEventListener('pointermove', this.onPointerMove)
     window.addEventListener('pointerup', this.onPointerUp)
     window.addEventListener('pointercancel', this.onPointerUp)
+    surface.addEventListener('lostpointercapture', this.onLostPointerCapture)
     surface.addEventListener('contextmenu', this.onContextMenu)
 
     window.addEventListener('keydown', this.onKeyDown)
@@ -120,11 +137,26 @@ export class InputState {
       return
     }
 
+    if (e.button === 2) {
+      if (this.targetedSkill !== null) {
+        e.preventDefault()
+        this.targetedSkill = null
+        this.skillPointerAimActive = false
+      }
+      return
+    }
+    if (e.button !== 0) return
+
     this.mousePointerId = e.pointerId
     this.pointerX = e.clientX
     this.pointerY = e.clientY
     this.pointerHeld = true
     this.hasActed = true
+    try {
+      this.surface.setPointerCapture(e.pointerId)
+    } catch {
+      // 창 밖으로 나가도 window 리스너가 해제를 복구한다.
+    }
   }
 
   private readonly onPointerMove = (e: PointerEvent): void => {
@@ -139,6 +171,20 @@ export class InputState {
     // 보고 여기서 소유권을 되살리면 스킬 슬롯·설정 UI에서 시작한 드래그가
     // 캔버스로 넘어오는 순간 캐릭터 이동으로 바뀐다.
     // 호버 조준은 마우스에서 기존대로 계속 갱신한다.
+    const target = e.target
+    const overGameSurface =
+      target instanceof Node &&
+      (target === this.surface || this.surface.contains(target))
+    if (this.mousePointerId === null && !overGameSurface) return
+    if (
+      this.mousePointerId !== null &&
+      e.pointerId === this.mousePointerId &&
+      e.buttons === 0
+    ) {
+      this.mousePointerId = null
+      this.pointerHeld = this.touchPointerId !== null
+      return
+    }
     this.pointerX = e.clientX
     this.pointerY = e.clientY
   }
@@ -157,9 +203,24 @@ export class InputState {
       return
     }
 
+    if (e.type !== 'pointercancel' && e.button !== 0) return
     if (this.mousePointerId !== null && e.pointerId !== this.mousePointerId) return
     this.mousePointerId = null
     this.pointerHeld = this.touchPointerId !== null
+  }
+
+  private readonly onLostPointerCapture = (e: PointerEvent): void => {
+    if (e.pointerId === this.mousePointerId) {
+      this.mousePointerId = null
+      this.pointerHeld = this.touchPointerId !== null
+    }
+    if (e.pointerId === this.touchPointerId) {
+      this.touchPointerId = null
+      this.touchDirectionX = 0
+      this.touchDirectionY = 0
+      this.pointerHeld = this.mousePointerId !== null
+      this.touchStick.dataset.active = 'false'
+    }
   }
 
   private updateTouchStick(clientX: number, clientY: number): void {
@@ -189,9 +250,27 @@ export class InputState {
 
   private readonly onContextMenu = (e: MouseEvent): void => {
     e.preventDefault()
+    this.targetedSkill = null
+    this.skillPointerAimActive = false
   }
 
   private readonly onKeyDown = (e: KeyboardEvent): void => {
+    if (e.code === 'Escape' && this.targetedSkill !== null) {
+      this.targetedSkill = null
+      this.skillPointerAimActive = false
+      e.preventDefault()
+      e.stopImmediatePropagation()
+      return
+    }
+    if (
+      e.defaultPrevented ||
+      e.ctrlKey ||
+      e.metaKey ||
+      e.altKey ||
+      isEditableTarget(e.target)
+    ) {
+      return
+    }
     if (e.repeat) return
     this.held.add(e.code)
 
@@ -201,6 +280,7 @@ export class InputState {
 
   private readonly onKeyUp = (e: KeyboardEvent): void => {
     this.held.delete(e.code)
+    if (isEditableTarget(e.target)) return
     const skill = SKILL_KEYS[e.code]
     if (skill !== undefined) this.releaseSkill(skill)
   }
@@ -208,11 +288,21 @@ export class InputState {
   private readonly onBlur = (): void => {
     this.held.clear()
     this.pendingSkills = 0
+    this.pendingSkillOrder.length = 0
     this.releaseMovement()
   }
 
   /** 화면 전환·포커스 이탈 때 남은 포인터 점유와 조이스틱을 함께 정리한다. */
   releaseMovement(): void {
+    if (this.mousePointerId !== null) {
+      try {
+        if (this.surface.hasPointerCapture(this.mousePointerId)) {
+          this.surface.releasePointerCapture(this.mousePointerId)
+        }
+      } catch {
+        // 캡처를 지원하지 않는 브라우저에서는 상태만 정리하면 된다.
+      }
+    }
     if (this.touchPointerId !== null) {
       try {
         if (this.surface.hasPointerCapture(this.touchPointerId)) {
@@ -228,11 +318,14 @@ export class InputState {
     this.touchDirectionX = 0
     this.touchDirectionY = 0
     this.pointerHeld = false
+    this.held.clear()
     this.pendingSkills = 0
+    this.pendingSkillOrder.length = 0
     this.touchStick.dataset.active = 'false'
     this.touchStick.style.setProperty('--stick-x', '0px')
     this.touchStick.style.setProperty('--stick-y', '0px')
     this.targetedSkill = null
+    this.skillPointerAimActive = false
   }
 
   get targetingSkill(): SkillId | null {
@@ -246,6 +339,7 @@ export class InputState {
   setCastMode(mode: CastMode): void {
     if (mode === this.castMode) return
     this.targetedSkill = null
+    this.skillPointerAimActive = false
     this.castMode = mode
     try {
       localStorage.setItem(CAST_MODE_STORAGE_KEY, mode)
@@ -254,12 +348,27 @@ export class InputState {
     }
   }
 
+  getAimAssist(): boolean {
+    return this.aimAssist
+  }
+
+  setAimAssist(enabled: boolean): void {
+    if (enabled === this.aimAssist) return
+    this.aimAssist = enabled
+    try {
+      localStorage.setItem(AIM_ASSIST_STORAGE_KEY, enabled ? 'on' : 'off')
+    } catch {
+      // 저장소가 막혀도 현재 세션의 설정은 유지한다.
+    }
+  }
+
   /** 스킬 키·버튼을 누른 순간. 즉시 모드는 여기서, 키업 모드는 releaseSkill에서 발동한다. */
   startSkill(id: SkillId): void {
     this.hasActed = true
     if (this.castMode === 'instant') {
       this.targetedSkill = null
-      this.pendingSkills |= SKILL_BIT[id]
+      this.skillPointerAimActive = false
+      this.queueSkill(id)
       return
     }
     this.targetedSkill = id
@@ -269,19 +378,36 @@ export class InputState {
   releaseSkill(id: SkillId): void {
     if (this.castMode !== 'release' || this.targetedSkill !== id) return
     this.targetedSkill = null
-    this.pendingSkills |= SKILL_BIT[id]
+    this.skillPointerAimActive = false
+    this.queueSkill(id)
     this.hasActed = true
   }
 
   /** 포인터 이탈·취소 시 해당 스킬의 키업 시전을 버린다. */
   cancelSkill(id: SkillId): void {
-    if (this.targetedSkill === id) this.targetedSkill = null
+    if (this.targetedSkill === id) {
+      this.targetedSkill = null
+      this.skillPointerAimActive = false
+    }
+  }
+
+  setSkillPointerAim(clientX: number, clientY: number): void {
+    if (this.targetedSkill === null) return
+    this.pointerX = clientX
+    this.pointerY = clientY
+    this.skillPointerAimActive = true
   }
 
   /** 기존 호출부를 위한 시전 모드 비의존 즉시 큐잉 메서드. */
   pressSkill(id: SkillId): void {
-    this.pendingSkills |= SKILL_BIT[id]
+    this.queueSkill(id)
     this.hasActed = true
+  }
+
+  private queueSkill(id: SkillId): void {
+    const bit = SKILL_BIT[id]
+    if ((this.pendingSkills & bit) === 0) this.pendingSkillOrder.push(id)
+    this.pendingSkills |= bit
   }
 
   sample(out: Input): Input {
@@ -295,7 +421,12 @@ export class InputState {
     out.move.x = x
     out.move.y = y
     out.skillsPressed = this.pendingSkills
+    const sequence = out.skillSequence ?? (out.skillSequence = [])
+    sequence.length = 0
+    sequence.push(...this.pendingSkillOrder)
+    out.aimAssist = this.aimAssist
     this.pendingSkills = 0
+    this.pendingSkillOrder.length = 0
 
     if (x !== 0 || y !== 0) this.hasActed = true
 
@@ -311,8 +442,10 @@ export class InputState {
 
     // 데드존에서 멈춘 동안에도 마지막 유효 방향을 유지한다. 그렇지 않으면
     // 두 번째 손가락으로 스킬을 누르는 순간 조준이 조이스틱 원점으로 튄다.
-    out.aim.x = player.x + this.touchAimX * TOUCH_AIM_DISTANCE
-    out.aim.y = player.y + this.touchAimY * TOUCH_AIM_DISTANCE
+    if (!this.skillPointerAimActive) {
+      out.aim.x = player.x + this.touchAimX * TOUCH_AIM_DISTANCE
+      out.aim.y = player.y + this.touchAimY * TOUCH_AIM_DISTANCE
+    }
 
     return true
   }
@@ -323,12 +456,23 @@ export class InputState {
     window.removeEventListener('pointermove', this.onPointerMove)
     window.removeEventListener('pointerup', this.onPointerUp)
     window.removeEventListener('pointercancel', this.onPointerUp)
+    this.surface.removeEventListener('lostpointercapture', this.onLostPointerCapture)
     window.removeEventListener('keydown', this.onKeyDown)
     window.removeEventListener('keyup', this.onKeyUp)
     window.removeEventListener('blur', this.onBlur)
     this.surface.style.touchAction = this.previousTouchAction
     this.touchStick.remove()
   }
+}
+
+function isEditableTarget(target: EventTarget | null): boolean {
+  if (!(target instanceof HTMLElement)) return false
+  return (
+    target.isContentEditable ||
+    target.tagName === 'INPUT' ||
+    target.tagName === 'TEXTAREA' ||
+    target.tagName === 'SELECT'
+  )
 }
 
 /**
@@ -342,12 +486,20 @@ export function applyPointerMove(input: InputState, out: Input, player: Vec2): v
   const dx = out.aim.x - player.x
   const dy = out.aim.y - player.y
 
-  if (dx * dx + dy * dy < MOVE_DEADZONE * MOVE_DEADZONE) {
+  const distance = Math.hypot(dx, dy)
+  if (distance <= MOVE_STOP_RADIUS) {
     out.move.x = 0
     out.move.y = 0
     return
   }
 
-  out.move.x = dx
-  out.move.y = dy
+  const normalizedX = dx / distance
+  const normalizedY = dy / distance
+  const slowT = Math.min(
+    1,
+    (distance - MOVE_STOP_RADIUS) / (MOVE_SLOW_RADIUS - MOVE_STOP_RADIUS),
+  )
+  const speedScale = slowT * slowT * (3 - 2 * slowT)
+  out.move.x = normalizedX * speedScale
+  out.move.y = normalizedY * speedScale
 }

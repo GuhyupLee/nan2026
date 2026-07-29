@@ -43,8 +43,8 @@ export const CLASS_OPTIONS: ClassOption[] = [
     name: '루멘',
     epithet: '빛의 마법사',
     role: '원거리',
-    tagline: '거리를 두고 빛으로 지운다. 몰려드는 적을 한 점에 모아 터뜨린다.',
-    traits: ['안전한 거리', '광역 섬멸', '느린 시작'],
+    tagline: '평타를 세 갈래로 굴절시키고, 광도약으로 전열을 가로지른다.',
+    traits: ['3갈래 평타', '방향 도약', '군집 섬멸'],
     portrait: 'lumen-portrait-v2.webp',
     accent: '#b8d2cf',
     hotkey: '1',
@@ -269,7 +269,7 @@ export function showCharacterSelect(
       const strengths = opt.traits.slice(0, 2)
       card.setAttribute(
         'aria-label',
-        `${opt.name}, ${opt.epithet}. 플레이 스타일: ${opt.tagline}. ` +
+        `${opt.name}, ${opt.epithet}. 플레이 스타일: ${opt.tagline} ` +
           `강점: ${strengths.join(', ')}. ` +
           `패시브 ${passive.name}: ${passive.oneLiner}. ` +
           `선택한 뒤 스킬을 확인하고 전투를 시작합니다.`,

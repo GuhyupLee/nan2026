@@ -686,13 +686,18 @@ export class GameAudio {
       this.tone(180, 0.065, 0.04 * lift, 'sawtooth', 72)
       this.noise(0.045, 0.018 * lift, 1200)
     } else if (kind === 'empowered') {
-      this.sample(
-        playerClass === 'ranged' ? 'magic-impact' : 'blade-impact',
-        0.08 * lift,
-        playerClass === 'ranged' ? 1.15 : 1.05,
-      )
-      this.tone(230, 0.1, 0.05 * lift, 'square', 620)
-      this.noise(0.07, 0.024 * lift, 1700)
+      if (playerClass === 'ranged') {
+        // 삼중 굴절은 무거운 근접 강화타와 달리 세 광선이 갈라지는 얇은
+        // 음형으로 들려야 한다. 짧은 유리음과 세 개의 상승음을 좌우 광선처럼 펼친다.
+        this.sample('magic-glass', 0.065 * lift, 1.28)
+        this.tone(520, 0.055, 0.025 * lift, 'triangle', 760)
+        this.tone(660, 0.06, 0.022 * lift, 'sine', 920, 0.018)
+        this.tone(800, 0.065, 0.02 * lift, 'sine', 1080, 0.036)
+      } else {
+        this.sample('blade-impact', 0.08 * lift, 1.05)
+        this.tone(230, 0.1, 0.05 * lift, 'square', 620)
+        this.noise(0.07, 0.024 * lift, 1700)
+      }
     } else {
       this.sample(
         playerClass === 'ranged' ? 'magic-glass' : 'blade-impact',
@@ -746,8 +751,11 @@ export class GameAudio {
       this.tone(300, 0.085, 0.04 * lift, 'sine', 1250)
       this.noise(0.045, 0.015 * lift, 2500)
     } else {
-      this.sample('magic-impact', 0.12 * lift, 1.18)
-      this.tone(390, 0.09, 0.04 * lift, 'triangle', 560)
+      // Q는 적중음이 아니라 일정 시간 렌즈를 전개하는 시작음이다.
+      this.sample('magic-rise', 0.105 * lift, 1.32)
+      this.tone(390, 0.1, 0.035 * lift, 'triangle', 560)
+      this.tone(585, 0.12, 0.025 * lift, 'sine', 780, 0.035)
+      this.tone(780, 0.14, 0.018 * lift, 'sine', 1040, 0.07)
     }
   }
 

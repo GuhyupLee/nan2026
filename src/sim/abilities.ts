@@ -1,9 +1,18 @@
-import { ARENA_RADIUS } from './constants.ts'
-import { takeBufferedPlayerSkill } from './actions.ts'
+import { bufferPlayerSkill, takeBufferedPlayerSkill } from './actions.ts'
 import { castSkill, MARK_DURATION } from './kits.ts'
 import { upgradeTraitToken } from './progression.ts'
-import { consumeCooldown, SKILL_D, SKILL_E, SKILL_F, SKILL_Q, SKILL_R, SKILL_W } from './skills.ts'
+import {
+  consumeCooldown,
+  SKILL_BIT,
+  SKILL_D,
+  SKILL_F,
+  type SkillId,
+} from './skills.ts'
 import { effectiveAtkDamage } from './stats.ts'
+import {
+  resolveTargeting,
+  type TargetingSolution,
+} from './targeting.ts'
 import type { Input, World } from './types.ts'
 import { pushBlast } from './zones.ts'
 
@@ -29,45 +38,31 @@ export interface RingEvent {
   kind: number
 }
 
+const flashTarget: TargetingSolution = {
+  x: 0,
+  y: 0,
+  angle: 0,
+  distance: 0,
+  snapped: false,
+}
+
 function tryFlash(world: World): boolean {
+  if (world.ult.active) return false
+
+  const p = world.player
+  const fromX = p.pos.x
+  const fromY = p.pos.y
+  const target = resolveTargeting(world, 'f', flashTarget)
+  const nx = target.x
+  const ny = target.y
+
+  if (Math.hypot(nx - fromX, ny - fromY) < 0.12) return false
   if (!consumeCooldown(world.skills, 'f')) return false
   if (world.upgradesTaken.has(upgradeTraitToken('utility-overdrive'))) {
     world.player.utilityPowerUntil = Math.max(
       world.player.utilityPowerUntil,
       world.time + 3,
     )
-  }
-
-  const p = world.player
-  let dx = world.lastAim.x - p.pos.x
-  let dy = world.lastAim.y - p.pos.y
-  const d = Math.hypot(dx, dy)
-
-  if (d < 1e-4) {
-    // 커서가 발밑이면 바라보는 방향으로 나간다. 제자리 점멸은 낭비다.
-    dx = Math.cos(p.facing)
-    dy = Math.sin(p.facing)
-  } else {
-    dx /= d
-    dy /= d
-  }
-
-  // 롤과 같다 — 커서까지 가되 최대 사거리를 넘지 않는다.
-  const range = world.stats.flashRange
-  const dist = Math.min(d < 1e-4 ? range : d, range)
-
-  const fromX = p.pos.x
-  const fromY = p.pos.y
-  let nx = fromX + dx * dist
-  let ny = fromY + dy * dist
-
-  // 아레나 밖으로 나가면 경계 안쪽으로 접는다
-  const outer = Math.hypot(nx, ny)
-  const limit = ARENA_RADIUS - world.stats.radius
-  if (outer > limit && outer > 1e-6) {
-    const s = limit / outer
-    nx *= s
-    ny *= s
   }
 
   p.pos.x = nx
@@ -80,15 +75,13 @@ function tryFlash(world: World): boolean {
   p.vel.x = 0
   p.vel.y = 0
 
-  const meleeDash = world.playerAction?.meleeDash
-  if (meleeDash) {
+  const skillDash = world.playerAction?.skillDash
+  if (skillDash) {
     // F는 소환사 주문이라 QWER보다 우선한다. 진행 중인 W가 다음 stepPlayer에서
-    // 원래 보간 경로를 다시 쓰면 점멸이 통째로 사라지므로, 점멸 위치에서 남은
-    // 돌진 이동만 취소한다. W의 판정·후딜·무적은 유지되어 입력은 낭비되지 않는다.
-    meleeDash.originX = nx
-    meleeDash.originY = ny
-    meleeDash.destinationX = nx
-    meleeDash.destinationY = ny
+    // 원래 보간 경로를 다시 쓰면 점멸이 통째로 사라지므로 이동만 취소한다.
+    // 스킬 원점과 종점은 보존해야 루멘 W 렌즈와 월아 W 베기가 점멸 위치로
+    // 따라오지 않고, 시전 FX도 처음 예고한 경로와 일치한다.
+    skillDash.movementCancelled = true
   }
 
   pushRing(world, fromX, fromY, 1.6, 0)
@@ -161,17 +154,40 @@ export function stepAbilities(world: World, input: Input): void {
   const pressed = input.skillsPressed
 
   const buffered = takeBufferedPlayerSkill(world)
-  if (buffered) castSkill(world, buffered)
+  if (buffered === 'f') tryFlash(world)
+  else if (buffered === 'd') tryHeal(world)
+  else if (buffered) castSkill(world, buffered)
   if (pressed === 0) return
 
   // 소환사 주문이 먼저다. 위기에서 점멸이 스킬 뒤로 밀리면 안 된다.
-  if (pressed & SKILL_F) tryFlash(world)
-  if (pressed & SKILL_D) tryHeal(world)
+  if (pressed & SKILL_F) {
+    if (!tryFlash(world)) bufferPlayerSkill(world, 'f')
+  }
+  if (pressed & SKILL_D) {
+    if (!tryHeal(world)) bufferPlayerSkill(world, 'd')
+  }
 
-  if (pressed & SKILL_Q) castSkill(world, 'q')
-  if (pressed & SKILL_W) castSkill(world, 'w')
-  if (pressed & SKILL_E) castSkill(world, 'e')
-  if (pressed & SKILL_R) castSkill(world, 'r')
+  let handled = 0
+  for (const slot of input.skillSequence ?? []) {
+    if (
+      slot === 'd' ||
+      slot === 'f' ||
+      (handled & SKILL_BIT[slot]) !== 0 ||
+      (pressed & SKILL_BIT[slot]) === 0
+    ) {
+      continue
+    }
+    castSkill(world, slot)
+    handled |= SKILL_BIT[slot]
+  }
+
+  const fallback: readonly SkillId[] = ['q', 'w', 'e', 'r']
+  for (const slot of fallback) {
+    const bit = SKILL_BIT[slot]
+    if ((pressed & bit) !== 0 && (handled & bit) === 0) {
+      castSkill(world, slot)
+    }
+  }
 }
 
 /** 회복 버프가 적용된 현재 이동 속도. */

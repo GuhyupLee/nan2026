@@ -43,7 +43,7 @@ export function getLoadoutBriefingItems(
     glyph: skill.glyph,
     group: 'core',
     availability: 'level-up',
-    availabilityLabel: skill.id === 'r' ? 'Lv8' : '레벨업',
+    availabilityLabel: skill.id === 'r' ? 'Lv8 자동 해금' : '레벨업 선택',
   }))
 
   const passive = getPassiveDef(playerClass)
@@ -51,7 +51,7 @@ export function getLoadoutBriefingItems(
     ...passive,
     group: 'utility',
     availability: 'automatic',
-    availabilityLabel: '자동',
+    availabilityLabel: '자동 발동',
   }
 
   const utility: LoadoutBriefingItem[] = UTILITY_IDS.map((id) => {
@@ -66,7 +66,7 @@ export function getLoadoutBriefingItems(
       glyph: skill.glyph,
       group: 'utility',
       availability: 'ready',
-      availabilityLabel: '사용 가능',
+      availabilityLabel: '시작부터 사용',
     }
   })
 

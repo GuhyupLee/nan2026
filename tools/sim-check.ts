@@ -526,15 +526,14 @@ console.log('\nsim smoke check\n')
     m.stats.atkRange < r.stats.atkRange / 3,
     `${m.stats.atkRange} vs ${r.stats.atkRange}`,
   )
-  // 근딜이 더 단단해야 하지만 패시브 회복·긴 궁극기 무적까지 있으므로,
-  // 기본 EHP 격차까지 크게 벌어지면 원딜이 전멸한다.
-  // 처음 1.94배로 뒀더니 8시드에서 원딜 0/8, 근딜 8/8이었다.
-  // 상한을 테스트로 못박아 다시 벌어지지 않게 한다.
+  // 광도약을 커서 방향으로 직접 쓰는 현재 루멘은 내구 대신 회피 선택으로
+  // 산다. 그래도 처음의 1.94배처럼 벌어지면 실수 한 번에 전멸하므로 25%를
+  // 클래스 구분과 조작 관용을 함께 지키는 상한으로 둔다.
   {
     const ratio =
       m.stats.maxHp / m.stats.damageTakenMul / (r.stats.maxHp / r.stats.damageTakenMul)
     check('근딜이 원딜보다 단단하다', ratio > 1.05, `${ratio.toFixed(2)}배`)
-    check('다만 기본 EHP 격차가 20%를 넘지 않는다', ratio < 1.2, `${ratio.toFixed(2)}배`)
+    check('다만 기본 EHP 격차가 25%를 넘지 않는다', ratio < 1.25, `${ratio.toFixed(2)}배`)
   }
   check('시작 체력은 최대 체력과 같다', m.player.hp === m.stats.maxHp && r.player.hp === r.stats.maxHp)
 
@@ -853,7 +852,11 @@ console.log('\nsim smoke check\n')
   check('스킬 시전 중에도 소환사 주문 F는 사용할 수 있다', w.player.pos.x > beforeFlash)
 
   while (w.time <= PLAYER_ACTION_TIMING.q.duration + DT) stepWorld(w, createInput())
-  check('애니메이션 종료 뒤 다음 QWER을 사용할 수 있다', castSkill(w, 'w'))
+  check(
+    '애니메이션 종료 뒤 예약한 다음 QWER이 자동으로 시작된다',
+    w.playerAction?.slot === 'w' &&
+      w.actionStarts.some((event) => event.kind === 'w'),
+  )
 }
 
 // --- 평타는 즉발이며 이동·스킬 모션을 막지 않는다 ---
@@ -1671,7 +1674,7 @@ console.log('\nsim smoke check\n')
   const accepted = castSkill(w, 'w')
   const action = w.playerAction
   const startEvent = w.actionStarts.find((event) => event.kind === 'w')
-  const destinationX = action?.meleeDash?.destinationX ?? NaN
+  const destinationX = action?.skillDash?.destinationX ?? NaN
   check(
     '근거리 W 시작 이벤트가 정확한 시뮬레이션 시각을 보존한다',
     accepted &&
@@ -1836,6 +1839,11 @@ console.log('\nsim smoke check\n')
   while (flashDuringDash.time < 0.22) {
     stepWorld(flashDuringDash, createInput())
   }
+  const dashBeforeFlash = flashDuringDash.playerAction!.skillDash!
+  const originalOriginX = dashBeforeFlash.originX
+  const originalOriginY = dashBeforeFlash.originY
+  const originalDestinationX = dashBeforeFlash.destinationX
+  const originalDestinationY = dashBeforeFlash.destinationY
   const beforeFlashX = flashDuringDash.player.pos.x
   const flashInput = createInput()
   flashInput.aim.x = beforeFlashX
@@ -1850,7 +1858,13 @@ console.log('\nsim smoke check\n')
     afterFlashY > 7.5 &&
       Math.abs(flashDuringDash.player.pos.x - afterFlashX) < 1e-9 &&
       Math.abs(flashDuringDash.player.pos.y - afterFlashY) < 1e-9 &&
-      flashDuringDash.playerAction?.meleeDash?.destinationY === afterFlashY,
+      flashDuringDash.playerAction?.skillDash?.movementCancelled === true &&
+      flashDuringDash.playerAction?.skillDash?.originX === originalOriginX &&
+      flashDuringDash.playerAction?.skillDash?.originY === originalOriginY &&
+      flashDuringDash.playerAction?.skillDash?.destinationX ===
+        originalDestinationX &&
+      flashDuringDash.playerAction?.skillDash?.destinationY ===
+        originalDestinationY,
     `beforeX=${beforeFlashX} after=${afterFlashX},${afterFlashY} next=${flashDuringDash.player.pos.x},${flashDuringDash.player.pos.y}`,
   )
 }

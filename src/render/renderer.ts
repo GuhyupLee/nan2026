@@ -10,6 +10,12 @@ import { DT } from '../sim/constants.ts'
 import { TYPE_BOSS, TYPE_ELITE } from '../sim/enemies.ts'
 import type { SkillId } from '../sim/skills.ts'
 import { SURGE_BEATS } from '../sim/surges.ts'
+import {
+  getTargetingRange,
+  getTargetingSpec,
+  resolveTargeting,
+  type TargetingSolution,
+} from '../sim/targeting.ts'
 import type { PlayerClass, World } from '../sim/types.ts'
 import type { Vec2 } from '../sim/vec.ts'
 import { length, lerp, lerpAngle } from '../sim/vec.ts'
@@ -117,9 +123,12 @@ function applyEnvironmentColor(
   }
 }
 
-const TARGET_RANGES: Readonly<Record<PlayerClass, Readonly<Record<'q' | 'w' | 'e' | 'r', number>>>> = {
-  ranged: { q: 16, w: 8, e: 14, r: 30 },
-  melee: { q: 5, w: 7, e: 9, r: 13 },
+const targetingSolution: TargetingSolution = {
+  x: 0,
+  y: 0,
+  angle: 0,
+  distance: 0,
+  snapped: false,
 }
 
 const PLAYER_HIT_REACTION_DURATION = 0.22
@@ -412,9 +421,10 @@ export class Renderer {
 
     const player = world.player
     const playerClass = world.playerClass
+    const spec = getTargetingSpec(playerClass, skill)
+    const target = resolveTargeting(world, skill, targetingSolution)
     const px = lerp(player.prevPos.x, player.pos.x, alpha)
     const pz = lerp(player.prevPos.y, player.pos.y, alpha)
-    const facing = lerpAngle(player.prevFacing, player.facing, alpha)
     const color =
       skill === 'd'
         ? REWARD_COLORS.health
@@ -423,11 +433,11 @@ export class Renderer {
           : playerClass === 'ranged'
             ? CLASS_COLORS.ranged
             : CLASS_COLORS.melee
-    let range: number
-    if (skill === 'd') range = 3.2
-    else if (skill === 'f') range = world.stats.flashRange
-    else range = TARGET_RANGES[playerClass][skill]
-    range = Math.max(0.1, range)
+    const logicalRange = getTargetingRange(world, skill)
+    const range =
+      playerClass === 'ranged' && skill === 'q'
+        ? 2.2
+        : Math.max(0.1, logicalRange)
 
     this.targetingGroup.visible = true
     this.targetingRange.material.color.setHex(color)
@@ -436,26 +446,15 @@ export class Renderer {
     this.targetingRange.position.set(px, 0.035, pz)
     this.targetingRange.scale.set(range, range, 1)
 
-    const centered = skill === 'd' || (playerClass === 'melee' && skill === 'e')
+    const centered = spec.shape === 'self' || spec.shape === 'auto'
     this.targetingLine.visible = !centered
     this.targetingEnd.visible = !centered
     if (centered) return
 
-    let dx = world.lastAim.x - px
-    let dz = world.lastAim.y - pz
-    const rawDistance = Math.hypot(dx, dz)
-    if (rawDistance < 1e-5) {
-      dx = Math.cos(facing)
-      dz = Math.sin(facing)
-    } else {
-      dx /= rawDistance
-      dz /= rawDistance
-    }
-
-    const distance = rawDistance < 1e-5 ? range : Math.min(rawDistance, range)
-    const endX = px + dx * distance
-    const endZ = pz + dz * distance
-    const angle = Math.atan2(dz, dx)
+    const distance = target.distance
+    const endX = target.x
+    const endZ = target.y
+    const angle = target.angle
 
     this.targetingLine.position.set(
       (px + endX) * 0.5,
@@ -463,11 +462,16 @@ export class Renderer {
       (pz + endZ) * 0.5,
     )
     this.targetingLine.rotation.y = -angle
-    this.targetingLine.scale.set(distance, 1, 0.08)
+    this.targetingLine.scale.set(
+      Math.max(0.01, distance),
+      1,
+      Math.max(0.08, spec.width),
+    )
 
-    const endRadius = playerClass === 'ranged' && skill === 'e' ? 6 : 0.42
+    const endRadius = Math.max(0.42, spec.endpointRadius)
     this.targetingEnd.position.set(endX, 0.045, endZ)
     this.targetingEnd.scale.set(endRadius, endRadius, 1)
+    this.targetingEnd.material.opacity = target.snapped ? 0.92 : 0.68
   }
 
   /**
@@ -578,6 +582,14 @@ export class Renderer {
     }
 
     this.consumeCharacterActions(world, visualTime)
+    if (
+      pending &&
+      !pending.resolved &&
+      visualTime < pending.endAt
+    ) {
+      this.actionFacing = pending.angle
+      this.actionFacingUntil = pending.endAt
+    }
 
     this.charRig.group.position.set(px, 0, pz)
     // sim의 facing(+X 기준, XZ 평면)을 three의 Y축 회전으로 옮기면 부호가 뒤집힌다.
@@ -1082,6 +1094,10 @@ export class Renderer {
    * 스킬샷 조준의 기준점이라 정확해야 한다.
    */
   screenToGround(clientX: number, clientY: number, out: Vec2): Vec2 {
+    // 렌더 흔들림은 카메라에 직접 더해지므로 입력 레이캐스트 전에 논리
+    // 카메라로 되돌린다. 고정된 커서가 타격 때마다 월드에서 흔들리지 않는다.
+    this.positionCamera()
+    this.camera.updateMatrixWorld()
     this.ndc.x = (clientX / this.width) * 2 - 1
     this.ndc.y = -(clientY / this.height) * 2 + 1
     this.raycaster.setFromCamera(this.ndc, this.camera)

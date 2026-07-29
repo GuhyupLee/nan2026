@@ -4,9 +4,11 @@ import {
   PLAYER_ACCEL,
   RUN_TIME_LIMIT,
 } from './constants.ts'
-import { MELEE_W_DASH_END, MELEE_W_PREPARE_END } from './action-timing.ts'
 import { currentSpeed, stepAbilities } from './abilities.ts'
-import { releaseFinishedPlayerAction } from './actions.ts'
+import {
+  releaseFinishedPlayerAction,
+  trackPlayerActionAim,
+} from './actions.ts'
 import {
   BATTLEFIELD_BOMB_MAX_KILLS,
   BATTLEFIELD_HEAL_AMOUNT,
@@ -63,7 +65,7 @@ import type {
   RunMetaSnapshot,
   World,
 } from './types.ts'
-import { length, lerpAngle, normalize, vec2 } from './vec.ts'
+import { length, lerpAngle, vec2 } from './vec.ts'
 import { createXpGemPool, stepXpGems } from './xp-gems.ts'
 
 const EMPTY_RUN_META: RunMetaSnapshot = {
@@ -122,6 +124,8 @@ export function createWorld(
     // 실제 설계보다 급해 보인다.
     killHealBudget: stats.killHealCap,
     pickupHasteUntil: -1,
+    rangedVolleyUntil: -1,
+    rangedDashInvulnUntil: -1,
     utilityPowerUntil: -1,
     guardCharges: 0,
     xpGemCounter: 0,
@@ -166,6 +170,7 @@ export function createWorld(
     skills,
     upgradesTaken: new Set(),
     lastAim: vec2(1, 0),
+    aimAssistEnabled: false,
     enemies: createEnemyPool(),
     xpGems: createXpGemPool(),
     battlefieldPickups: createBattlefieldPickupPool(),
@@ -220,11 +225,13 @@ export function stepWorld(world: World, input: Input): void {
 
   world.lastAim.x = input.aim.x
   world.lastAim.y = input.aim.y
+  world.aimAssistEnabled = Boolean(input.aimAssist)
   releaseFinishedPlayerAction(world)
 
   // 격자를 가장 먼저 만든다. 스킬 시전이 이동보다 앞서므로 여기서
   // 갱신하지 않으면 스킬이 낡은(첫 틱엔 빈) 격자를 질의해 헛손질한다.
   rebuildEnemyHash(world.enemies, world.enemyHash)
+  trackPlayerActionAim(world)
 
   tickSkills(world.skills, DT)
   // 스킬은 이동보다 먼저 처리한다. 점멸이 위치를 바꾸므로
@@ -606,7 +613,16 @@ const moveDir = vec2()
 function stepPlayer(world: World, input: Input): void {
   const p = world.player
   const action = world.playerAction
-  const meleeDash = action?.meleeDash
+  const skillDash = action?.skillDash
+  const sampleAt = (world.tick + 1) * DT
+  const dashElapsedAtTickStart = action
+    ? world.time - action.startedAt
+    : 0
+  const dashSampleElapsed = action ? sampleAt - action.startedAt : 0
+  const dashControlsMovement =
+    skillDash !== undefined &&
+    (skillDash.lockUntilActionEnd ||
+      dashElapsedAtTickStart <= skillDash.moveEnd + 1e-9)
 
   // 처치 회복 예산을 채운다. 상한이 있어야 회복이 피해를 압도하지 않는다.
   p.killHealBudget = Math.min(
@@ -620,7 +636,7 @@ function stepPlayer(world: World, input: Input): void {
   p.prevFacing = p.facing
 
   // --- 이동 ---
-  if (world.ult.active || meleeDash) {
+  if (world.ult.active || dashControlsMovement) {
     moveDir.x = 0
     moveDir.y = 0
     p.vel.x = 0
@@ -628,7 +644,11 @@ function stepPlayer(world: World, input: Input): void {
   } else {
     moveDir.x = input.move.x
     moveDir.y = input.move.y
-    normalize(moveDir)
+    const moveMagnitude = Math.hypot(moveDir.x, moveDir.y)
+    if (moveMagnitude > 1) {
+      moveDir.x /= moveMagnitude
+      moveDir.y /= moveMagnitude
+    }
 
     const speed = currentSpeed(world)
     const targetVx = moveDir.x * speed
@@ -641,26 +661,41 @@ function stepPlayer(world: World, input: Input): void {
     p.vel.y += (targetVy - p.vel.y) * k
   }
 
-  if (meleeDash && action) {
+  if (
+    skillDash &&
+    action &&
+    dashControlsMovement &&
+    !skillDash.movementCancelled
+  ) {
     // 이번 고정 틱 뒤의 상태는 다음 시뮬레이션 시각을 나타낸다.
     // 그 시각을 샘플링해야 0.16..0.32초 돌진과 애니메이션이 맞고,
     // prevPos -> pos 렌더 보간도 순간이동 없이 유지된다.
-    const sampleAt = (world.tick + 1) * DT
-    const elapsed = sampleAt - action.startedAt
     const linearProgress = Math.max(
       0,
-      Math.min(1, (elapsed - MELEE_W_PREPARE_END) / (MELEE_W_DASH_END - MELEE_W_PREPARE_END)),
+      Math.min(
+        1,
+        (dashSampleElapsed - skillDash.moveStart) /
+          (skillDash.moveEnd - skillDash.moveStart),
+      ),
     )
     const progress = linearProgress * linearProgress * (3 - 2 * linearProgress)
     p.pos.x =
-      meleeDash.originX + (meleeDash.destinationX - meleeDash.originX) * progress
+      skillDash.originX +
+      (skillDash.destinationX - skillDash.originX) * progress
     p.pos.y =
-      meleeDash.originY + (meleeDash.destinationY - meleeDash.originY) * progress
+      skillDash.originY +
+      (skillDash.destinationY - skillDash.originY) * progress
 
-    if (linearProgress > 0 && elapsed <= MELEE_W_DASH_END + DT) {
-      p.invulnUntil = Math.max(p.invulnUntil, action.startedAt + MELEE_W_DASH_END)
+    if (
+      linearProgress > 0 &&
+      dashSampleElapsed <= skillDash.moveEnd + DT
+    ) {
+      p.invulnUntil = Math.max(
+        p.invulnUntil,
+        action.startedAt + skillDash.moveEnd,
+      )
     }
-  } else {
+  } else if (!dashControlsMovement) {
     p.pos.x += p.vel.x * DT
     p.pos.y += p.vel.y * DT
   }
@@ -683,7 +718,7 @@ function stepPlayer(world: World, input: Input): void {
   }
 
   // --- 조준 방향 ---
-  if (!world.ult.active && !meleeDash) {
+  if (!world.ult.active && !dashControlsMovement) {
     const ax = input.aim.x - p.pos.x
     const ay = input.aim.y - p.pos.y
     if (ax * ax + ay * ay > 1e-6) {

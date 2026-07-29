@@ -1075,6 +1075,8 @@ export class SkillFx {
   private readonly tracked: BlastTrack[] = []
   /** uTime 기준점. performance.now()를 그대로 넣으면 float32 정밀도가 아깝다. */
   private origin = -1
+  /** 삼중 굴절 활성 중 캐릭터 발밑에 남기는 저빈도 상태 펄스. */
+  private lastVolleyPulseAt = Number.NEGATIVE_INFINITY
 
   constructor(scene: THREE.Scene, hooks: SkillFxHooks = {}) {
     this.scene = scene
@@ -1277,6 +1279,7 @@ export class SkillFx {
     this.flares.clear()
     for (const b of this.tracked) b.used = false
     this.origin = -1
+    this.lastVolleyPulseAt = Number.NEGATIVE_INFINITY
   }
 
   /**
@@ -1290,6 +1293,18 @@ export class SkillFx {
 
     const px = lerp(world.player.prevPos.x, world.player.pos.x, alpha)
     const pz = lerp(world.player.prevPos.y, world.player.pos.y, alpha)
+
+    if (
+      world.playerClass === 'ranged' &&
+      world.time < world.player.rangedVolleyUntil
+    ) {
+      if (world.time - this.lastVolleyPulseAt >= 0.42) {
+        this.spawnRing(px, pz, 1.55, 0.5, 2, HEX_CYAN, GAIN_CYAN * 0.72)
+        this.lastVolleyPulseAt = world.time
+      }
+    } else {
+      this.lastVolleyPulseAt = Number.NEGATIVE_INFINITY
+    }
 
     this.captureCasts(world)
     this.captureTracers(world)
@@ -1316,7 +1331,7 @@ export class SkillFx {
    * 예광선·링·장판은 "무엇이 맞았는가"를 보여 주는 결과 이벤트다. 그것만
    * 역추론하면 순간이동 뒤 출발점을 잃고, 일현 W/E도 원형 범위 표시가 먼저
    * 보여 두 클래스가 같은 마법처럼 읽힌다. CastEvent의 시전 순간 선분을
-   * 직접 소비해 일현은 광선·낙광, 월아는 호와 원으로 첫 프레임을 연다.
+   * 직접 소비해 일현은 굴절·도약·광탄·광선, 월아는 호와 원으로 첫 프레임을 연다.
    *
    * 아래 8개 분기는 모두 constructor에서 미리 만든 FxPool 객체만 acquire한다.
    * 시전 중 지오메트리·머티리얼·Object3D를 새로 만들지 않는다.
@@ -1338,7 +1353,7 @@ export class SkillFx {
     }
   }
 
-  /** 일현(日弦): 광학 장치마다 낙광·견인·광탄·광선을 구분해 읽힌다. */
+  /** 일현(日弦): 광학 장치마다 삼중 굴절·도약·광탄·광선을 구분해 읽힌다. */
   private spawnRangedCast(cast: CastEvent): void {
     const x0 = cast.originX
     const z0 = cast.originY
@@ -1349,28 +1364,22 @@ export class SkillFx {
 
     switch (cast.slot) {
       case 'q':
-        // 낙광 — 가는 조준선 뒤 목표 지점에 수직 광주와 초점 링이 꽂힌다.
-        // R과 같은 직선 빔으로 보이면 Q를 교체한 이유가 시각적으로 사라진다.
-        this.spawnBeam(
-          x0, z0, x1, z1, BEAM_BLADE, 0.035, 0.09,
-          HEX_CYAN, GAIN_CYAN, 0.42,
-        )
-        this.spawnRing(x1, z1, 3.6, 0.42, 2, HEX_GOLD, GAIN_GOLD)
-        this.spawnRing(x1, z1, 2.25, 0.3, 3, HEX_CYAN, GAIN_CYAN)
+        // 삼중 굴절 — 몸 주위 렌즈가 열리며 다음 평타의 세 광로를 미리 보여 준다.
+        this.spawnRing(x0, z0, 2.2, 0.38, 3, HEX_CYAN, GAIN_CYAN)
+        this.spawnRing(x0, z0, 1.2, 0.26, 2, HEX_GOLD, GAIN_GOLD)
         this.spawnFlare(
-          x1, 0.7, z1, 1.35, cast.angle,
-          FLARE_IMPACT, 0.3, HEX_GOLD, GAIN_GOLD,
+          x0, 1.25, z0, 1.2, cast.angle,
+          FLARE_PIERCE, 0.3, HEX_GOLD, GAIN_GOLD,
         )
         this.spawnFlare(
-          x1, 2.3, z1, 1.15, cast.angle,
-          FLARE_PIERCE, 0.24, HEX_SILVER, GAIN_WHITE,
+          x0, 1.05, z0, 0.95, cast.angle + 0.42,
+          FLARE_PIERCE, 0.26, HEX_CYAN, GAIN_CYAN,
         )
         this.spawnFlare(
-          x1, 4.1, z1, 0.9, cast.angle,
-          FLARE_PIERCE, 0.2, HEX_CYAN, GAIN_CYAN,
+          x0, 1.05, z0, 0.95, cast.angle - 0.42,
+          FLARE_PIERCE, 0.26, HEX_SILVER, GAIN_WHITE,
         )
-        this.hooks.onShake?.(0.48)
-        this.hooks.onImpact?.(x1, z1, cast.angle, HEX_GOLD)
+        this.hooks.onShake?.(0.16)
         break
       case 'w':
         // 굴절 — 평행한 두 잔상이 출발·착지점을 한 번에 연결한다.

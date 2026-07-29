@@ -90,7 +90,9 @@ export interface Stats {
  * 대신 체력과 피해 감소로 버티게 한다. 위치 게임이 정반대여야 클래스 선택에
  * 의미가 생긴다.
  *
- * 근딜 실효 체력 = 130 / 0.80 ≈ 163, 원딜은 125 / 0.855 ≈ 146이다.
+ * 근딜 실효 체력 = 130 / 0.80 ≈ 163, 원딜은 125 / 0.95 ≈ 132다.
+ * 루멘은 광도약의 명시적인 방향 선택으로 피해를 피하고, 월아는 붙은 채
+ * 받아내므로 기본 내구 차이도 클래스 선택에서 읽히게 둔다.
  * 근딜 단일 대상 DPS = 22 / 0.42 ≈ 52. 원딜 46보다 높지만 붙어야만 나온다.
  */
 export function createStats(
@@ -113,10 +115,10 @@ export function createStats(
     maxHp: (melee ? 130 : PLAYER_MAX_HP) + maxHpBonus,
     speed: (melee ? 10.5 : PLAYER_SPEED) * speedMultiplier,
     radius: melee ? 0.62 : PLAYER_RADIUS,
-    // 근접은 붙어 있는 것이 일이라 실제로 맞는 시간이 원거리보다 길다
-    // (계측: 접촉 약 18%). 실효 체력 차이는 남기되 근접도 보스 패턴을
-    // 무시하면 죽는 선으로 둔다.
-    damageTakenMul: melee ? 0.8 : 0.855,
+    // 근접은 붙어 있는 것이 일이라 실제로 맞는 시간이 원거리보다 길다.
+    // 원거리는 광도약 방향을 직접 골라 회피하므로, 내구는 월아보다 분명히
+    // 낮춰 이동기를 잘못 썼을 때의 위험도 남긴다.
+    damageTakenMul: melee ? 0.8 : 0.95,
 
     atkDamage: melee ? 22 : ATK_DAMAGE,
     atkInterval: melee ? 0.42 : ATK_INTERVAL,

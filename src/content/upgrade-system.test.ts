@@ -126,8 +126,8 @@ for (const upgrade of UPGRADES) {
   const rangedW = getUpgradeBranchPresentation('singularity-interference', 'w')
   assert(rangedQ !== null && rangedW !== null, '원거리 합성 경로 표시를 찾지 못함')
   assert(rangedQ.name !== rangedW.name, '원거리 Q/W 합성 경로명이 동일함')
-  assert(rangedQ.name === '특이점 낙광', '원거리 Q 합성 경로명이 잘못됨')
-  assert(rangedW.name === '사건지평 견인', '원거리 W 합성 경로명이 잘못됨')
+  assert(rangedQ.name === '집속 굴절', '원거리 Q 합성 경로명이 잘못됨')
+  assert(rangedW.name === '특이점 도약', '원거리 W 합성 경로명이 잘못됨')
 
   const meleeQ = getUpgradeBranchPresentation('eclipse-sword-domain', 'q')
   const meleeR = getUpgradeBranchPresentation('eclipse-sword-domain', 'r')
@@ -371,7 +371,7 @@ for (const upgrade of UPGRADES) {
   const material = cards.find((card) => card.id === 'orbit-lens')
   if (material) {
     assert(
-      material.fusionRoute?.includes('사건지평 간섭계'),
+      material.fusionRoute?.includes('집속 간섭계'),
       '재료 카드가 이어지는 융합을 노출하지 않음',
     )
   }
@@ -495,7 +495,7 @@ for (const upgrade of UPGRADES) {
   assert(cards[0]?.rank === 3, 'UI 카드가 다음 랭크 III를 표시하지 않음')
   assert(cards[0]?.rarity === 'awakening', 'UI 카드가 각성 희귀도를 표시하지 않음')
   assert(cards[0]?.badges?.includes('각성'), 'UI 카드에 각성 배지가 없음')
-  assert(cards[0]?.name.includes('귀환 궤도'), 'UI 카드에 각성 이름이 없음')
+  assert(cards[0]?.name.includes('지속 광로'), 'UI 카드에 각성 이름이 없음')
 }
 
 // 일반 강화와 QWER 연마는 네 선택지를 모두 비교할 수 있다.

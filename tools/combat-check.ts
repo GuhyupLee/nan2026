@@ -177,23 +177,29 @@ function skillLoss(
   const world = createWorld(4100, 'ranged')
   world.spawnEnabled = false
   world.player.attackCooldown = Number.POSITIVE_INFINITY
-  const oldTarget = addTarget(world, 6, 0)
-  const newTarget = addTarget(world, -6, 0)
-  const nearbyTarget = addTarget(world, -6, 2.4)
-  world.lastAim.x = 6
+  const center = addTarget(world, 4, 0)
+  const upper = addTarget(world, 6, 1.45)
+  const lower = addTarget(world, 6, -1.45)
   world.lastAim.y = 0
   unlockSkill(world.skills, 'q', 1)
   assert.equal(castSkill(world, 'q'), true)
 
-  const input = fixedInput(-6, 0)
-  input.move.y = 1
+  const input = fixedInput(10, 0)
   while (world.casts.length === 0) stepWorld(world, input)
 
-  assert.equal(world.enemies.hp[oldTarget], 10_000)
-  assert.ok(world.enemies.hp[newTarget]! < 10_000)
-  assert.ok(world.enemies.hp[nearbyTarget]! < 10_000)
-  assert.equal(world.casts[0]?.targetX, -6)
-  assert.equal(world.casts[0]?.targetY, 0)
+  assert.equal(world.enemies.hp[center], 10_000)
+  assert.equal(world.enemies.hp[upper], 10_000)
+  assert.equal(world.enemies.hp[lower], 10_000)
+  assert.equal(world.casts[0]?.targetX, world.player.pos.x)
+  assert.equal(world.casts[0]?.targetY, world.player.pos.y)
+  assert.ok(world.player.rangedVolleyUntil - world.time > 4.9)
+
+  world.player.attackCooldown = 0
+  stepWorld(world, input)
+  assert.ok(world.enemies.hp[center]! < 10_000)
+  assert.ok(world.enemies.hp[upper]! < 10_000)
+  assert.ok(world.enemies.hp[lower]! < 10_000)
+  assert.ok(world.tracers.filter((tracer) => tracer.kind === 0).length >= 3)
 }
 
 {
@@ -235,6 +241,7 @@ function skillLoss(
 {
   for (const cls of ['ranged', 'melee'] as const) {
     for (const slot of QWER) {
+      if (cls === 'ranged' && slot === 'q') continue
       const normal = skillLoss(cls, slot, 1)
       const strengthened = skillLoss(cls, slot, 2)
       assert.ok(normal > 0, `${cls} ${slot} deals damage`)
@@ -302,14 +309,13 @@ function skillLoss(
   const branches: ReadonlyArray<
     readonly [PlayerClass, (typeof QWER)[number], string]
   > = [
-    ['ranged', 'q', 'orbital-prism'],
     ['ranged', 'w', 'double-collapse'],
     ['ranged', 'e', 'afterimage-aperture'],
     ['melee', 'q', 'returning-draw-cut'],
     ['melee', 'w', 'returning-sheath'],
     ['melee', 'e', 'mirror-counter'],
     ['melee', 'r', 'fullmoon-domain'],
-    ['ranged', 'q', 'singularity-interference'],
+    ['ranged', 'w', 'singularity-interference'],
     ['melee', 'r', 'eclipse-sword-domain'],
   ]
 
@@ -337,6 +343,50 @@ function skillLoss(
   assert.equal(
     world.tracers.filter((tracer) => tracer.kind === 1).length,
     1,
+  )
+}
+
+{
+  const activateVolley = (
+    branch: string | null,
+    rank = 0,
+  ): { world: World; upper: number; lower: number } => {
+    const world = createWorld(4310 + rank, 'ranged')
+    world.spawnEnabled = false
+    world.player.attackCooldown = Number.POSITIVE_INFINITY
+    addTarget(world, 4, 0, 1000)
+    const upper = addTarget(world, 6, 1.45, 1000)
+    const lower = addTarget(world, 6, -1.45, 1000)
+    world.lastAim.x = 10
+    unlockSkill(world.skills, 'q', 1)
+    world.skills.q.branch = branch
+    world.skills.q.rank = rank
+    assert.equal(castSkill(world, 'q'), true)
+    const input = fixedInput(10, 0)
+    while (world.casts.length === 0) stepWorld(world, input)
+    world.player.attackCooldown = 0
+    stepWorld(world, input)
+    return { world, upper, lower }
+  }
+
+  const base = activateVolley(null)
+  const ranked = activateVolley(null, 1)
+  assert.ok(
+    ranked.world.enemies.hp[ranked.upper]! <
+      base.world.enemies.hp[base.upper]!,
+  )
+
+  const extended = activateVolley('orbital-prism')
+  assert.ok(extended.world.player.rangedVolleyUntil - extended.world.time > 6.9)
+
+  const gathered = activateVolley('singularity-interference')
+  assert.ok(
+    gathered.world.enemies.pullUntil[gathered.upper]! > gathered.world.time,
+    'Q fusion pulls the upper side-ray target',
+  )
+  assert.ok(
+    gathered.world.enemies.pullUntil[gathered.lower]! > gathered.world.time,
+    'Q fusion pulls the lower side-ray target',
   )
 }
 
@@ -400,7 +450,15 @@ function skillLoss(
       hasTrait: (trait) => meleeTraits.has(trait),
     })
 
-  assert.equal(ranged('q'), '기본 270 · 귀환 낙광 148.5 · 특이점 54 × 4회')
+  assert.equal(ranged('q'), '강화 평타 중심 40 / 양옆 각각 24')
+  assert.equal(
+    getSkillDamageBreakdown('ranged', 'q', {
+      damageMultiplier: 2,
+      attackDamage: 40,
+      hasTrait: (trait) => trait === 'split-refraction',
+    }),
+    '강화 평타 중심 40 / 양옆 각각 30',
+  )
   assert.equal(ranged('w'), '기본 14 × 12회 · 중심 폭발 75.6')
   assert.equal(ranged('e'), '기본 320 + 12 × 12회 · 경로 잔광 112')
   assert.equal(ranged('r'), '기본 3,400 · 굴절 대상당 850')

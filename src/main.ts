@@ -146,6 +146,7 @@ const skillBar = new SkillBar(document.body, DEFAULT_SLOTS, {
   },
   release: (id) => input.releaseSkill(id),
   cancel: (id) => input.cancelSkill(id),
+  aim: (clientX, clientY) => input.setSkillPointerAim(clientX, clientY),
 })
 skillBar.setVisible(false)
 

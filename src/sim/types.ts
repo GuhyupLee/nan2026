@@ -25,6 +25,9 @@ export interface Input {
   aim: Vec2
   /** 이번 틱에 "새로" 눌린 스킬 비트마스크. 누르고 있는 상태가 아니라 엣지. */
   skillsPressed: number
+  /** 실제 QWER 입력 순서. 없는 헤드리스 입력은 비트마스크의 고정 순서를 쓴다. */
+  skillSequence?: SkillId[]
+  aimAssist?: boolean
 }
 
 export function createInput(): Input {
@@ -32,6 +35,8 @@ export function createInput(): Input {
     move: { x: 0, y: 0 },
     aim: { x: 1, y: 0 },
     skillsPressed: 0,
+    skillSequence: [],
+    aimAssist: false,
   }
 }
 
@@ -91,12 +96,21 @@ export interface PendingPlayerAction {
   /** 후딜까지 끝나 다음 행동을 받을 수 있는 월드 시각. */
   endAt: number
   resolved: boolean
-  /** 근거리 W의 결정론적 월드 이동. 애니메이션은 인플레이스 상태를 유지한다. */
-  meleeDash?: {
+  /** W의 결정론적 월드 이동. 애니메이션은 인플레이스 상태를 유지한다. */
+  skillDash?: {
     originX: number
     originY: number
     destinationX: number
     destinationY: number
+    moveStart: number
+    moveEnd: number
+    /** 월아 W는 베기 회복이 끝날 때까지 일반 이동을 잠근다. */
+    lockUntilActionEnd: boolean
+    /**
+     * W 도중 F가 이동 보간만 취소했는가.
+     * origin/destination은 렌즈·피해·FX의 원래 스킬 판정을 위해 보존한다.
+     */
+    movementCancelled: boolean
   }
 }
 
@@ -148,6 +162,10 @@ export interface Player {
   killHealBudget: number
   /** XP 보석을 주운 직후 공격 가속이 유지되는 시각. */
   pickupHasteUntil: number
+  /** 루멘 Q 「삼중 굴절」이 기본 공격을 세 갈래로 나누는 마지막 시각. */
+  rangedVolleyUntil: number
+  /** 루멘 W 도약 뒤 잔광 무적이 끝나는 시각. HUD도 이 값을 그대로 읽는다. */
+  rangedDashInvulnUntil: number
   /** D/F 사용 뒤 공격력 증폭이 유지되는 시각. */
   utilityPowerUntil: number
   /** 다음 피격을 완전히 막는 과회복 보호막 횟수. */
@@ -321,9 +339,9 @@ export interface World {
   player: Player
   /** 현재 선딜·후딜 중인 QWER. 평타는 조작감을 위해 즉시 판정한다. */
   playerAction: PendingPlayerAction | null
-  /** 후딜 마지막 0.15초에 들어온 다음 QWER. 리플레이 상태에도 포함한다. */
+  /** 후딜 마지막 0.25초·쿨 종료 0.18초 전에 들어온 다음 스킬. */
   bufferedSkill: BufferedSkillInput | null
-  /** 「삼중 회절」의 세 번째 평타를 결정하는 누적 발사 횟수. */
+  /** 「측광 분열」의 세 번째 평타를 결정하는 누적 발사 횟수. */
   basicAttackSequence: number
   /** 이번 판 누적 처치 수. 점수의 기본 축. */
   kills: number
@@ -334,6 +352,7 @@ export interface World {
 
   /** 직전 틱의 조준 지점(월드 좌표). 자동 공격과 조준 표시가 읽는다. */
   lastAim: Vec2
+  aimAssistEnabled: boolean
 
   enemies: EnemyPool
   /** Fixed-capacity XP drops. Only entries below count are active. */

@@ -72,28 +72,27 @@ const PASSIVES: Readonly<Record<PlayerClass, PassiveDef>> = {
   },
 }
 
-/** 일현(日弦) — 먼 지점을 낙점하고 마지막에 전장을 가르는 클래스다. */
+/** 일현(日弦) — 평타를 굴절시키며 거리를 만들고 마지막에 전장을 가른다. */
 const RANGED: Record<string, SkillDef> = {
   q: {
     id: 'q',
     key: 'Q',
-    name: '낙광',
-    tag: '광역',
-    oneLiner: '조준점에 빛을 떨어뜨려 한 무리를 붙잡고 점등한다',
-    detail: '사거리 14 · 반경 3.6 · 피해 135 · 0.75초 속박 · 점등 4초',
-    damage: [135],
-    damagePattern: 'single',
-    icon: 'art/skills/ranged-q.webp',
-    glyph: '⟶',
-    cooldown: 3.5,
+    name: '삼중 굴절',
+    tag: '평타 강화',
+    oneLiner: '5초간 기본 공격이 세 갈래로 갈라지고, 맞힌 적을 점등한다',
+    detail: '지속 5초 · 중심 100% + 보조 광선 2개(각 30%) · 적중 시 점등 4초',
+    damage: [],
+    icon: 'art/skills/ranged-q-trifold.webp',
+    glyph: '⋔',
+    cooldown: 8,
   },
   w: {
     id: 'w',
     key: 'W',
-    name: '굴절',
-    tag: '생존',
-    oneLiner: '커서 반대쪽으로 도약하고, 있던 자리에 적을 모으는 렌즈를 남긴다',
-    detail: '8 후퇴 · 0.55초 무적 · 반경 5.5 견인 · 3초 렌즈(7 × 12회)',
+    name: '광도약',
+    tag: '이동',
+    oneLiner: '커서 방향으로 도약하고, 출발 지점에 적을 모으는 렌즈를 남긴다',
+    detail: '거리 8 · 0.55초 무적 · 출발점 반경 5.5 견인 · 3초 렌즈(7 × 12회)',
     damage: [7],
     damagePattern: 'zone-12',
     icon: 'art/skills/ranged-w.webp',
@@ -300,11 +299,10 @@ export const DAMAGE_TRAIT_META: readonly DamageTraitMeta[] = [
     affectsSlots: ['attack', 'q', 'w', 'e', 'r', 'f'],
     label: '잔광 과출력',
   },
-  { trait: 'orbital-prism', playerClass: 'ranged', affectsSlots: ['q'], label: '귀환 낙광' },
   {
     trait: 'singularity-interference',
     playerClass: 'ranged',
-    affectsSlots: ['q', 'w'],
+    affectsSlots: ['w'],
     label: '특이점 간섭',
   },
   { trait: 'double-collapse', playerClass: 'ranged', affectsSlots: ['w'], label: '이중 붕괴' },
@@ -400,10 +398,10 @@ export function getSkillDamageBreakdown(
 
   if (cls === 'ranged') {
     if (id === 'q') {
-      if (has('orbital-prism')) extras.push(`귀환 낙광 ${skill(135 * 0.55)}`)
-      if (has('singularity-interference')) {
-        extras.push(`특이점 ${skill(135 * 0.2)} × 4회`)
-      }
+      const sideRayMultiplier = has('split-refraction') ? 1.25 : 1
+      extras.push(
+        `강화 평타 중심 ${attack(1)} / 양옆 각각 ${attack(0.3 * multiplier * sideRayMultiplier)}`,
+      )
     } else if (
       id === 'w' &&
       (has('double-collapse') || has('singularity-interference'))

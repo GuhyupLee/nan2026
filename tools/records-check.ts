@@ -117,10 +117,10 @@ assert.equal(build.seals, 3)
 
 const presentation = getRunBuildPresentation(build)
 assert.equal(presentation.battlefieldCode, '5F2A-91C0')
-assert.deepEqual(presentation.awakeningNames, ['귀환 궤도', '이중 붕괴'])
-assert.deepEqual(presentation.fusionNames, ['사건지평 간섭계'])
-assert.equal(presentation.skills[0]?.branchName, '특이점 낙광')
-assert.equal(presentation.skills[1]?.branchName, '사건지평 견인')
+assert.deepEqual(presentation.awakeningNames, ['지속 광로', '이중 붕괴'])
+assert.deepEqual(presentation.fusionNames, ['집속 간섭계'])
+assert.equal(presentation.skills[0]?.branchName, '집속 굴절')
+assert.equal(presentation.skills[1]?.branchName, '특이점 도약')
 
 // 선택 V1 build는 점수 정렬을 거쳐도 완전히 왕복한다.
 storage.setItem(RECORDS_STORAGE_KEY, JSON.stringify({ ranged: [legacy] }))

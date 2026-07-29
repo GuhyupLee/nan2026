@@ -198,6 +198,28 @@ export function showSettings(
     })
     fields.appendChild(mute)
 
+    const aimAssist = makeButton(
+      'settings-toggle',
+      '약한 조준 보정 · 커서 가까운 적만 보정',
+    )
+    const aimAssistState = document.createElement('small')
+    aimAssistState.className = 'toggle-state'
+    aimAssist.appendChild(aimAssistState)
+    let aimAssistEnabled = input.getAimAssist()
+
+    const renderAimAssist = (): void => {
+      aimAssist.setAttribute('aria-pressed', String(aimAssistEnabled))
+      aimAssist.dataset.active = String(aimAssistEnabled)
+      aimAssistState.textContent = aimAssistEnabled ? '켜짐' : '꺼짐'
+    }
+    renderAimAssist()
+    aimAssist.addEventListener('click', () => {
+      aimAssistEnabled = !aimAssistEnabled
+      input.setAimAssist(aimAssistEnabled)
+      renderAimAssist()
+    })
+    fields.appendChild(aimAssist)
+
     const controls = document.createElement('fieldset')
     controls.className = 'cast-mode-settings'
     const legend = document.createElement('legend')

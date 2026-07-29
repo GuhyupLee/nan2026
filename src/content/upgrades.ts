@@ -223,10 +223,10 @@ const RANGED_UPGRADES: readonly UpgradeDef[] = [
       { rank: 2, displayName: '연속 회절', oneLiner: '평타 공격 간격 -14%' },
       {
         rank: 3,
-        displayName: '삼중 회절',
-        oneLiner: '세 번째 평타가 양옆으로 갈라지는 보조 광선을 만듭니다.',
+        displayName: '측광 분열',
+        oneLiner: '세 번째 평타도 갈라지고, Q 중 양옆 광선 피해가 25% 증가합니다.',
         trait: 'split-refraction',
-        awakeningName: '삼중 회절',
+        awakeningName: '측광 분열',
       },
     ],
     effects: [
@@ -303,21 +303,21 @@ const RANGED_UPGRADES: readonly UpgradeDef[] = [
   }),
   defineUpgrade({
     id: 'orbit-lens',
-    name: '궤도 렌즈',
+    name: '다중 렌즈',
     glyph: 'Q',
     weight: 8,
     classFilter: RANGED,
     family: 'optical-device',
     slot: 'q',
     ranks: [
-      { rank: 1, displayName: '저궤도 조준', oneLiner: 'Q 재사용 대기시간 -12%' },
-      { rank: 2, displayName: '궤도 단축', oneLiner: 'Q 재사용 대기시간 -12%' },
+      { rank: 1, displayName: '고속 전개', oneLiner: 'Q 재사용 대기시간 -12%' },
+      { rank: 2, displayName: '광로 재정렬', oneLiner: 'Q 재사용 대기시간 -12%' },
       {
         rank: 3,
-        displayName: '귀환 궤도',
-        oneLiner: '낙광이 0.55초 뒤 더 좁은 범위에 한 번 더 떨어집니다.',
+        displayName: '지속 광로',
+        oneLiner: 'Q 삼중 굴절의 지속시간이 5초에서 7초로 늘어납니다.',
         trait: 'orbital-prism',
-        awakeningName: '귀환 궤도',
+        awakeningName: '지속 광로',
       },
     ],
     effects: [
@@ -335,8 +335,8 @@ const RANGED_UPGRADES: readonly UpgradeDef[] = [
     family: 'optical-device',
     slot: 'w',
     ranks: [
-      { rank: 1, displayName: '인력 증폭', oneLiner: 'W 재사용 대기시간 -10%' },
-      { rank: 2, displayName: '붕괴 가속', oneLiner: 'W 재사용 대기시간 -10%' },
+      { rank: 1, displayName: '도약 재충전 I', oneLiner: 'W 재사용 대기시간 -10%' },
+      { rank: 2, displayName: '도약 재충전 II', oneLiner: 'W 재사용 대기시간 -10%' },
       {
         rank: 3,
         displayName: '이중 붕괴',
@@ -908,7 +908,7 @@ const FUSION_UPGRADES: readonly UpgradeDef[] = [
   }),
   defineUpgrade({
     id: 'singularity-interferometer',
-    name: '사건지평 간섭계',
+    name: '집속 간섭계',
     glyph: '✦',
     weight: 24,
     classFilter: RANGED,
@@ -917,15 +917,15 @@ const FUSION_UPGRADES: readonly UpgradeDef[] = [
     fusion: {
       requires: ['orbit-lens', 'gravity-prism'],
       slotDisplayNames: {
-        q: '특이점 낙광',
-        w: '사건지평 견인',
+        q: '집속 굴절',
+        w: '특이점 도약',
       },
     },
     ranks: [
       {
         rank: 1,
         displayName: '특이점 중첩',
-        oneLiner: '두 각성을 유지한 채 Q 지점에 W 견인장을 겹쳐 적을 가둡니다.',
+        oneLiner: 'Q 양옆 광선이 중심 적 쪽으로 끌고, W의 이중 붕괴도 유지됩니다.',
         trait: 'singularity-interference',
       },
     ],

@@ -424,7 +424,7 @@ export const VRM_ACTION_MOTIONS: Readonly<
       },
     ),
 
-    // Q — 머리 위로 빛을 모은 뒤 한 손을 지면으로 내리꽂아 조준점에 낙광을 부른다.
+    // Q — 머리 위에서 빛을 모은 뒤 양팔을 열어 세 갈래 렌즈를 전개한다.
     q: motion(
       'ranged',
       'q',
@@ -450,24 +450,24 @@ export const VRM_ACTION_MOTIONS: Readonly<
         },
       },
       {
-        hipsY: 0.905,
+        hipsY: 0.97,
         rotations: {
-          hips: [0.42, 0.44, -0.2],
-          spine: [0.56, -0.58, 0.26],
-          chest: [0.38, -0.68, 0.2],
-          head: [0.24, 0.5, -0.14],
-          leftUpperArm: [-0.34, -0.5, -0.92],
-          leftLowerArm: [0.16, -0.88, -0.24],
-          leftHand: [-0.28, -0.34, 0.24],
-          rightUpperArm: [-0.58, 0.24, 0.54],
-          rightLowerArm: [0.08, 0.16, -0.1],
-          rightHand: [0.5, -0.12, -0.28],
-          leftUpperLeg: [-0.74, 0.34, -0.3],
-          leftLowerLeg: [1.02, -0.22, 0.25],
-          leftFoot: [-0.46, -0.28, 0.18],
-          rightUpperLeg: [0.6, -0.33, 0.28],
-          rightLowerLeg: [0.82, 0.2, -0.22],
-          rightFoot: [-0.4, 0.26, -0.17],
+          hips: [0.05, 0, 0],
+          spine: [-0.12, 0, 0.04],
+          chest: [-0.18, 0, 0],
+          head: [-0.08, 0, 0],
+          leftUpperArm: [-0.72, -0.34, -1.12],
+          leftLowerArm: [-0.28, -0.55, -0.18],
+          leftHand: [0, -0.2, 0.25],
+          rightUpperArm: [-0.72, 0.34, 1.12],
+          rightLowerArm: [-0.28, 0.55, 0.18],
+          rightHand: [0, 0.2, -0.25],
+          leftUpperLeg: [-0.14, 0.1, -0.08],
+          leftLowerLeg: [0.22, -0.05, 0.05],
+          leftFoot: [-0.1, -0.06, 0.04],
+          rightUpperLeg: [0.14, -0.1, 0.08],
+          rightLowerLeg: [0.22, 0.05, -0.05],
+          rightFoot: [-0.1, 0.06, -0.04],
         },
       },
       {
@@ -493,7 +493,7 @@ export const VRM_ACTION_MOTIONS: Readonly<
       },
     ),
 
-    // W — refractive sidestep: compress, pivot away, fan the arms, settle facing front.
+    // W — 광도약: 낮게 압축한 뒤 전방으로 체중을 싣고 착지 자세로 복귀한다.
     w: motion(
       'ranged',
       'w',

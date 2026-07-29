@@ -29,6 +29,9 @@ export const PLAYER_ACTION_TIMING: Readonly<Record<PlayerActionKind, PlayerActio
  */
 export const MELEE_W_PREPARE_END = 0.16
 export const MELEE_W_DASH_END = 0.32
+/** 루멘 W는 짧은 준비 뒤 실제 월드에서 전진해 순간이동처럼 보이지 않는다. */
+export const RANGED_W_DASH_START = 0.05
+export const RANGED_W_DASH_END = 0.21
 export const MELEE_W_TIMING: Readonly<PlayerActionTiming> = {
   duration: 0.56,
   impact: MELEE_W_DASH_END,

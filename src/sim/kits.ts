@@ -1,5 +1,11 @@
 import { ARENA_RADIUS } from './constants.ts'
 import {
+  MELEE_W_DASH_END,
+  MELEE_W_PREPARE_END,
+  RANGED_W_DASH_END,
+  RANGED_W_DASH_START,
+} from './action-timing.ts'
+import {
   beginPlayerAction,
   bufferPlayerSkill,
   emitActionStart,
@@ -13,12 +19,15 @@ import { nearestEnemy, queryCircle, queryCone, querySegment } from './query.ts'
 import { upgradeTraitToken } from './progression.ts'
 import {
   consumeCooldown,
-  isReady,
   skillDamageMul,
   type SkillId,
 } from './skills.ts'
 import { effectiveAtkDamage } from './stats.ts'
-import { applyImpulse, applyMark, applyPull, applyRoot, applySlow } from './status.ts'
+import { applyImpulse, applyMark, applyPull } from './status.ts'
+import {
+  resolveTargeting,
+  type TargetingSolution,
+} from './targeting.ts'
 import type { PendingPlayerAction, World } from './types.ts'
 import { pushBlast, pushZone } from './zones.ts'
 
@@ -26,7 +35,7 @@ import { pushBlast, pushZone } from './zones.ts'
  * 두 클래스의 QWER.
  *
  * 설계 축: **달은 몸 주위의 원을 파고, 해는 먼 지점을 밝힌다.**
- *   일현(日弦, 원거리) — 낙점·후퇴 렌즈·투척·전장 빔.
+ *   일현(日弦, 원거리) — 삼중 평타·전진 렌즈·투척·전장 빔.
  *   월아(月牙, 근접)   — 견인·돌진·링·회전.
  * 거리 운용이 곧 정체성이라 두 클래스의 같은 슬롯도 역할만 공유한다.
  *
@@ -80,6 +89,13 @@ function aimDir(
 }
 
 const dir = { x: 1, y: 0 }
+const castTarget: TargetingSolution = {
+  x: 0,
+  y: 0,
+  angle: 0,
+  distance: 0,
+  snapped: false,
+}
 
 function emitCast(
   world: World,
@@ -164,83 +180,46 @@ function collectSorted(): { i: number; d2: number }[] {
 }
 
 // ---------------------------------------------------------------------------
-// 일현 (日弦) — 원거리. 낙점과 광선
+// 일현 (日弦) — 원거리. 기본 공격 굴절과 광선
 // ---------------------------------------------------------------------------
 
-/** Q 낙광(落光) — 조준점에 빛을 떨어뜨려 한 무리를 붙잡는다. */
+/** Q 삼중 굴절 — 잠시 동안 모든 기본 공격을 정면과 양옆 세 갈래로 나눈다. */
 function rangedQ(world: World, context?: SkillCastContext): void {
   const p = world.player
   const now = world.time
-  let tx = context?.targetX ?? world.lastAim.x
-  let ty = context?.targetY ?? world.lastAim.y
-  const dx = tx - p.pos.x
-  const dy = ty - p.pos.y
-  const distance = Math.hypot(dx, dy)
-  if (distance > 14) {
-    tx = p.pos.x + (dx / distance) * 14
-    ty = p.pos.y + (dy / distance) * 14
-  }
-
-  const pool = world.enemies
-  queryCircle(pool, world.enemyHash, tx, ty, 3.6, (i) => {
-    applyMark(pool, i, now, MARK_DURATION)
-    applyRoot(pool, i, now, 0.75)
-    applySlow(pool, i, now, 1.5, 0.45)
-    damageEnemy(world, i, dmg(world, 'q', 135))
-  })
-
-  if (hasSkillTrait(world, 'q', 'orbital-prism')) {
-    pushBlast(world, {
-      kind: 0,
-      x: tx,
-      y: ty,
-      radius: 2.6,
-      damage: dmg(world, 'q', 135 * 0.55),
-      impulse: 0,
-      markDuration: MARK_DURATION,
-      slowMul: 1,
-      slowDuration: 0,
-      fireAt: now + 0.55,
-    })
-  }
-  if (hasSkillTrait(world, 'q', 'singularity-interference')) {
-    queryCircle(pool, world.enemyHash, tx, ty, 4.2, (i) => {
-      applyPull(pool, i, now, tx, ty, 1.2, 15, 1.2)
-    })
-    pushZone(world, {
-      kind: 1,
-      x: tx,
-      y: ty,
-      radius: 3.6,
-      expireAt: now + 1,
-      nextTickAt: now,
-      tickInterval: 0.25,
-      tickDamage: dmg(world, 'q', 135 * 0.2),
-      pushSpeed: 0,
-      slowMul: 0.5,
-      slowDuration: 0.35,
-      markDuration: 0.6,
-    })
-  }
-
-  const angle =
-    dx * dx + dy * dy > 1e-8 ? Math.atan2(dy, dx) : p.facing
-  emitRing(world, tx, ty, 3.6, 2)
-  emitCast(world, 'q', angle, p.pos.x, p.pos.y, tx, ty)
+  const duration = hasSkillTrait(world, 'q', 'orbital-prism') ? 7 : 5
+  p.rangedVolleyUntil = Math.max(p.rangedVolleyUntil, now + duration)
+  emitRing(world, p.pos.x, p.pos.y, Math.min(world.stats.atkRange, 5.5), 2)
+  emitCast(
+    world,
+    'q',
+    context?.angle ?? p.facing,
+    p.pos.x,
+    p.pos.y,
+    p.pos.x,
+    p.pos.y,
+  )
 }
 
-/** W 굴절(屈折) — 후퇴하며 있던 자리에 적을 모으는 렌즈를 남긴다. */
+/** W 광도약 — 커서 방향으로 도약하며 있던 자리에 적을 모으는 렌즈를 남긴다. */
 function rangedW(world: World, context?: SkillCastContext): void {
   const p = world.player
   const now = world.time
   aimDir(world, dir, context)
 
-  const fromX = p.pos.x
-  const fromY = p.pos.y
-  // 커서 "반대쪽"으로 물러난다 — 원거리 클래스의 생존은 거리 회복이다.
-  teleport(world, fromX - dir.x * 8, fromY - dir.y * 8)
-  p.invulnUntil = now + 0.55
-
+  const dash = world.playerAction?.skillDash
+  const fromX = dash?.originX ?? p.pos.x
+  const fromY = dash?.originY ?? p.pos.y
+  const destinationX = dash?.destinationX
+  const destinationY = dash?.destinationY
+  // 입력과 이동이 같은 방향이어야 위험한 순간에도 결과를 즉시 예측할 수 있다.
+  if (dash) {
+    // 실제 이동은 stepPlayer가 짧게 보간한다.
+  } else if (context) {
+    teleport(world, context.targetX, context.targetY)
+  } else {
+    teleport(world, fromX + dir.x * 8, fromY + dir.y * 8)
+  }
   const pool = world.enemies
   const doubleCollapse =
     hasSkillTrait(world, 'w', 'double-collapse') ||
@@ -274,8 +253,7 @@ function rangedW(world: World, context?: SkillCastContext): void {
     })
   }
 
-  // 후퇴와 동시에 적이 반대 방향으로 흩어지면 다음 스킬의 목표가 사라진다.
-  // 느린 렌즈를 남겨 모인 적을 다시 겨눌 짧은 창을 만든다.
+  // 도약 출발점에 렌즈를 남겨 추격하는 적을 묶고 다음 스킬의 목표를 만든다.
   pushZone(world, {
     kind: 0,
     x: fromX,
@@ -292,8 +270,16 @@ function rangedW(world: World, context?: SkillCastContext): void {
   })
 
   emitRing(world, fromX, fromY, 5.2, 0)
-  emitRing(world, p.pos.x, p.pos.y, 2, 0)
-  emitCast(world, 'w', Math.atan2(-dir.y, -dir.x), fromX, fromY, p.pos.x, p.pos.y)
+  emitRing(world, destinationX ?? p.pos.x, destinationY ?? p.pos.y, 2, 0)
+  emitCast(
+    world,
+    'w',
+    context?.angle ?? Math.atan2(dir.y, dir.x),
+    fromX,
+    fromY,
+    destinationX ?? p.pos.x,
+    destinationY ?? p.pos.y,
+  )
 }
 
 /** E 분광(分光) — 던져서 터뜨리고 그 자리를 둔화 장판으로 남긴다. */
@@ -494,7 +480,7 @@ function meleeW(world: World, context?: SkillCastContext): void {
   const pool = world.enemies
 
   // 이동 방향 우선 — 도망칠 때 손이 이미 그쪽을 향하고 있다.
-  const dash = world.playerAction?.meleeDash
+  const dash = world.playerAction?.skillDash
   const angle = context?.angle ?? p.facing
   const dx = Math.cos(angle)
   const dy = Math.sin(angle)
@@ -750,27 +736,24 @@ export function castSkill(world: World, slot: SkillId): boolean {
   const fn = table[slot]
   if (!fn) return false
   if (world.playerAction) {
-    if (isReady(world.skills, slot)) bufferPlayerSkill(world, slot)
+    bufferPlayerSkill(world, slot)
     return false
   }
-  if (!consumeCooldown(world.skills, slot)) return false
-  const p = world.player
-  let angle = p.facing
-  if (world.playerClass === 'melee' && slot === 'w' && Math.hypot(p.vel.x, p.vel.y) >= 0.5) {
-    angle = Math.atan2(p.vel.y, p.vel.x)
-  } else {
-    const dx = world.lastAim.x - p.pos.x
-    const dy = world.lastAim.y - p.pos.y
-    if (dx * dx + dy * dy > 1e-8) angle = Math.atan2(dy, dx)
+  if (!consumeCooldown(world.skills, slot)) {
+    bufferPlayerSkill(world, slot)
+    return false
   }
+  const p = world.player
+  const target = resolveTargeting(world, slot, castTarget)
+  const angle = target.angle
 
   const accepted = beginPlayerAction(
     world,
     'skill',
     slot,
     angle,
-    world.lastAim.x,
-    world.lastAim.y,
+    target.x,
+    target.y,
     slot,
   )
   if (!accepted) return false
@@ -785,27 +768,32 @@ export function castSkill(world: World, slot: SkillId): boolean {
     )
   }
 
-  if (world.playerClass === 'melee' && slot === 'w') {
+  if (slot === 'w') {
     const action = world.playerAction as PendingPlayerAction | null
     if (!action) return false
 
     const originX = p.pos.x
     const originY = p.pos.y
-    let destinationX = originX + Math.cos(angle) * 7
-    let destinationY = originY + Math.sin(angle) * 7
-    const limit = world.arenaRadius - world.stats.radius
-    const distanceFromCenter = Math.hypot(destinationX, destinationY)
-    if (distanceFromCenter > limit && distanceFromCenter > 1e-9) {
-      const scale = limit / distanceFromCenter
-      destinationX *= scale
-      destinationY *= scale
-    }
+    const destinationX = target.x
+    const destinationY = target.y
 
-    action.meleeDash = {
+    const melee = world.playerClass === 'melee'
+    action.skillDash = {
       originX,
       originY,
       destinationX,
       destinationY,
+      moveStart: melee ? MELEE_W_PREPARE_END : RANGED_W_DASH_START,
+      moveEnd: melee ? MELEE_W_DASH_END : RANGED_W_DASH_END,
+      lockUntilActionEnd: melee,
+      movementCancelled: false,
+    }
+    if (!melee) {
+      p.rangedDashInvulnUntil = Math.max(
+        p.rangedDashInvulnUntil,
+        world.time + 0.55,
+      )
+      p.invulnUntil = Math.max(p.invulnUntil, p.rangedDashInvulnUntil)
     }
     p.vel.x = 0
     p.vel.y = 0

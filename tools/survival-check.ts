@@ -41,7 +41,10 @@ import {
   stepWorld,
 } from '../src/sim/world.ts'
 
-const SEEDS = [1, 5, 11, 17, 23, 31, 47, 59, 71, 89, 101, 127] as const
+const SEEDS = [
+  1, 5, 11, 17, 23, 31, 47, 59, 71, 89, 101, 127,
+  137, 149, 163, 179, 191, 211, 223, 239, 251, 269, 283, 307,
+] as const
 const QWER = ['q', 'w', 'e', 'r'] as const satisfies readonly SkillId[]
 const XP_GEM_SEEK_RADIUS = 10
 const XP_GEM_SEEK_WEIGHT = 1
@@ -324,11 +327,18 @@ function pilot(
       break
     }
   }
-  if (!melee && chosenSlot === 'w' && moveLength > 1e-6) {
-    // 굴절은 조준 반대편으로 이동한다. 벽을 등지고 있을 때도 실제
-    // 플레이어처럼 안전한 이동 벡터를 향하도록 커서를 반대로 둔다.
-    input.aim.x = px - input.move.x * 10
-    input.aim.y = py - input.move.y * 10
+  if (
+    !melee &&
+    chosenSlot === 'w' &&
+    moveLength > 1e-6 &&
+    (crowd >= 3 || world.player.hp < world.stats.maxHp * 0.75)
+  ) {
+    // 광도약은 커서 방향으로 이동한다. 평상시에는 전투 표적 쪽으로 전진해
+    // 공격적으로 쓰고, 실제로 포위됐거나 체력이 밀렸을 때만 회피 벡터로 쓴다.
+    // 매 쿨다운마다 완벽한 도주로 소비하는 봇은 플레이어의 공격/생존 선택을
+    // 계측하지 않고 이동기만으로 위험을 삭제해 버린다.
+    input.aim.x = px + input.move.x * 10
+    input.aim.y = py + input.move.y * 10
   }
   input.skillsPressed = pressed
 }
@@ -487,11 +497,13 @@ for (const cls of ['ranged', 'melee'] as const) {
   }
   const danger = median(selected.map((row) => row.dangerFrac))
   const minimumHp = median(selected.map((row) => row.minHpFrac))
-  // 근접의 부동 각성은 50% 문턱을 넘는 첫 타격을 무효화하고 즉시 회복
-  // 판단을 유도한다. 따라서 탱커는 저체력 체류 시간이 짧아도 실제로 문턱까지
-  // 밀렸다면 압박이 성립한다. 원거리는 기존처럼 위험시간 자체를 요구한다.
+  // 회복 봇은 72% 아래에서 즉시 D를 써 저체력 체류 시간을 의도적으로 지운다.
+  // 따라서 실제 사망 시드가 하나라도 있으면 위험이 성립한 것으로 보고, 전승
+  // 보호막으로 사망을 넘기는 경우에는 기존 저체력 문턱을 함께 사용한다.
   const pressured =
-    danger >= 0.01 || (cls === 'melee' && minimumHp <= 0.55)
+    wins < selected.length ||
+    danger >= 0.01 ||
+    (cls === 'melee' && minimumHp <= 0.55)
   if (!pressured || danger > 0.35) {
     throw new Error(
       `${cls}: 위험시간 ${(danger * 100).toFixed(1)}% · 최저체력 ` +
