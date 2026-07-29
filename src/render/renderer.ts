@@ -356,6 +356,22 @@ export class Renderer {
     this.sun.shadow.mapSize.set(this.shadowMapSize, this.shadowMapSize)
     this.sun.shadow.bias = -0.0006
     this.sun.shadow.normalBias = 0.03
+    // 페넘브라.
+    //
+    // 주광 고도를 33°로 낮추면서 문루(8.4m)가 13m짜리 그림자를 아레나 안으로
+    // 던진다. 판석 요철을 살리는 각도라 유지하고 싶지만, 기본 PCF의 딱딱한
+    // 경계에서는 그 큰 그림자가 **바닥에 붙인 검은 사각형**으로 읽힌다.
+    //
+    // three r185의 PCF는 Vogel 디스크 5샘플을 픽셀마다 IGN으로 회전시킨다.
+    // 예전의 고정 3×3 커널과 달리 반경을 키워도 계단이 아니라 디더된
+    // 페넘브라가 나오므로, 반경을 크게 잡는 게 가능해졌다.
+    //
+    // 월드 단위 penumbra ≈ radius × (그림자 카메라 폭 44m ÷ 맵 2048) ≈
+    // radius × 0.021m. 14면 약 30cm — 달 정도 크기의 광원이 만드는 반영이다.
+    this.sun.shadow.radius = 14
+    // 본影을 완전히 검게 두지 않는다. 실제로는 하늘 전체가 채우는 영역이고,
+    // 이 게임은 IBL이 그 몫을 계산하지만 그림자 항이 그것마저 0으로 만든다.
+    this.sun.shadow.intensity = 0.86
     // 그림자 카메라를 플레이어 주변으로 좁게 잡아 해상도를 아낀다.
     const s = 22
     this.sun.shadow.camera.left = -s
@@ -1105,6 +1121,9 @@ export class Renderer {
     if (nextShadowMapSize !== this.shadowMapSize) {
       this.shadowMapSize = nextShadowMapSize
       this.sun.shadow.mapSize.set(nextShadowMapSize, nextShadowMapSize)
+      // 페넘브라 폭은 텍셀 크기에 비례한다. 맵을 절반으로 줄이면 같은 반경이
+      // 두 배로 번지므로, 두 tier에서 그림자가 같은 두께로 보이도록 맞춘다.
+      this.sun.shadow.radius = 14 * (nextShadowMapSize / 2048)
       this.sun.shadow.map?.dispose()
       this.sun.shadow.map = null
       changed = true
