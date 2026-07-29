@@ -21,7 +21,11 @@ import { createRng } from '../sim/rng.ts'
 import type { SkillId } from '../sim/skills.ts'
 import type { World } from '../sim/types.ts'
 import { createWorld } from '../sim/world.ts'
-import { buildLevelUpCards, getUpgradeChoiceTarget } from '../ui/levelup.ts'
+import {
+  buildLevelUpCards,
+  getUpgradeCardTone,
+  getUpgradeChoiceTarget,
+} from '../ui/levelup.ts'
 
 function assert(condition: unknown, message: string): asserts condition {
   if (!condition) throw new Error(message)
@@ -86,6 +90,10 @@ function candidatePool(world: World): UpgradeCandidate[] {
 // Every authored rank must name its concrete player-facing target. Falling
 // back to "전투 능력" would make the choice screen a generic data card again.
 for (const upgrade of UPGRADES) {
+  assert(
+    getUpgradeCardTone(upgrade.id).length > 0,
+    `${upgrade.id}의 카드 역할색이 없음`,
+  )
   for (const rank of upgrade.ranks) {
     assert(
       getUpgradeChoiceTarget(upgrade.id, rank.rank) !== '전투 능력',

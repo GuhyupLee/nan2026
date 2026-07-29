@@ -47,6 +47,7 @@ export interface LevelUpCard {
   id: string
   kind: 'unlock' | 'upgrade' | 'skill-rank' | 'relic-upgrade'
   accent: string
+  tone?: UpgradeCardTone
   icon?: string
   glyph: string
   slotLabel?: string
@@ -85,6 +86,64 @@ export interface LevelUpCard {
 }
 
 const ROMAN_RANK = ['', 'I', 'II', 'III'] as const
+
+export type UpgradeCardTone =
+  | 'offense'
+  | 'survival'
+  | 'mobility'
+  | 'growth'
+  | 'skill'
+  | 'fusion'
+
+/**
+ * 강화의 역할색은 문구를 파싱하지 않고 콘텐츠 id에 고정한다.
+ * 설명이 바뀌어도 공격 카드가 생존색으로 조용히 바뀌지 않아야 한다.
+ */
+const UPGRADE_CARD_TONES: Readonly<Record<string, UpgradeCardTone>> = {
+  'focused-lens': 'offense',
+  'diffraction-prism': 'offense',
+  'telescopic-aperture': 'offense',
+  'photon-core': 'survival',
+  'orbit-lens': 'skill',
+  'gravity-prism': 'skill',
+  'phase-aperture': 'skill',
+  'heliostat-core': 'skill',
+  'crescent-honing': 'offense',
+  'flowing-footwork': 'mobility',
+  'ironwall-breath': 'survival',
+  'bloodflow-breath': 'survival',
+  'iai-scroll': 'skill',
+  'watermoon-sheath': 'skill',
+  'mirror-guard': 'skill',
+  'fullmoon-form': 'skill',
+  'interference-filament': 'offense',
+  'dual-focus': 'offense',
+  'collector-array': 'growth',
+  'afterglow-battery': 'mobility',
+  'decapitating-flash': 'offense',
+  'moon-drain-breath': 'survival',
+  'moonshadow-double': 'offense',
+  'blood-feast-step': 'growth',
+  'supernova-specimen': 'offense',
+  'eclipse-execution-array': 'offense',
+  'singularity-interferometer': 'fusion',
+  'eclipse-sword-codex': 'fusion',
+  'wanderer-inscription': 'growth',
+  'executioner-inscription': 'offense',
+  'guardian-inscription': 'survival',
+  'timekeeper-inscription': 'mobility',
+  'star-eater-inscription': 'growth',
+  'bloodmoon-inscription': 'offense',
+  'tempest-inscription': 'mobility',
+  'hunter-inscription': 'offense',
+  'revival-seal': 'survival',
+}
+
+export function getUpgradeCardTone(id: string): UpgradeCardTone {
+  const tone = UPGRADE_CARD_TONES[id]
+  if (!tone) throw new Error(`Missing upgrade card tone: ${id}`)
+  return tone
+}
 
 /**
  * 강화의 세계관 이름과 별개로, 실제로 무엇이 바뀌는지 명시한다.
@@ -327,6 +386,7 @@ function buildUpgradeCards(world: World, relic = false): LevelUpCard[] {
       id: upgrade.id,
       kind: relic ? 'relic-upgrade' : 'upgrade',
       accent,
+      tone: getUpgradeCardTone(upgrade.id),
       glyph: upgrade.glyph,
       tag: relic
         ? upgrade.fusion
@@ -584,6 +644,7 @@ export function showLevelUp(
       el.dataset.kind = card.kind
       if (card.rarity) el.dataset.rarity = card.rarity
       if (card.family) el.dataset.family = card.family
+      if (card.tone) el.dataset.tone = card.tone
       if (card.rank) el.dataset.rank = String(card.rank)
       if (card.trait) el.dataset.trait = card.trait
       el.style.setProperty('--accent', card.accent)

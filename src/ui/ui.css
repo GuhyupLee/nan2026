@@ -5833,6 +5833,76 @@ body.pickup-buff-active #hint:not(.hidden) {
   --family-secondary: #f5e7a7;
 }
 
+/* 클래스 계열색은 프레임에 남기고, 강화 역할색은 얕은 표면 틴트와 효과
+   박스에만 쓴다. 희귀도 배경은 아래 규칙이 덮어써 항상 더 강하게 읽힌다. */
+.lvcard[data-tone='offense'] {
+  --card-tone: #ef7b6d;
+}
+
+.lvcard[data-tone='survival'] {
+  --card-tone: #68c995;
+}
+
+.lvcard[data-tone='mobility'] {
+  --card-tone: #9f8ae8;
+}
+
+.lvcard[data-tone='growth'] {
+  --card-tone: #d5ad5f;
+}
+
+.lvcard[data-tone='skill'] {
+  --card-tone: #65aee8;
+}
+
+.lvcard[data-tone='fusion'] {
+  --card-tone: #c58ae8;
+}
+
+.lvcard[data-tone] {
+  background:
+    radial-gradient(
+      circle at 86% 10%,
+      color-mix(in srgb, var(--card-tone) 10%, transparent),
+      transparent 34%
+    ),
+    linear-gradient(
+      150deg,
+      color-mix(in srgb, var(--card-tone) 5%, #10151c),
+      #10151c 54%
+    );
+}
+
+.lvcard[data-tone][data-rarity='standard']:hover,
+.lvcard[data-tone][data-rarity='standard']:focus-visible {
+  background:
+    radial-gradient(
+      circle at 86% 10%,
+      color-mix(in srgb, var(--card-tone) 15%, transparent),
+      transparent 36%
+    ),
+    linear-gradient(
+      150deg,
+      color-mix(in srgb, var(--card-tone) 8%, #151b23),
+      #151b23 56%
+    );
+}
+
+.lvcard[data-tone] .choice-effect {
+  border-color: color-mix(in srgb, var(--card-tone) 28%, #303945);
+  border-left-color: var(--card-tone);
+  background:
+    linear-gradient(
+      100deg,
+      color-mix(in srgb, var(--card-tone) 10%, #0b1016),
+      #0b1016 76%
+    );
+}
+
+.lvcard[data-tone] .choice-meta .context {
+  color: color-mix(in srgb, var(--card-tone) 68%, #a7b1bc);
+}
+
 .lvcard[data-rarity='awakening'] {
   border-color: color-mix(in srgb, var(--accent) 72%, #8e744b);
   background:
