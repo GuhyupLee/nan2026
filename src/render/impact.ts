@@ -214,6 +214,8 @@ interface NumberPop {
   glyphs: Uint8Array
   count: number
   style: NumberStyleDef
+  /** 실제 피해 강도에서 온 제한된 크기 배수. 같은 스타일 안의 무게 차이다. */
+  emphasis: number
   /** 진행도 0..1. */
   t: number
   /** 좌우 이동량(부호 포함). */
@@ -409,6 +411,7 @@ export class ImpactFx {
         glyphs: new Uint8Array(MAX_GLYPHS_PER_NUMBER),
         count: 0,
         style: NUMBER_STYLES.normal,
+        emphasis: 1,
         t: 0,
         drift: 0,
       })
@@ -477,11 +480,21 @@ export class ImpactFx {
     const s = THREE.MathUtils.clamp(strength * motionScale, 0, 1)
     const d = Math.min(Math.max(durationSec * motionScale, 0), HITSTOP_MAX_DURATION)
     if (s <= 0 || d <= 0) return
-    if (this.hitstopSpent >= HITSTOP_BUDGET) return
     if (this.hitstopRemain > 0 && s < this.hitstopStrength) return
 
-    this.hitstopSpent += d
-    this.hitstopRemain = Math.max(this.hitstopRemain, d)
+    // 예산은 요청 길이가 아니라 **실제로 늘어난 정지 시간**만 쓴다.
+    // 같은 프레임의 관통 5타가 각각 0.04초를 요청해도 화면에 생기는 정지는
+    // 0.04초 하나뿐이다. 예전에는 0.20초를 쓴 것으로 계산해 다음 타격이
+    // 통째로 사라졌다. 남은 정지보다 긴 부분만 청구하고 예산도 넘지 않는다.
+    const extension = Math.max(0, d - this.hitstopRemain)
+    const admitted = Math.min(
+      extension,
+      Math.max(0, HITSTOP_BUDGET - this.hitstopSpent),
+    )
+    if (extension > 0 && admitted <= 0) return
+
+    this.hitstopSpent += admitted
+    this.hitstopRemain += admitted
     this.hitstopStrength = s
   }
 
@@ -564,7 +577,13 @@ export class ImpactFx {
    *
    * 0 이하와 NaN은 그리지 않는다. "0 피해"는 정보가 아니라 소음이다.
    */
-  popNumber(worldX: number, worldZ: number, value: number, style: DamageStyle): void {
+  popNumber(
+    worldX: number,
+    worldZ: number,
+    value: number,
+    style: DamageStyle,
+    emphasis = 1,
+  ): void {
     const rounded = Math.round(value)
     if (!(rounded > 0)) return
 
@@ -599,6 +618,9 @@ export class ImpactFx {
     pop.z = worldZ
     pop.count = n
     pop.style = def
+    // 큰 피해가 숫자 내용만 달라지고 실루엣은 같았던 평준화를 푼다.
+    // 상한은 군중전에서 숫자가 적 모델을 가리지 않는 1.28배다.
+    pop.emphasis = THREE.MathUtils.clamp(emphasis, 0.88, 1.28)
     pop.t = 0
     pop.drift = Math.cos(this.driftAngle) * def.drift
   }
@@ -744,7 +766,7 @@ export class ImpactFx {
       // 끝에서 살짝 줄어들며 사라진다. 크기 그대로 투명해지면 "꺼진" 느낌이라
       // 시선이 마지막까지 붙잡힌다.
       const shrink = 1 - THREE.MathUtils.smoothstep(t, 0.7, 1) * 0.25
-      const size = NUMBER_QUAD * def.scale * punch * shrink
+      const size = NUMBER_QUAD * def.scale * pop.emphasis * punch * shrink
       const alpha = def.alpha * (1 - THREE.MathUtils.smoothstep(t, 0.5, 1))
 
       const advance = size * GLYPH_ADVANCE

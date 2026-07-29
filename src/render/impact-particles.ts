@@ -190,7 +190,13 @@ export class ImpactParticles {
    * Emits a directional fan with a few radial shards.
    * All storage is preallocated; a saturated pool overwrites in round-robin order.
    */
-  burst(x: number, z: number, angle: number, color: number): void {
+  burst(
+    x: number,
+    z: number,
+    angle: number,
+    color: number,
+    intensity = 1,
+  ): void {
     if (
       this.disposed ||
       !Number.isFinite(x) ||
@@ -213,12 +219,19 @@ export class ImpactParticles {
     this.frameBurstCount++
 
     const reduced = this.reducedMotion.matches
-    const qualityCount = 3 + Math.round(this.quality * 4)
+    const power = THREE.MathUtils.clamp(intensity, 0.55, 1.8)
+    const qualityCount =
+      3 +
+      Math.round(this.quality * 4) +
+      Math.max(0, Math.round((power - 1) * 4))
     const particleCount = reduced
       ? Math.max(2, Math.round(qualityCount * 0.36))
       : qualityCount
-    const motionScale = reduced ? 0.38 : 0.78 + this.quality * 0.22
-    const lifetimeScale = reduced ? 0.64 : 1
+    const motionScale =
+      (reduced ? 0.38 : 0.78 + this.quality * 0.22) *
+      (0.88 + power * 0.12)
+    const lifetimeScale = (reduced ? 0.64 : 1) * (0.92 + power * 0.08)
+    const sizeScale = 0.84 + power * 0.16
 
     this.tint.setHex(color & 0xffffff)
     const baseR = this.tint.r
@@ -266,7 +279,8 @@ export class ImpactParticles {
         (0.32 + this.random() * 0.24) * lifetimeScale
       this.lives[lifeOffset + 2] =
         (i === 0 ? 0.24 : 0.12 + this.random() * 0.12) *
-        (0.88 + this.quality * 0.12)
+        (0.88 + this.quality * 0.12) *
+        sizeScale
       this.lives[lifeOffset + 3] = this.random()
 
       const accentMix = i % 4 === 0 ? 0.44 : this.random() * 0.12

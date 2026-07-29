@@ -7,7 +7,7 @@ import {
   PICKUP_MAGNET,
 } from '../sim/battlefield-pickups.ts'
 import { DT } from '../sim/constants.ts'
-import { TYPE_BOSS, TYPE_ELITE } from '../sim/enemies.ts'
+import { TYPE_BOSS, TYPE_BRUTE, TYPE_ELITE } from '../sim/enemies.ts'
 import type { SkillId } from '../sim/skills.ts'
 import { SURGE_BEATS } from '../sim/surges.ts'
 import {
@@ -20,6 +20,7 @@ import type { PlayerClass, World } from '../sim/types.ts'
 import type { Vec2 } from '../sim/vec.ts'
 import { length, lerp, lerpAngle } from '../sim/vec.ts'
 import { AdaptiveQualityPolicy } from './adaptive-quality.ts'
+import { vrmActionPhaseSeconds } from './animation-data.ts'
 import { type ArenaArc, sampleArenaArc } from './arena.ts'
 import { createEnvironment, type EnvironmentVisual } from './env/environment.ts'
 import { BattlefieldPickupRenderer } from './battlefield-pickups.ts'
@@ -131,6 +132,8 @@ const targetingSolution: TargetingSolution = {
 }
 
 const PLAYER_HIT_REACTION_DURATION = 0.22
+/** 실제 접촉 뒤 공격자에게만 남는 짧은 전진 관성·임팩트 포즈. */
+const ATTACK_IMPACT_REACTION_DURATION = 0.14
 
 /**
  * 렌더러.
@@ -210,6 +213,10 @@ export class Renderer {
   private playerHitReactionAt = -Infinity
   private playerHitReactionStrength = 0
   private playerHitReactionSide = 1
+  /** 공격자도 타격 방향으로 반응하게 하는 렌더 전용 루트 임펄스. */
+  private attackImpactReactionAt = -Infinity
+  private attackImpactReactionStrength = 0
+  private attackImpactReactionAngle = 0
   /** 결과 전신 루프가 시작된 벽시각. 결과 확정 뒤 시뮬레이션 시계는 멈춘다. */
   private presentedOutcome: World['outcome'] = 'alive'
   private outcomePresentationAt = -Infinity
@@ -615,6 +622,9 @@ export class Renderer {
       this.playerHitReactionAt = -Infinity
       this.playerHitReactionStrength = 0
       this.playerHitReactionSide = 1
+      this.attackImpactReactionAt = -Infinity
+      this.attackImpactReactionStrength = 0
+      this.attackImpactReactionAngle = 0
       this.presentedOutcome = 'alive'
       this.outcomePresentationAt = now
     }
@@ -659,6 +669,7 @@ export class Renderer {
       world.outcome === 'alive' ? length(p.vel) : 0,
     )
     this.applyCharacterPresentation(world, now)
+    this.applyAttackImpactPresentation(world, now)
     this.consumeWeaponTrailBursts(world)
     // 리그가 본을 갱신한 **뒤**에 샘플해야 한 프레임 늦지 않는다.
     this.weaponTrail.update(now, dt)
@@ -774,6 +785,41 @@ export class Renderer {
   }
 
   /**
+   * 맞은 적의 시뮬레이션 좌표를 건드리지 않고 공격자 루트만 잠깐 전진시킨다.
+   * 히트스톱과 같은 벽시계 경로라 정지 중에도 2~3프레임 안에 원위치로 풀린다.
+   */
+  private applyAttackImpactPresentation(world: World, now: number): void {
+    if (world.outcome !== 'alive') return
+
+    const elapsed = now - this.attackImpactReactionAt
+    if (
+      elapsed < 0 ||
+      elapsed >= ATTACK_IMPACT_REACTION_DURATION
+    ) {
+      return
+    }
+
+    const progress = elapsed / ATTACK_IMPACT_REACTION_DURATION
+    const settle = (1 - progress) * (1 - progress)
+    const impactFrame = Math.max(0, 1 - progress / 0.3)
+    const motionScale = this.reducedMotion.matches
+      ? 0.35
+      : this.constrained
+        ? 0.78
+        : 1
+    const strength = this.attackImpactReactionStrength
+    const push = (0.055 + strength * 0.1) * settle * motionScale
+    const group = this.charRig.group
+
+    group.position.x += Math.cos(this.attackImpactReactionAngle) * push
+    group.position.z += Math.sin(this.attackImpactReactionAngle) * push
+    group.rotation.x -= impactFrame * strength * 0.035 * motionScale
+    group.scale.x *= 1 + impactFrame * strength * 0.028 * motionScale
+    group.scale.y *= 1 - impactFrame * strength * 0.042 * motionScale
+    group.scale.z *= 1 + impactFrame * strength * 0.028 * motionScale
+  }
+
+  /**
    * 타격 피드백 배선.
    *
    * sim 이벤트 배열은 **읽기만** 한다. 비우면 안 된다 — 오디오가 렌더 뒤,
@@ -800,6 +846,13 @@ export class Renderer {
 
     const bombPickupTriggered =
       this.consumeBattlefieldPickupFeedback(world, px, pz)
+    this.consumeDamageImpactFeedback(
+      world,
+      px,
+      pz,
+      now,
+      bombPickupTriggered,
+    )
 
     if (world.progression.level > this.lastProgressionLevel) {
       const color =
@@ -979,6 +1032,154 @@ export class Renderer {
     }
 
     return bombTriggered
+  }
+
+  /**
+   * 피해 이벤트 여러 건을 한 프레임의 가장 강한 접촉 하나로 합친다.
+   *
+   * `amount`, 대상 최대 체력, 적 체급, 처치 여부가 이미 sim 이벤트에 있으므로
+   * 새 판정이나 난수 없이 무게를 복원할 수 있다. 광역기 수십 타를 합산하지
+   * 않고 최댓값만 쓰는 것이 200마리 전투에서 흔들림·정지 폭주를 막는다.
+   */
+  private consumeDamageImpactFeedback(
+    world: World,
+    px: number,
+    pz: number,
+    now: number,
+    bombPickupTriggered: boolean,
+  ): void {
+    let strongest: World['damageFeedback'][number] | null = null
+    let strongestPower = 0
+    let strongestLethal: World['damageFeedback'][number] | null = null
+    let strongestLethalPower = 0
+    for (let i = 0; i < world.damageFeedback.length; i++) {
+      const hit = world.damageFeedback[i]!
+      const power = this.damageImpactPower(hit)
+      if (power > strongestPower) {
+        strongest = hit
+        strongestPower = power
+      }
+      if (hit.lethal && power > strongestLethalPower) {
+        strongestLethal = hit
+        strongestLethalPower = power
+      }
+    }
+    if (!strongest) return
+    const kill = strongest.lethal ? strongest : strongestLethal
+    const killPower = strongest.lethal
+      ? strongestPower
+      : strongestLethalPower
+
+    // 7피해 장판 틱 같은 지속 피해는 숫자·로컬 플래시만 남긴다. 한 번에
+    // 12 이상이거나 처치인 이산 충돌만 화면 전체의 정지·진동을 쓴다.
+    const discreteImpact =
+      strongest.amount >= 12 ||
+      kill !== null ||
+      strongest.capped
+    if (!discreteImpact) return
+
+    const lethalLift = kill === null ? 0 : 1
+    this.impact.requestHitstop(
+      0.12 + strongestPower * 0.44 + lethalLift * 0.04,
+      0.012 + strongestPower * 0.04 + lethalLift * 0.006,
+    )
+    this.impact.shake(
+      0.09 + strongestPower * 0.18 + lethalLift * 0.025,
+      0.18 + strongestPower * 0.13,
+      18 - strongestPower * 8,
+    )
+
+    // 기존 파티클 풀·드로우콜을 재사용한다. 제한 tier에서는 새 버스트를
+    // 아예 요청하지 않아 기존 비용 상한을 그대로 지킨다.
+    if (!this.constrained && !bombPickupTriggered) {
+      const dx = strongest.x - px
+      const dz = strongest.y - pz
+      const angle =
+        dx * dx + dz * dz > 1e-8
+          ? Math.atan2(dz, dx)
+          : world.player.facing
+      const color = strongest.capped
+        ? 0xc98cff
+        : strongest.lethal
+          ? 0xffdfad
+          : CLASS_COLORS[world.playerClass]
+      this.impactParticles.burst(
+        strongest.x,
+        strongest.y,
+        angle,
+        color,
+        0.72 + strongestPower * 0.72 + (strongest.lethal ? 0.25 : 0),
+      )
+      // 같은 프레임의 보스 직격이 더 강해도 작은 적의 처치 지점은 별도
+      // 파편을 남긴다. 최대 두 버스트라 광역 처치 폭풍으로 번지지 않는다.
+      if (kill !== null && kill !== strongest) {
+        const killDx = kill.x - px
+        const killDz = kill.y - pz
+        const killAngle =
+          killDx * killDx + killDz * killDz > 1e-8
+            ? Math.atan2(killDz, killDx)
+            : world.player.facing
+        this.impactParticles.burst(
+          kill.x,
+          kill.y,
+          killAngle,
+          0xffdfad,
+          0.92 + killPower * 0.72,
+        )
+      }
+    }
+
+    if (kill !== null) {
+      // 화면 틴트를 새로 더하지 않고 기존 블룸 피크만 아주 작게 쓴다.
+      // PostFx가 발광 강도 설정을 곱하므로 빛 민감도 설정도 그대로 탄다.
+      this.pulseBloom(1.1 + killPower * 0.18)
+    }
+
+    if (world.playerClass !== 'melee') return
+    let attackAngle: number | null = null
+    for (let i = world.attacks.length - 1; i >= 0; i--) {
+      const attack = world.attacks[i]!
+      if (attack.kind === 'ranged') continue
+      attackAngle = attack.angle
+      break
+    }
+    if (attackAngle === null && world.casts.length > 0) {
+      attackAngle = world.casts[world.casts.length - 1]!.angle
+    }
+    if (attackAngle === null) return
+
+    this.attackImpactReactionAt = now
+    this.attackImpactReactionStrength = strongestPower
+    this.attackImpactReactionAngle = attackAngle
+  }
+
+  /** 실제 피해량과 대상 체급을 0..1의 연출 강도로 압축한다. */
+  private damageImpactPower(
+    hit: World['damageFeedback'][number],
+  ): number {
+    const absolute = Math.min(1, Math.sqrt(hit.amount / 220))
+    const relative = Math.min(
+      1,
+      hit.amount / Math.max(1, hit.maxHp),
+    )
+    const typeWeight =
+      hit.enemyType === TYPE_BOSS
+        ? 0.24
+        : hit.enemyType === TYPE_ELITE
+          ? 0.16
+          : hit.enemyType === TYPE_BRUTE
+            ? 0.06
+            : 0
+    return THREE.MathUtils.clamp(
+      0.12 +
+        absolute * 0.48 +
+        relative * 0.14 +
+        typeWeight +
+        (hit.lethal ? 0.14 : 0) +
+        (hit.capped ? 0.08 : 0),
+      0.12,
+      1,
+    )
   }
 
   /** 접근성 설정을 지키면서 더 강한 동시 피크만 보존한다. */
@@ -1233,7 +1434,26 @@ export class Renderer {
       // 하나만 고르지 않고 발생 순서대로 모두 전달한다. 컨트롤러는 startedAt으로
       // 이미 지난 클립 위치를 바로 샘플링하고 최신 승인 스킬을 남긴다.
       const startedAt = action.startedAt
-      if (!this.charRig.playAction(action.kind, visualTime, startedAt)) continue
+      // 평타 판정은 sim에서 즉시지만 리그의 접촉 키는 일반 0.10초·강화
+      // 0.22초 뒤다. 이벤트를 받은 프레임에 접촉 키를 바로 샘플해야 새
+      // 히트스톱이 준비 자세가 아니라 실제 충돌 자세를 붙잡는다.
+      const presentationStartedAt =
+        action.kind === 'attack' || action.kind === 'empowered'
+          ? startedAt -
+            vrmActionPhaseSeconds(
+              world.playerClass,
+              action.kind,
+            ).contact
+          : startedAt
+      if (
+        !this.charRig.playAction(
+          action.kind,
+          visualTime,
+          presentationStartedAt,
+        )
+      ) {
+        continue
+      }
       this.actionFacing = action.angle
       this.actionFacingUntil =
         startedAt + playerActionDuration(world.playerClass, action.kind)
@@ -1250,13 +1470,20 @@ export class Renderer {
         hit.y,
         hit.amount,
         hit.capped ? 'capped' : 'normal',
+        0.9 + this.damageImpactPower(hit) * 0.3,
       )
       damageNumbers += 1
     }
     for (let i = 0; i < world.damageFeedback.length && damageNumbers < 8; i++) {
       const hit = world.damageFeedback[i]!
       if (hit.enemyType === TYPE_ELITE || hit.enemyType === TYPE_BOSS) continue
-      this.impact.popNumber(hit.x, hit.y, hit.amount, 'normal')
+      this.impact.popNumber(
+        hit.x,
+        hit.y,
+        hit.amount,
+        'normal',
+        0.9 + this.damageImpactPower(hit) * 0.3,
+      )
       damageNumbers += 1
     }
   }
@@ -1270,7 +1497,7 @@ export class Renderer {
    * 타격 포즈까지의 첫 사각형도 놓치지 않는다.
    */
   private consumeWeaponTrailBursts(world: World): void {
-    if (world.casts.length === 0) return
+    if (world.casts.length === 0 && world.attacks.length === 0) return
 
     const motionScale = this.reducedMotion.matches ? 0.42 : this.constrained ? 0.72 : 1
     for (let i = 0; i < world.casts.length; i++) {
@@ -1279,6 +1506,18 @@ export class Renderer {
       const timing = playerActionTiming(world.playerClass, slot)
       const recovery = Math.max(0.1, timing.duration - timing.impact + 0.06)
       this.weaponTrail.burst(recovery * motionScale)
+    }
+
+    // 기존에는 QWER만 리본을 켜서 가장 자주 보는 근접 평타가 맨손처럼
+    // 보였다. 같은 리본을 접촉 포즈부터 후속 동작까지만 짧게 재사용한다.
+    // 제한 tier에서는 새 드로우 구간을 만들지 않아 기존 비용을 유지한다.
+    if (this.constrained || world.playerClass !== 'melee') return
+    for (let i = 0; i < world.attacks.length; i++) {
+      const kind = world.attacks[i]!.kind
+      if (kind === 'ranged') continue
+      const duration =
+        kind === 'empowered' ? 0.24 : kind === 'ult' ? 0.22 : 0.18
+      this.weaponTrail.burst(duration * motionScale)
     }
   }
 

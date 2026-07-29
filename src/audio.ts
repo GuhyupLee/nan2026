@@ -13,6 +13,11 @@ import magicRiseUrl from './assets/audio/kenney/magic-rise.ogg?url'
 import uiBackUrl from './assets/audio/kenney/ui-back.ogg?url'
 import uiConfirmUrl from './assets/audio/kenney/ui-confirm.ogg?url'
 import uiSelectUrl from './assets/audio/kenney/ui-select.ogg?url'
+import {
+  TYPE_BOSS,
+  TYPE_BRUTE,
+  TYPE_ELITE,
+} from './sim/enemies.ts'
 import type { AttackEvent, CastEvent, PlayerClass, World } from './sim/types.ts'
 
 export interface AudioSettings {
@@ -55,6 +60,7 @@ type MusicMode = 'stopped' | 'menu' | 'game'
 type SampleId = keyof typeof SAMPLE_URLS
 type SoundGroup =
   | 'attack'
+  | 'impact'
   | 'cast'
   | 'death'
   | 'level'
@@ -107,6 +113,7 @@ export class GameAudio {
   private lastGameMusicIndex = -1
   private readonly nextSoundAt: Record<SoundGroup, number> = {
     attack: 0,
+    impact: 0,
     cast: 0,
     death: 0,
     level: 0,
@@ -318,8 +325,22 @@ export class GameAudio {
     if (world.attacks.length > 0 && this.allow('attack', 0.045)) {
       this.attack(this.strongestAttack(world.attacks), world.attacks.length, world.playerClass)
     }
+    if (world.damageFeedback.length > 0) {
+      const impact = this.strongestDamageImpact(world.damageFeedback)
+      // 지속 장판의 6~7피해 틱은 기존 마법음에 맡긴다. 이산 충돌만 별도
+      // 접촉음을 내야 다단 장판이 기관총처럼 들리지 않는다.
+      if (
+        (impact.amount >= 10 || impact.lethal || impact.capped) &&
+        this.allow('impact', 0.04)
+      ) {
+        this.hitImpact(impact, world.playerClass)
+      }
+    }
     if (world.deaths.length > 0 && this.allow('death', 0.07)) {
-      this.enemyDeath(world.deaths.length)
+      this.enemyDeath(
+        world.deaths.length,
+        this.strongestDeathType(world.deaths),
+      )
     }
   }
 
@@ -677,6 +698,52 @@ export class GameAudio {
     return best
   }
 
+  private strongestDamageImpact(
+    events: readonly World['damageFeedback'][number][],
+  ): World['damageFeedback'][number] {
+    let best = events[0]!
+    let bestScore = -1
+    for (let i = 0; i < events.length; i++) {
+      const hit = events[i]!
+      const typeWeight =
+        hit.enemyType === TYPE_BOSS
+          ? 2
+          : hit.enemyType === TYPE_ELITE
+            ? 1.55
+            : hit.enemyType === TYPE_BRUTE
+              ? 1.18
+              : 1
+      const score =
+        Math.sqrt(Math.max(0, hit.amount)) *
+        typeWeight *
+        (hit.lethal ? 1.3 : 1) *
+        (hit.capped ? 1.18 : 1)
+      if (score > bestScore) {
+        best = hit
+        bestScore = score
+      }
+    }
+    return best
+  }
+
+  private strongestDeathType(
+    events: readonly World['deaths'][number][],
+  ): number {
+    let best = events[0]!.type
+    const rank = (type: number): number =>
+      type === TYPE_BOSS
+        ? 4
+        : type === TYPE_ELITE
+          ? 3
+          : type === TYPE_BRUTE
+            ? 2
+            : 1
+    for (let i = 1; i < events.length; i++) {
+      if (rank(events[i]!.type) > rank(best)) best = events[i]!.type
+    }
+    return best
+  }
+
   private attack(
     kind: AttackEvent['kind'],
     count: number,
@@ -709,6 +776,54 @@ export class GameAudio {
       )
       this.tone(125, 0.15, 0.06 * lift, 'sawtooth', 45)
       this.tone(520, 0.12, 0.035 * lift, 'sine', 840, 0.025)
+    }
+  }
+
+  /**
+   * 휘두름(`attack`)과 실제 접촉을 분리한다. 실제 적용 피해와 적 체급으로
+   * 샘플 피치·저역·파열음을 정해 같은 평타도 잡몹과 보스에서 다르게 들린다.
+   */
+  private hitImpact(
+    hit: World['damageFeedback'][number],
+    playerClass: PlayerClass,
+  ): void {
+    const absolute = Math.min(1, Math.sqrt(Math.max(0, hit.amount) / 220))
+    const typeLift =
+      hit.enemyType === TYPE_BOSS
+        ? 0.3
+        : hit.enemyType === TYPE_ELITE
+          ? 0.2
+          : hit.enemyType === TYPE_BRUTE
+            ? 0.09
+            : 0
+    const power = Math.min(
+      1,
+      0.16 +
+        absolute * 0.62 +
+        typeLift +
+        (hit.lethal ? 0.12 : 0),
+    )
+    const volume = 0.025 + power * 0.04
+    const rate = 1.2 - power * 0.34
+
+    this.sample(
+      playerClass === 'melee' ? 'blade-impact' : 'magic-impact',
+      volume,
+      rate,
+    )
+    this.tone(
+      215 - power * 105,
+      0.045 + power * 0.045,
+      0.012 + power * 0.022,
+      'triangle',
+      105 - power * 48,
+    )
+    if (hit.lethal) {
+      this.noise(0.045 + power * 0.035, 0.012 + power * 0.014, 980 - power * 430)
+    }
+    if (hit.capped) {
+      this.sample('magic-glass', 0.045, 0.78, 0.015)
+      this.tone(740, 0.08, 0.025, 'sine', 510, 0.01)
     }
   }
 
@@ -782,10 +897,30 @@ export class GameAudio {
     }
   }
 
-  private enemyDeath(count: number): void {
+  private enemyDeath(count: number, type: number): void {
     const lift = Math.min(1.5, 0.8 + Math.log2(count + 1) * 0.18)
-    this.noise(0.075, 0.028 * lift, 850)
-    this.tone(105 + Math.min(count, 8) * 4, 0.08, 0.024 * lift, 'triangle', 58)
+    if (type === TYPE_BOSS) {
+      this.sample('blade-impact', 0.14, 0.62)
+      this.noise(0.16, 0.05, 420)
+      this.tone(64, 0.22, 0.055, 'sawtooth', 38)
+      return
+    }
+    if (type === TYPE_ELITE) {
+      this.sample('blade-impact', 0.075 * lift, 0.82)
+      this.noise(0.1, 0.034 * lift, 620)
+      this.tone(92, 0.12, 0.032 * lift, 'triangle', 48)
+      return
+    }
+
+    const heavy = type === TYPE_BRUTE
+    this.noise(heavy ? 0.09 : 0.075, (heavy ? 0.034 : 0.028) * lift, heavy ? 620 : 850)
+    this.tone(
+      (heavy ? 82 : 105) + Math.min(count, 8) * 4,
+      heavy ? 0.11 : 0.08,
+      (heavy ? 0.03 : 0.024) * lift,
+      'triangle',
+      heavy ? 44 : 58,
+    )
   }
 
   private levelUp(): void {
