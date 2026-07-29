@@ -352,6 +352,8 @@ export interface World {
   /** 만렙 이후 반복 스킬 강화용 XP와 대기 선택 수. */
   endlessXp: number
   pendingEndlessSkillRanks: number
+  /** 무한모드에서 획득한 반복 강화 수. 다음 요구 XP를 올리는 기준이다. */
+  endlessRankRewardsEarned: number
   /** 최초 보스 격파 시각. 무한전 점수의 승리·속도 기준으로 보존한다. */
   victoryAt: number
   /** 결과 UI가 같은 런의 보상을 두 번 지급하지 않게 하는 외부 저장 체크포인트. */

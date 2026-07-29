@@ -5,7 +5,11 @@ import {
   BOSS_MAX_HP,
   spawnBoss,
 } from '../src/sim/enemies.ts'
-import { pendingReward } from '../src/sim/progression.ts'
+import {
+  MAX_LEVEL,
+  RANGED_XP_GAIN_MULTIPLIER,
+  pendingReward,
+} from '../src/sim/progression.ts'
 import {
   SKILL_D,
   SKILL_E,
@@ -13,6 +17,7 @@ import {
   SKILL_Q,
   SKILL_R,
   SKILL_W,
+  unlockSkill,
 } from '../src/sim/skills.ts'
 import {
   createInput,
@@ -22,7 +27,9 @@ import {
 } from '../src/sim/types.ts'
 import {
   createWorld,
+  continueIntoEndless,
   drainEvents,
+  grantXp,
   resolveRewardChoice,
   stepWorld,
 } from '../src/sim/world.ts'
@@ -187,6 +194,15 @@ function authoritativeState(world: World): StableValue {
     arenaRadius: world.arenaRadius,
     playerClass: world.playerClass,
     runConfig: world.runConfig,
+    endless: {
+      active: world.endless,
+      startedAt: world.endlessStartedAt,
+      nextEliteAt: world.nextEndlessEliteAt,
+      xp: world.endlessXp,
+      pendingSkillRanks: world.pendingEndlessSkillRanks,
+      rankRewardsEarned: world.endlessRankRewardsEarned,
+    },
+    victoryAt: world.victoryAt,
     metaAwardedKills: world.metaAwardedKills,
     metaAwardedMoonlight: world.metaAwardedMoonlight,
     metaVictoryAwarded: world.metaVictoryAwarded,
@@ -288,6 +304,8 @@ function resolveFirstChoice(world: World): string {
   const reward =
     world.pendingRelicChoices > 0
       ? 'relic'
+      : world.pendingEndlessSkillRanks > 0
+        ? 'endless-skill-rank'
       : pendingReward(world.progression)
   assert.ok(reward, 'awaiting choice has an authoritative pending reward')
   const cards = buildLevelUpCards(world)
@@ -612,6 +630,37 @@ const scenarios: Scenario[] = [
         'boss transition event is accumulated',
       )
       assert.equal(world.outcome, 'alive', 'boss fixture remains authoritative')
+    },
+  },
+  {
+    name: 'endless-repeat-xp-stream',
+    seed: 0x78702626,
+    playerClass: 'ranged',
+    totalTicks: 120,
+    checkpoints: [1, 30, 60, 120],
+    setup(world) {
+      world.spawnEnabled = false
+      world.outcome = 'victory'
+      world.victoryAt = 0
+      world.progression.level = MAX_LEVEL
+      for (const id of ['q', 'w', 'e', 'r'] as const) {
+        unlockSkill(world.skills, id, 5)
+        world.skills[id].rank = 4
+      }
+      assert.ok(continueIntoEndless(world))
+      grantXp(
+        world,
+        (420 + 504 + 588 + 10) / RANGED_XP_GAIN_MULTIPLIER,
+      )
+    },
+    inputAt: () => createInput(),
+    verifyCoverage({ world, choicesResolved, resolvedRewardKinds }) {
+      assert.equal(world.endless, true)
+      assert.equal(world.endlessRankRewardsEarned, 3)
+      assert.ok(Math.abs(world.endlessXp - 10) < 1e-6)
+      assert.equal(choicesResolved, 3)
+      assert.equal(resolvedRewardKinds['endless-skill-rank'], 3)
+      assert.equal(world.pendingEndlessSkillRanks, 0)
     },
   },
 ]

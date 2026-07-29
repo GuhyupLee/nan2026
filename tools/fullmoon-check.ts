@@ -19,7 +19,12 @@ import {
   spawnBoss,
   spawnEnemy,
 } from '../src/sim/enemies.ts'
-import { MAX_LEVEL, xpToNext } from '../src/sim/progression.ts'
+import {
+  MAX_LEVEL,
+  REPEAT_SKILL_XP_BASE,
+  repeatSkillXpRequirement,
+  xpToNext,
+} from '../src/sim/progression.ts'
 import { computeScore } from '../src/sim/score.ts'
 import { createInput } from '../src/sim/types.ts'
 import type { World } from '../src/sim/types.ts'
@@ -162,6 +167,12 @@ function bossWorld(seed: number): { world: World; bossIndex: number } {
   assert.ok(
     world.pendingEndlessSkillRanks >= 1,
     '만월은 만렙 뒤 XP를 반복 QWER 연마로 전환한다',
+  )
+  assert.equal(world.endlessRankRewardsEarned, 0)
+  assert.equal(
+    repeatSkillXpRequirement(false, 99),
+    REPEAT_SKILL_XP_BASE,
+    '만월 보스 이전 성장 요구량은 고정해 풀강화 빌드업 속도를 보존한다',
   )
 }
 

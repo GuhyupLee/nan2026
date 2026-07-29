@@ -44,6 +44,22 @@ export const TARGET_LEVEL_TIMES = [
 
 export const MAX_LEVEL = TARGET_LEVEL_TIMES.length
 
+/** 만렙 이후 반복 스킬 강화의 첫 요구 XP. */
+export const REPEAT_SKILL_XP_BASE = 420
+/** 무한모드 반복 강화마다 기본 요구량의 20%(84 XP)씩 선형으로 오른다. */
+export const ENDLESS_REPEAT_SKILL_XP_STEP = 84
+
+export function repeatSkillXpRequirement(
+  endless: boolean,
+  endlessRewardsEarned = 0,
+): number {
+  if (!endless) return REPEAT_SKILL_XP_BASE
+  const earned = Number.isFinite(endlessRewardsEarned)
+    ? Math.max(0, Math.floor(endlessRewardsEarned))
+    : 0
+  return REPEAT_SKILL_XP_BASE + earned * ENDLESS_REPEAT_SKILL_XP_STEP
+}
+
 /**
  * Lv(i+1) → Lv(i+2) 에 필요한 XP.
  *

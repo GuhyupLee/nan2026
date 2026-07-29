@@ -1,4 +1,7 @@
-import { xpToNext } from '../sim/progression.ts'
+import {
+  repeatSkillXpRequirement,
+  xpToNext,
+} from '../sim/progression.ts'
 import type { World } from '../sim/types.ts'
 import { difficultyRules, runDifficultyLabel } from '../sim/difficulty.ts'
 import { ELITE_SPAWN_TIMES, TYPE_BOSS } from '../sim/enemies.ts'
@@ -317,10 +320,14 @@ export class Hud {
     const repeatRanks =
       world.endless ||
       difficultyRules(world.runConfig.difficulty).extendedProgression
+    const repeatRequirement = repeatSkillXpRequirement(
+      world.endless,
+      world.endlessRankRewardsEarned,
+    )
     // 만렙이면 Infinity가 온다. 그 경우 바를 가득 채워 "더 없음"을 보여준다.
     this.xpFill.style.width =
       repeatRanks && !Number.isFinite(need)
-        ? `${Math.min(100, (world.endlessXp / 420) * 100).toFixed(1)}%`
+        ? `${Math.min(100, (world.endlessXp / repeatRequirement) * 100).toFixed(1)}%`
         : Number.isFinite(need)
           ? `${Math.min(100, (prog.xp / need) * 100).toFixed(1)}%`
           : '100%'

@@ -7,7 +7,13 @@ import {
   spawnEnemy,
   targetAliveCount,
 } from '../src/sim/enemies.ts'
-import { MAX_LEVEL } from '../src/sim/progression.ts'
+import {
+  ENDLESS_REPEAT_SKILL_XP_STEP,
+  MAX_LEVEL,
+  REPEAT_SKILL_XP_BASE,
+  RANGED_XP_GAIN_MULTIPLIER,
+  repeatSkillXpRequirement,
+} from '../src/sim/progression.ts'
 import { computeScore } from '../src/sim/score.ts'
 import { MAX_SKILL_RANK, unlockSkill } from '../src/sim/skills.ts'
 import type { World } from '../src/sim/types.ts'
@@ -86,6 +92,7 @@ function addEnemy(world: World, x: number, y: number): number {
   assert.equal(world.outcome, 'alive')
   assert.equal(world.endlessStartedAt, 280)
   assert.equal(world.nextEndlessEliteAt, 320)
+  assert.equal(world.endlessRankRewardsEarned, 0)
   assert.ok(!continueIntoEndless(world), '무한전을 중복 시작함')
 
   assert.equal(baseTargetAliveCount(300, true), 95)
@@ -137,8 +144,96 @@ function addEnemy(world: World, x: number, y: number): number {
   resolveRewardChoice(world)
   const after = world.skills[cards[0]!.id.slice(5) as 'q' | 'w' | 'e' | 'r'].rank
   assert.equal(after, before + 1, '무한 연마가 기본 랭크 상한을 넘지 못함')
+  assert.equal(
+    world.endlessRankRewardsEarned,
+    1,
+    '강화 선택을 완료해도 이미 오른 XP 단계는 내려가지 않는다',
+  )
+  assert.equal(
+    repeatSkillXpRequirement(true, world.endlessRankRewardsEarned),
+    REPEAT_SKILL_XP_BASE + ENDLESS_REPEAT_SKILL_XP_STEP,
+  )
+}
+
+// 반복 강화를 얻을수록 무한모드의 다음 XP 요구량이 선형으로 증가한다.
+{
+  assert.equal(repeatSkillXpRequirement(false, 20), REPEAT_SKILL_XP_BASE)
+  assert.equal(repeatSkillXpRequirement(true, 0), REPEAT_SKILL_XP_BASE)
+  assert.equal(
+    repeatSkillXpRequirement(true, 1),
+    REPEAT_SKILL_XP_BASE + ENDLESS_REPEAT_SKILL_XP_STEP,
+  )
+  assert.equal(
+    repeatSkillXpRequirement(true, 10),
+    REPEAT_SKILL_XP_BASE + ENDLESS_REPEAT_SKILL_XP_STEP * 10,
+  )
+
+  const world = createWorld(9104, 'ranged')
+  world.outcome = 'victory'
+  world.victoryAt = 300
+  world.time = 300
+  world.progression.level = MAX_LEVEL
+  assert.ok(continueIntoEndless(world))
+
+  grantXp(world, REPEAT_SKILL_XP_BASE / RANGED_XP_GAIN_MULTIPLIER)
+  assert.equal(world.pendingEndlessSkillRanks, 1)
+  assert.equal(world.endlessRankRewardsEarned, 1)
+  assert.ok(world.endlessXp < 1e-6)
+
+  grantXp(world, REPEAT_SKILL_XP_BASE / RANGED_XP_GAIN_MULTIPLIER)
+  assert.equal(
+    world.pendingEndlessSkillRanks,
+    1,
+    '두 번째 강화는 증가한 요구량 전에는 지급되지 않는다',
+  )
+  assert.ok(Math.abs(world.endlessXp - REPEAT_SKILL_XP_BASE) < 1e-6)
+
+  grantXp(world, ENDLESS_REPEAT_SKILL_XP_STEP / RANGED_XP_GAIN_MULTIPLIER)
+  assert.equal(world.pendingEndlessSkillRanks, 2)
+  assert.equal(world.endlessRankRewardsEarned, 2)
+  assert.ok(world.endlessXp < 1e-6)
+
+  const bulk = createWorld(9105, 'ranged')
+  bulk.outcome = 'victory'
+  bulk.victoryAt = 300
+  bulk.time = 300
+  bulk.progression.level = MAX_LEVEL
+  assert.ok(continueIntoEndless(bulk))
+  grantXp(
+    bulk,
+    (REPEAT_SKILL_XP_BASE +
+      (REPEAT_SKILL_XP_BASE + ENDLESS_REPEAT_SKILL_XP_STEP) +
+      (REPEAT_SKILL_XP_BASE + ENDLESS_REPEAT_SKILL_XP_STEP * 2) +
+      17) /
+      RANGED_XP_GAIN_MULTIPLIER,
+  )
+  assert.equal(bulk.pendingEndlessSkillRanks, 3)
+  assert.equal(bulk.endlessRankRewardsEarned, 3)
+  assert.ok(Math.abs(bulk.endlessXp - 17) < 1e-6)
+}
+
+// 만월에서 쌓은 반복 XP와 대기 선택은 같은 월드를 잇는 무한전에 보존한다.
+{
+  const world = createWorld(9106, 'ranged', { difficulty: 'fullmoon' })
+  world.progression.level = MAX_LEVEL
+  grantXp(world, 300 / RANGED_XP_GAIN_MULTIPLIER)
+  assert.ok(Math.abs(world.endlessXp - 300) < 1e-6)
+  world.pendingEndlessSkillRanks = 1
+  world.awaitingChoice = false
+  world.outcome = 'victory'
+  world.victoryAt = 700
+  world.time = 700
+  assert.ok(continueIntoEndless(world))
+  assert.ok(Math.abs(world.endlessXp - 300) < 1e-6)
+  assert.equal(world.pendingEndlessSkillRanks, 1)
+  assert.equal(world.endlessRankRewardsEarned, 0)
+
+  grantXp(world, 120 / RANGED_XP_GAIN_MULTIPLIER)
+  assert.equal(world.pendingEndlessSkillRanks, 2)
+  assert.equal(world.endlessRankRewardsEarned, 1)
+  assert.ok(world.endlessXp < 1e-6)
 }
 
 console.log(
-  'endless-check: hard multipliers, endless scaling, repeat elites, and infinite skill ranks ok',
+  'endless-check: hard multipliers, endless scaling, rising repeat XP, repeat elites, and infinite skill ranks ok',
 )

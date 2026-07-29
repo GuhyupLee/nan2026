@@ -51,6 +51,7 @@ import {
   addXp,
   consumeLevelUp,
   createProgression,
+  repeatSkillXpRequirement,
   upgradeTraitToken,
   xpPacingMultiplier,
 } from './progression.ts'
@@ -219,6 +220,7 @@ export function createWorld(
     nextEndlessEliteAt: rules.repeatEliteStart,
     endlessXp: 0,
     pendingEndlessSkillRanks: 0,
+    endlessRankRewardsEarned: 0,
     victoryAt: -1,
     metaAwardedKills: 0,
     metaAwardedMoonlight: 0,
@@ -676,9 +678,18 @@ export function grantXp(world: World, amount: number): void {
     overflow > 0
   ) {
     world.endlessXp += overflow
-    while (world.endlessXp >= 420) {
-      world.endlessXp -= 420
+    let requirement = repeatSkillXpRequirement(
+      world.endless,
+      world.endlessRankRewardsEarned,
+    )
+    while (world.endlessXp + 1e-9 >= requirement) {
+      world.endlessXp = Math.max(0, world.endlessXp - requirement)
       world.pendingEndlessSkillRanks += 1
+      if (world.endless) world.endlessRankRewardsEarned += 1
+      requirement = repeatSkillXpRequirement(
+        world.endless,
+        world.endlessRankRewardsEarned,
+      )
     }
   }
   world.awaitingChoice =
@@ -719,6 +730,7 @@ export function resolveRewardChoice(world: World): void {
 export function continueIntoEndless(world: World): boolean {
   if (world.outcome !== 'victory' || world.endless) return false
   world.endless = true
+  world.endlessRankRewardsEarned = 0
   world.endlessStartedAt = world.time
   world.nextEndlessEliteAt = world.time + 40
   world.outcome = 'alive'
