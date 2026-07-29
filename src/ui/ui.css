@@ -3922,6 +3922,9 @@ body.pickup-buff-active #hint:not(.hidden) {
 
 .levelup-controls {
   padding: 0.48rem 0.62rem;
+  display: flex;
+  align-items: center;
+  gap: 0.6rem;
   border: 1px solid #343e49;
   color: #98a5b3;
   background: rgba(8, 12, 18, 0.76);
@@ -3929,6 +3932,40 @@ body.pickup-buff-active #hint:not(.hidden) {
   font-weight: 680;
   letter-spacing: 0.035em;
   white-space: nowrap;
+}
+
+.levelup-reroll {
+  min-height: 2rem;
+  padding: 0.3rem 0.5rem;
+  display: inline-flex;
+  align-items: center;
+  gap: 0.34rem;
+  border: 1px solid rgba(215, 175, 98, 0.58);
+  color: #f2dca2;
+  background: rgba(56, 42, 20, 0.72);
+  font: inherit;
+  font-weight: 760;
+  cursor: pointer;
+}
+
+.levelup-reroll:hover,
+.levelup-reroll:focus-visible {
+  border-color: var(--ui-gold);
+  color: #fff6d9;
+  outline: 2px solid var(--ui-gold);
+  outline-offset: 2px;
+}
+
+.levelup-reroll b {
+  min-width: 1.15rem;
+  color: #0b0f14;
+  background: var(--ui-gold-bright);
+  text-align: center;
+}
+
+.levelup-reroll kbd {
+  color: #aeb8c2;
+  background: transparent;
 }
 
 .levelup .cards {
@@ -4249,6 +4286,8 @@ body.pickup-buff-active #hint:not(.hidden) {
 
   .levelup-controls {
     justify-self: start;
+    flex-wrap: wrap;
+    white-space: normal;
   }
 
   .levelup .cards,
@@ -6441,6 +6480,7 @@ body.pickup-buff-active #hint:not(.hidden) {
 @media (pointer: coarse) {
   .meta-stat-card button,
   .meta-unlock-card button,
+  .levelup-reroll,
   .mainmenu-difficulty {
     min-height: 44px;
   }
@@ -8040,10 +8080,10 @@ body.pickup-buff-active #hint:not(.hidden) {
 }
 
 .meta-currency {
-  min-width: 10.5rem;
+  min-width: 17rem;
   padding: 0.5rem 0.68rem;
   display: grid;
-  grid-template-columns: 1fr 1fr;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
   gap: 0.7rem;
   border: 1px solid rgba(215, 175, 98, 0.3);
   border-left: 2px solid var(--ui-gold);

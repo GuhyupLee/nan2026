@@ -1165,6 +1165,161 @@ const LEGACY_UPGRADES: readonly UpgradeDef[] = [
     ],
   }),
   defineUpgrade({
+    id: 'star-eater-inscription',
+    name: '별을 삼킨 패',
+    glyph: '星',
+    weight: 6,
+    classFilter: [...RANGED, ...MELEE],
+    family: 'legacy',
+    unlockId: 'star-eater-inscription',
+    ranks: [
+      {
+        rank: 1,
+        displayName: '성운 포식',
+        oneLiner: '획득 XP +18%',
+      },
+      {
+        rank: 2,
+        displayName: '별무리 인력',
+        oneLiner: 'XP 보석과 전장 아이템 획득 반경 +30%',
+      },
+      {
+        rank: 3,
+        displayName: '초신의 잔광',
+        oneLiner: '기본 공격과 QWER 피해 +10%',
+      },
+    ],
+    effects: [
+      (w) => {
+        w.stats.xpGainMul *= 1.18
+      },
+      (w) => {
+        w.stats.pickupRadiusMul *= 1.3
+      },
+      (w) => {
+        w.stats.atkDamageMul *= 1.1
+      },
+    ],
+  }),
+  defineUpgrade({
+    id: 'bloodmoon-inscription',
+    name: '혈월의 서약',
+    glyph: '血',
+    weight: 5,
+    classFilter: [...RANGED, ...MELEE],
+    family: 'legacy',
+    unlockId: 'bloodmoon-inscription',
+    ranks: [
+      {
+        rank: 1,
+        displayName: '붉은 칼끝',
+        oneLiner: '기본 공격과 QWER 피해 +12%',
+      },
+      {
+        rank: 2,
+        displayName: '피의 순환',
+        oneLiner: '처치 회복 상한과 충전 속도 +70%',
+      },
+      {
+        rank: 3,
+        displayName: '목숨의 대가',
+        oneLiner: '최대 체력 -15, 기본 공격과 QWER 피해 +18%',
+      },
+    ],
+    effects: [
+      (w) => {
+        w.stats.atkDamageMul *= 1.12
+      },
+      (w) => {
+        w.stats.killHealCap *= 1.7
+        w.stats.killHealRate *= 1.7
+      },
+      (w) => {
+        const hpCost = Math.min(15, Math.max(0, w.stats.maxHp - 1))
+        w.stats.maxHp -= hpCost
+        w.player.hp = Math.min(w.player.hp, w.stats.maxHp)
+        w.stats.atkDamageMul *= 1.18
+      },
+    ],
+  }),
+  defineUpgrade({
+    id: 'tempest-inscription',
+    name: '폭풍의 매듭',
+    glyph: '嵐',
+    weight: 6,
+    classFilter: [...RANGED, ...MELEE],
+    family: 'legacy',
+    unlockId: 'tempest-inscription',
+    ranks: [
+      {
+        rank: 1,
+        displayName: '돌개 걸음',
+        oneLiner: '이동 속도 +7%',
+      },
+      {
+        rank: 2,
+        displayName: '질풍 연격',
+        oneLiner: '기본 공격 간격 -12%',
+      },
+      {
+        rank: 3,
+        displayName: '뇌운 태엽',
+        oneLiner: 'QWER 재사용 대기시간 -9%',
+      },
+    ],
+    effects: [
+      (w) => {
+        w.stats.speed *= 1.07
+      },
+      (w) => {
+        w.stats.atkIntervalMul *= 0.88
+      },
+      (w) => {
+        w.stats.cooldownMul *= 0.91
+        for (const slot of ['q', 'w', 'e', 'r'] as const) {
+          if (w.skills[slot].unlocked) scaleSkillCooldown(w, slot, 0.91)
+        }
+      },
+    ],
+  }),
+  defineUpgrade({
+    id: 'hunter-inscription',
+    name: '천궁의 사냥패',
+    glyph: '弓',
+    weight: 6,
+    classFilter: [...RANGED, ...MELEE],
+    family: 'legacy',
+    unlockId: 'hunter-inscription',
+    ranks: [
+      {
+        rank: 1,
+        displayName: '먼빛 조준',
+        oneLiner: '기본 공격 사거리 +1.5',
+      },
+      {
+        rank: 2,
+        displayName: '겹표적',
+        oneLiner: '기본 공격 관통 +1',
+      },
+      {
+        rank: 3,
+        displayName: '천궁 낙인',
+        oneLiner: '기본 공격과 QWER 피해 +14%',
+      },
+    ],
+    effects: [
+      (w) => {
+        w.stats.atkRange += 1.5
+      },
+      (w) => {
+        w.stats.atkPierce += 1
+      },
+      (w) => {
+        w.stats.atkDamageMul *= 1.14
+      },
+    ],
+  }),
+  defineUpgrade({
     id: 'revival-seal',
     name: '귀환의 인장',
     glyph: '印',

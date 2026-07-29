@@ -46,6 +46,8 @@ export interface Stats {
   basicAttackDamageMul: number
   /** XP 보석과 전장 아이템의 획득 반경 배수. */
   pickupRadiusMul: number
+  /** 적과 보석에서 얻는 XP 배수. 영구 전승과 런 강화가 함께 곱해진다. */
+  xpGainMul: number
   /** 회복 구슬의 회복량 배수. */
   battlefieldHealMul: number
   /** 처치 회복 토큰 버킷의 최대치와 초당 회복량. */
@@ -97,7 +99,7 @@ export interface Stats {
  */
 export function createStats(
   cls: PlayerClass,
-  meta?: Pick<RunMetaSnapshot, 'maxHpBonus' | 'speedMultiplier'>,
+  meta?: RunMetaSnapshot,
 ): Stats {
   const melee = cls === 'melee'
   const maxHpBonus = Math.max(0, Math.min(30, meta?.maxHpBonus ?? 0))
@@ -105,6 +107,27 @@ export function createStats(
     1,
     Math.min(1.12, meta?.speedMultiplier ?? 1),
   )
+  const damageMultiplier = Math.max(
+    1,
+    Math.min(1.2, meta?.damageMultiplier ?? 1),
+  )
+  const cooldownMultiplier = Math.max(
+    0.9,
+    Math.min(1, meta?.cooldownMultiplier ?? 1),
+  )
+  const damageTakenMultiplier = Math.max(
+    0.88,
+    Math.min(1, meta?.damageTakenMultiplier ?? 1),
+  )
+  const pickupRadiusMultiplier = Math.max(
+    1,
+    Math.min(1.5, meta?.pickupRadiusMultiplier ?? 1),
+  )
+  const healingMultiplier = Math.max(
+    1,
+    Math.min(1.5, meta?.healingMultiplier ?? 1),
+  )
+  const xpMultiplier = Math.max(1, Math.min(1.25, meta?.xpMultiplier ?? 1))
   return {
     // 체력·피해 감소와 요구 포지션을 묶어 클래스 정체성을 만든다.
     //
@@ -118,31 +141,32 @@ export function createStats(
     // 근접은 붙어 있는 것이 일이라 실제로 맞는 시간이 원거리보다 길다.
     // 원거리는 광도약 방향을 직접 골라 회피하므로, 내구는 월아보다 분명히
     // 낮춰 이동기를 잘못 썼을 때의 위험도 남긴다.
-    damageTakenMul: melee ? 0.8 : 0.95,
+    damageTakenMul: (melee ? 0.8 : 0.95) * damageTakenMultiplier,
 
     atkDamage: melee ? 22 : ATK_DAMAGE,
     atkInterval: melee ? 0.42 : ATK_INTERVAL,
     atkRange: melee ? 3.2 : ATK_RANGE,
     atkPierce: melee ? 2 : ATK_PIERCE,
     basicAttackDamageMul: 1,
-    pickupRadiusMul: 1,
-    battlefieldHealMul: 1,
-    killHealCap: KILL_HEAL_CAP,
-    killHealRate: KILL_HEAL_RATE,
+    pickupRadiusMul: pickupRadiusMultiplier,
+    xpGainMul: xpMultiplier,
+    battlefieldHealMul: healingMultiplier,
+    killHealCap: KILL_HEAL_CAP * healingMultiplier,
+    killHealRate: KILL_HEAL_RATE * healingMultiplier,
     // 원거리는 점등 시 13 → 30 (약 2.3배). 스킬 하나만 맞춰두면 평타가 배 이상 아프다.
     markBonus: melee ? 5 : 17,
     markKillHeal: melee ? 0 : 4,
 
-    cooldownMul: 1,
+    cooldownMul: cooldownMultiplier,
     // 확장된 카드 풀에서도 원거리의 생존은 사거리와 선제 제거에서 나온다.
     // 방어력을 올려 위험 구간을 지우지 않고 작은 화력 보정만 준다.
-    atkDamageMul: melee ? 1 : 1.03,
+    atkDamageMul: (melee ? 1 : 1.03) * damageMultiplier,
     atkIntervalMul: 1,
 
-    flashCooldown: FLASH_COOLDOWN,
+    flashCooldown: FLASH_COOLDOWN * cooldownMultiplier,
     flashRange: FLASH_RANGE,
-    healAmount: HEAL_AMOUNT,
-    healCooldown: HEAL_COOLDOWN,
+    healAmount: HEAL_AMOUNT * healingMultiplier,
+    healCooldown: HEAL_COOLDOWN * cooldownMultiplier,
     healSpeedBoost: HEAL_SPEED_BOOST,
     healBoostTime: HEAL_BOOST_TIME,
   }

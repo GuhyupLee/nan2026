@@ -125,6 +125,10 @@ const UPGRADE_TARGETS: Readonly<Record<string, readonly string[]>> = {
   'executioner-inscription': ['기본 공격 피해', '기본 공격 속도', '기본 공격 관통'],
   'guardian-inscription': ['최대 체력', '받는 피해', '회복'],
   'timekeeper-inscription': ['QWER 재사용', 'D/F 재사용', '점멸'],
+  'star-eater-inscription': ['XP 획득', '아이템 획득', '모든 공격'],
+  'bloodmoon-inscription': ['모든 공격', '처치 회복', '체력과 공격'],
+  'tempest-inscription': ['이동', '기본 공격 속도', 'QWER 재사용'],
+  'hunter-inscription': ['기본 공격 사거리', '기본 공격 관통', '모든 공격'],
 }
 
 export function getUpgradeChoiceTarget(id: string, rank: number): string {
@@ -477,6 +481,8 @@ export function showLevelUp(
   const isRank = cards[0]!.kind === 'skill-rank'
   const isRelic = cards[0]!.kind === 'relic-upgrade'
   const single = cards.length === 1
+  const canReroll =
+    cards[0]!.kind === 'upgrade' && world.upgradeRerollsRemaining > 0
   const reducedMotion = window.matchMedia('(prefers-reduced-motion: reduce)').matches
   const confirmationMs = reducedMotion ? 45 : isRelic ? 260 : 190
 
@@ -508,6 +514,9 @@ export function showLevelUp(
       ? '확인하면 즉시 적용되고 전투가 계속됩니다.'
       : '효과와 다음 단계를 비교하세요.'
     const keyRange = cards.length === 1 ? '1' : `1–${cards.length}`
+    const controlGuide = coarsePointer
+      ? '카드를 눌러 선택'
+      : `${keyRange} 선택 · ← → 이동 · Enter`
     banner.innerHTML =
       `<div class="banner-copy"><div class="lv">${
         isRelic
@@ -516,9 +525,12 @@ export function showLevelUp(
       }</div>` +
       `<h2 id="levelup-title">${title}</h2>` +
       `<p id="levelup-guide">${guide}</p></div>` +
-      `<div class="levelup-controls">${
-        coarsePointer ? '카드를 눌러 선택' : `${keyRange} 선택 · ← → 이동 · Enter`
-      }</div>`
+      `<div class="levelup-controls"><span>${controlGuide}</span>` +
+      (canReroll
+        ? `<button class="levelup-reroll" type="button">재굴림 ` +
+          `<b>${world.upgradeRerollsRemaining}</b><kbd>R</kbd></button>`
+        : '') +
+      `</div>`
     root.appendChild(banner)
 
     const list = document.createElement('div')
@@ -547,6 +559,17 @@ export function showLevelUp(
         root.remove()
         resolve()
       }, confirmationMs)
+    }
+
+    const reroll = (): void => {
+      if (!canReroll || done || world.upgradeRerollsRemaining <= 0) return
+      done = true
+      world.upgradeRerollsRemaining -= 1
+      world.upgradeRerollsUsed += 1
+      window.removeEventListener('keydown', onKey)
+      releaseFocusTrap()
+      root.remove()
+      void showLevelUp(parent, world, onSelect).then(resolve)
     }
 
     cards.forEach((card, i) => {
@@ -617,6 +640,11 @@ export function showLevelUp(
     })
 
     const onKey = (e: KeyboardEvent): void => {
+      if ((e.key === 'r' || e.key === 'R') && canReroll) {
+        e.preventDefault()
+        reroll()
+        return
+      }
       // 카드가 1장뿐이면 아무 키로나 넘어간다 — 확인 화면에서 막히지 않게.
       if (single && (e.key === 'Enter' || e.key === ' ' || e.key === '1')) {
         pick(cards[0]!, cardElements[0]!)
@@ -649,6 +677,9 @@ export function showLevelUp(
       }
     }
     window.addEventListener('keydown', onKey)
+    root
+      .querySelector<HTMLButtonElement>('.levelup-reroll')
+      ?.addEventListener('click', reroll)
 
     parent.appendChild(root)
     releaseFocusTrap = trapFocus(root)
