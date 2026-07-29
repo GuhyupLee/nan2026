@@ -9,6 +9,7 @@ import {
   MAX_XP_GEMS,
   XP_GEM_ATTRACT_SPEED,
   XP_GEM_MAGNET_RADIUS,
+  XP_GEM_PICKUP_RADIUS,
   createXpGemPool,
   dropXpGem,
   resetXpGemPool,
@@ -42,6 +43,27 @@ function totalValue(pool: XpGemPool): number {
   assert.equal(pool.attracted[0], 0)
   assert.equal(dropXpGem(pool, 0, 0, 0), false)
   assert.equal(pool.count, 1)
+}
+
+// A local sweep latches every nearby gem, not only the nearest candidate.
+{
+  const pool = createXpGemPool()
+  dropXpGem(pool, XP_GEM_PICKUP_RADIUS + 0.2, 0, 1)
+  dropXpGem(pool, -3.5, 0, 2)
+  dropXpGem(pool, 0, XP_GEM_MAGNET_RADIUS - 0.1, 3)
+  dropXpGem(pool, XP_GEM_MAGNET_RADIUS + 0.1, 0, 4)
+
+  assert.equal(stepXpGems(pool, 0, 0, 0), 0)
+  assert.deepEqual(Array.from(pool.attracted.slice(0, pool.count)), [1, 1, 1, 0])
+
+  assert.equal(stepXpGems(pool, 0, 0, 0.25), 6)
+  assert.equal(pool.count, 1)
+  approximatelyEqual(
+    pool.x[0]!,
+    XP_GEM_MAGNET_RADIUS + 0.1,
+    'outside gem remains a movement goal',
+  )
+  assert.equal(pool.attracted[0], 0)
 }
 
 // Only a nearby gem latches and moves at the fixed speed. Once the collection

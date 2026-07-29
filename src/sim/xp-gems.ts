@@ -9,8 +9,13 @@ export const MAX_XP_GEMS = 384
 
 /** Distance at which a gem is collected immediately. */
 export const XP_GEM_PICKUP_RADIUS = 1.2
-/** Distance at which a gem starts following the player. */
-export const XP_GEM_MAGNET_RADIUS = 2.5
+/**
+ * Distance at which every nearby gem starts following the player.
+ *
+ * This remains local enough to preserve off-route gems as movement goals, but
+ * is wide enough to sweep a kill cluster without stepping on its nearest gem.
+ */
+export const XP_GEM_MAGNET_RADIUS = 4
 /** Movement speed of an attracted gem in world units per second. */
 export const XP_GEM_ATTRACT_SPEED = 24
 
@@ -151,6 +156,8 @@ export function stepXpGems(
       continue
     }
 
+    // Each gem checks the player independently. There is deliberately no
+    // nearest-only winner: a whole nearby cluster latches on the same tick.
     if (
       pool.attracted[i] === 0 &&
       (forceAttract || distanceSquared <= magnetRadiusSquared)
