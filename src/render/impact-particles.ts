@@ -60,7 +60,7 @@ const VERTEX_SHADER = /* glsl */ `
 
     vUv = uv;
     vColor = aColor;
-    vFade = 1.0 - smoothstep(0.56, 1.0, progress);
+    vFade = 1.0 - smoothstep(0.42, 1.0, progress);
     gl_Position = projectionMatrix * viewCenter;
   }
 `
@@ -249,7 +249,7 @@ export class ImpactParticles {
             ? this.random() * TAU
             : angle + (this.random() - 0.5) * Math.PI * 1.55
       const speed =
-        (i === 0 ? 8.8 : 3.3 + this.random() * 5.2) * motionScale
+        (i === 0 ? 10.8 : 4.1 + this.random() * 5.9) * motionScale
       const lateral = (this.random() - 0.5) * 0.55
       const originOffset = index * 3
       this.origins[originOffset] = x + sideX * lateral
@@ -257,13 +257,13 @@ export class ImpactParticles {
       this.origins[originOffset + 2] = z + sideZ * lateral
       this.velocities[originOffset] = Math.cos(direction) * speed
       this.velocities[originOffset + 1] =
-        (2.2 + this.random() * 4.2) * motionScale
+        (2.7 + this.random() * 4.8) * motionScale
       this.velocities[originOffset + 2] = Math.sin(direction) * speed
 
       const lifeOffset = index * 4
       this.lives[lifeOffset] = this.currentTime - this.random() * 0.012
       this.lives[lifeOffset + 1] =
-        (0.32 + this.random() * 0.24) * lifetimeScale
+        (0.2 + this.random() * 0.17) * lifetimeScale
       this.lives[lifeOffset + 2] =
         (i === 0 ? 0.24 : 0.12 + this.random() * 0.12) *
         (0.88 + this.quality * 0.12)

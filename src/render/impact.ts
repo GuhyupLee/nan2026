@@ -112,7 +112,7 @@ const SCREEN_UP_Z = -0.7918
 // 데미지 숫자
 // ---------------------------------------------------------------------------
 
-export type DamageStyle = 'normal' | 'crit' | 'capped' | 'heal' | 'xp'
+export type DamageStyle = 'normal' | 'lethal' | 'capped' | 'heal' | 'xp'
 
 /**
  * 아틀라스 글리프. 숫자 10개 + 부호 2개.
@@ -192,14 +192,14 @@ interface NumberStyleDef {
  * 색은 클래스 정체색(시안 #4DD0FF / 크림슨 #FF5A6E)을 피한다. 숫자가
  * 클래스 색을 쓰면 스킬 이펙트와 섞여서 "내가 준 피해"라는 신호가 흐려진다.
  * - normal: 따뜻한 흰색. 가장 자주 뜨므로 가장 조용해야 한다.
- * - crit:   금색 + 1.55배. 크기와 색이 동시에 바뀌어야 멀리서 구분된다.
+ * - lethal: 금백색 + 1.38배. 실제 처치에만 써서 마지막 타격을 구분한다.
  * - capped: 보라색 + 느낌표. 보스 일격 상한이 작동했음을 별도 규칙으로 읽힌다.
  * - heal:   RING_COLORS[1]과 같은 초록. 회복 링과 같은 색이어야 한 사건으로 읽힌다.
  * - xp:     옅은 하늘색 + 0.78배 + 낮은 알파. 정보량이 가장 적으니 가장 약하게.
  */
 const NUMBER_STYLES: Readonly<Record<DamageStyle, NumberStyleDef>> = {
   normal: { color: 0xfff0dc, scale: 1, life: 0.72, rise: 1.25, punch: 0.2, drift: 0.32, alpha: 0.95 },
-  crit: { color: 0xffc24d, scale: 1.55, life: 0.95, rise: 1.7, punch: 0.6, drift: 0.5, alpha: 1 },
+  lethal: { color: 0xffd978, scale: 1.38, life: 0.86, rise: 1.55, punch: 0.48, drift: 0.44, alpha: 1 },
   capped: { color: 0xc98cff, scale: 1.25, life: 0.9, rise: 1.55, punch: 0.4, drift: 0.4, alpha: 1 },
   heal: { color: 0x7df0a0, scale: 1.1, life: 0.9, rise: 1.5, punch: 0.25, drift: 0.22, alpha: 1 },
   xp: { color: 0x9fe8ff, scale: 0.78, life: 0.55, rise: 1, punch: 0.12, drift: 0.4, alpha: 0.75 },
@@ -589,7 +589,7 @@ export class ImpactFx {
     }
     n += digits
 
-    if (style === 'crit' || style === 'capped') {
+    if (style === 'lethal' || style === 'capped') {
       pop.glyphs[n++] = GLYPH_BANG
     }
 

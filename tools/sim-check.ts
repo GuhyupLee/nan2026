@@ -748,6 +748,27 @@ console.log('\nsim smoke check\n')
     importantFeedback === 5,
     `${importantFeedback}`,
   )
+
+  // 큐가 이미 찬 뒤 들어온 일반 처치도 잡피해 하나를 밀어내야 한다.
+  // 그렇지 않으면 가장 중요한 일반 타격의 숫자·소리·파편이 모두 사라진다.
+  spawnEnemy(capped.enemies, capped.rng, 0, 0, TYPE_WALKER)
+  const lethalIndex = capped.enemies.count - 1
+  damageEnemy(capped, lethalIndex, capped.enemies.hp[lethalIndex]!)
+  const preservedLethal = capped.damageFeedback.some(
+    (event) => event.enemyType === TYPE_WALKER && event.lethal,
+  )
+  const importantAfterLethal = capped.damageFeedback.filter(
+    (event) => event.enemyType === TYPE_ELITE || event.enemyType === TYPE_BOSS,
+  ).length
+  check(
+    '포화된 피드백 큐에서도 일반 처치가 잡피해를 교체한다',
+    preservedLethal && capped.damageFeedback.length === MAX_DAMAGE_FEEDBACK,
+  )
+  check(
+    '일반 처치가 정예·보스 피드백 예약분을 밀어내지 않는다',
+    importantAfterLethal === importantFeedback,
+    `${importantAfterLethal}`,
+  )
   drainEvents(capped)
   check('drainEvents가 적 피해 피드백까지 비운다', capped.damageFeedback.length === 0)
 }
