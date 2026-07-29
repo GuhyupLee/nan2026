@@ -1266,7 +1266,12 @@ export class Renderer {
     for (let i = 0; i < world.damageFeedback.length && damageNumbers < 4; i++) {
       const hit = world.damageFeedback[i]!
       if (hit.enemyType !== TYPE_ELITE && hit.enemyType !== TYPE_BOSS) continue
-      this.impact.popNumber(hit.x, hit.y, hit.amount, 'normal')
+      this.impact.popNumber(
+        hit.x,
+        hit.y,
+        hit.amount,
+        hit.capped ? 'capped' : 'normal',
+      )
       damageNumbers += 1
     }
     for (let i = 0; i < world.damageFeedback.length && damageNumbers < 8; i++) {

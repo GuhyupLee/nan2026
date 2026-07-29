@@ -354,7 +354,9 @@ function addEnemy(
   bossWorld.battlefieldPickups.nextDropAt = 0
   bossWorld.pickupRng = sequenceRng([0, 0.1])
   const bossIndex = addEnemy(bossWorld, TYPE_BOSS, 5, 0)
-  damageEnemy(bossWorld, bossIndex, bossWorld.enemies.hp[bossIndex]!)
+  while (bossWorld.enemies.hp[bossIndex]! > 0) {
+    damageEnemy(bossWorld, bossIndex, bossWorld.enemies.maxHp[bossIndex]!)
+  }
   assert.equal(bossWorld.battlefieldPickups.count, 0)
   assert.equal(bossWorld.pickupRng.state(), 0)
   assert.equal(bossWorld.outcome, 'victory')

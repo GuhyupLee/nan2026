@@ -22,7 +22,11 @@ import {
   playerActionTiming,
 } from '../src/sim/action-timing.ts'
 import { pickAutoAttackTarget } from '../src/sim/combat.ts'
-import { MAX_DAMAGE_FEEDBACK, damageEnemy } from '../src/sim/damage.ts'
+import {
+  BOSS_SINGLE_HIT_DAMAGE_CAP_RATIO,
+  MAX_DAMAGE_FEEDBACK,
+  damageEnemy,
+} from '../src/sim/damage.ts'
 import { castSkill } from '../src/sim/kits.ts'
 import {
   BOSS_CHARGE_AT,
@@ -697,7 +701,10 @@ console.log('\nsim smoke check\n')
   const first = feedback.damageFeedback[0]
   check(
     '적 피해 피드백은 요청량이 아니라 실제 적용량과 남은 체력을 기록한다',
-    first?.amount === 30 && first.hpAfter === 70 && !first.lethal,
+    first?.amount === 30 &&
+      first.hpAfter === 70 &&
+      !first.lethal &&
+      !first.capped,
   )
   check(
     '피해를 받은 적은 짧은 체력바 노출 시간을 얻는다',
@@ -1505,12 +1512,20 @@ console.log('\nsim smoke check\n')
   const bossIndex = Array.from({ length: w.enemies.count }).findIndex(
     (_, i) => w.enemies.type[i] === TYPE_BOSS,
   )
-  damageEnemy(w, bossIndex, BOSS_MAX_HP / 2)
+  damageEnemy(w, bossIndex, 100)
   check(
     '보스 피격 시 World 체력이 즉시 동기화된다',
-    Math.abs(w.boss.hp - BOSS_MAX_HP / 2) < 1e-3,
+    Math.abs(w.boss.hp - (BOSS_MAX_HP - 100)) < 1e-3 &&
+      w.boss.hp === w.enemies.hp[bossIndex],
     `hp=${w.boss.hp}`,
   )
+  while (w.boss.phaseTwoAt < 0) {
+    damageEnemy(
+      w,
+      bossIndex,
+      BOSS_MAX_HP * BOSS_SINGLE_HIT_DAMAGE_CAP_RATIO,
+    )
+  }
   check(
     '서지 중 포락선은 소강값으로 눌린다',
     targetAliveCount(200, false, true) ===
@@ -1520,7 +1535,9 @@ console.log('\nsim smoke check\n')
     (w.boss.phaseTwoAt + BOSS_PHASE_TWO_TRANSITION_DURATION) / DT,
   )
   w.time = w.tick * DT
-  damageEnemy(w, bossIndex, BOSS_MAX_HP)
+  while (w.enemies.hp[bossIndex]! > 0) {
+    damageEnemy(w, bossIndex, BOSS_MAX_HP)
+  }
   check(
     '2페이즈 전환 무적 종료 뒤 처치하면 victory와 보스바가 즉시 동기화된다',
     w.outcome === 'victory' && !w.boss.active && w.boss.hp === 0,

@@ -235,8 +235,8 @@ export interface AttackEvent {
 /**
  * 적에게 실제로 적용된 피해 한 건.
  *
- * 요청 피해가 아니라 남아 있던 체력으로 절삭한 값을 저장한다. 렌더러는
- * 적 풀의 슬롯 인덱스를 보존하지 않고 이 좌표 스냅샷만 읽으므로,
+ * 요청 피해가 아니라 남아 있던 체력과 보스 일격 상한으로 절삭한 값을 저장한다.
+ * 렌더러는 적 풀의 슬롯 인덱스를 보존하지 않고 이 좌표 스냅샷만 읽으므로,
  * 같은 틱의 swap-remove 뒤 다른 적 위에 숫자가 붙지 않는다.
  */
 export interface DamageFeedbackEvent {
@@ -247,6 +247,8 @@ export interface DamageFeedbackEvent {
   maxHp: number
   enemyType: number
   lethal: boolean
+  /** 보스 일격 상한 때문에 실제 피해가 요청 피해보다 작아졌는가. */
+  capped: boolean
 }
 
 /**

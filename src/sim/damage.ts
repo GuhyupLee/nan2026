@@ -11,6 +11,8 @@ import { dropXpGem } from './xp-gems.ts'
 
 /** 헤드리스 실행에서 소비자가 없어도 피드백 큐가 자라지 않는 절대 상한. */
 export const MAX_DAMAGE_FEEDBACK = 24
+/** 보스에게 한 번에 적용할 수 있는 최대 피해. 보스 최대 체력의 비율이다. */
+export const BOSS_SINGLE_HIT_DAMAGE_CAP_RATIO = 0.34
 /** 나머지 네 칸은 정예·보스 타격을 위해 예약한다. */
 const MAX_COMMON_DAMAGE_FEEDBACK = 20
 const HP_BAR_REVEAL_DURATION = 0.75
@@ -96,7 +98,12 @@ export function damageEnemy(
   }
 
   const hpBefore = pool.hp[i]!
-  let applied = Math.min(hpBefore, Math.max(0, amount))
+  const uncappedApplied = Math.min(hpBefore, Math.max(0, amount))
+  const bossHitCap = isBoss
+    ? Math.max(0, pool.maxHp[i]! * BOSS_SINGLE_HIT_DAMAGE_CAP_RATIO)
+    : Number.POSITIVE_INFINITY
+  const capped = uncappedApplied > bossHitCap
+  let applied = Math.min(uncappedApplied, bossHitCap)
   if (
     isBoss &&
     world.boss.active &&
@@ -135,6 +142,7 @@ export function damageEnemy(
       maxHp: pool.maxHp[i]!,
       enemyType: pool.type[i]!,
       lethal: pool.hp[i]! <= 0,
+      capped,
     })
   }
 

@@ -68,6 +68,7 @@ interface Result {
   /** 장판·돌진·접촉을 모두 포함해 틱간 HP가 순감소한 틱 비율. */
   damageTickFrac: number
   bossProgress: number
+  phaseTwoReached: boolean
   kills: number
   level: number
   upgradeRanks: number
@@ -400,6 +401,7 @@ function run(cls: PlayerClass, seed: number): Result {
         ? 1
         : 1 - world.boss.hp / Math.max(1, world.boss.maxHp)
       : 0,
+    phaseTwoReached: world.boss.phaseTwoAt >= 0,
     kills: world.kills,
     level: world.progression.level,
     upgradeRanks,
@@ -431,6 +433,7 @@ function summarize(rows: Result[], cls: PlayerClass): void {
       `순HP손실 ${String(Math.round(median(selected.map((row) => row.netHpLoss)))).padStart(4)}  ` +
       `피격틱 ${(median(selected.map((row) => row.damageTickFrac)) * 100).toFixed(1).padStart(4)}%  ` +
       `보스 ${(median(selected.map((row) => row.bossProgress)) * 100).toFixed(0).padStart(3)}%  ` +
+      `2페이즈 ${String(selected.filter((row) => row.phaseTwoReached).length).padStart(2)}/${selected.length}  ` +
       `킬 ${String(Math.round(median(selected.map((row) => row.kills)))).padStart(4)}  ` +
       `Lv ${String(median(selected.map((row) => row.level))).padStart(2)}  ` +
       `강화 ${String(median(selected.map((row) => row.upgradeRanks))).padStart(2)}  ` +
@@ -468,6 +471,7 @@ if (process.argv.includes('--verbose')) {
         `  ${String(row.seed).padStart(3)}  ${row.outcome.padEnd(7)}  ` +
           `${row.survivedSec.toFixed(1).padStart(5)}s  ` +
           `boss ${(row.bossProgress * 100).toFixed(0).padStart(3)}%  ` +
+          `p2 ${row.phaseTwoReached ? 'Y' : 'N'}  ` +
           `minHP ${(row.minHpFrac * 100).toFixed(0).padStart(3)}%  ` +
           `netLoss ${Math.round(row.netHpLoss).toString().padStart(4)}  ` +
           `kills ${String(row.kills).padStart(4)}  Lv${String(row.level).padStart(2)}  ` +

@@ -31,7 +31,10 @@ import {
   triggerBossPhaseTwo,
 } from '../src/sim/boss.ts'
 import { DT } from '../src/sim/constants.ts'
-import { damageEnemy } from '../src/sim/damage.ts'
+import {
+  BOSS_SINGLE_HIT_DAMAGE_CAP_RATIO,
+  damageEnemy,
+} from '../src/sim/damage.ts'
 import {
   BOSS_CHARGE_AT,
   BOSS_CHARGE_SPEED,
@@ -734,6 +737,16 @@ function startPhaseTwoForHazardTest(
 {
   assert.equal(BOSS_PHASE_TWO_THRESHOLD, 1300)
   assert.equal(BOSS_PHASE_TWO_THRESHOLD, BOSS_MAX_HP / 2)
+  // 비율을 그대로 박아 두지 않는다. 이 검사가 지켜야 할 것은 특정 숫자가
+  // 아니라 **한 방에 2페이즈 게이트를 건너뛸 수 없다**는 성질이다. 상한이
+  // 50% 미만이면 첫 타 뒤 반드시 절반 위에 남고 두 번째 타에서 게이트를
+  // 통과한다. 숫자를 고정하면 튜닝할 때마다 이 검사가 의미 없이 실패한다.
+  assert.ok(
+    BOSS_SINGLE_HIT_DAMAGE_CAP_RATIO > 0 &&
+      BOSS_SINGLE_HIT_DAMAGE_CAP_RATIO < 0.5,
+    `보스 일격 상한은 0~50% 사이여야 페이즈 게이트가 보장된다 — ` +
+      `${BOSS_SINGLE_HIT_DAMAGE_CAP_RATIO}`,
+  )
 
   const { world, bossIndex } = setupBossWorld()
   world.time = 50
@@ -746,8 +759,52 @@ function startPhaseTwoForHazardTest(
   world.enemies.bossChargeDirY[bossIndex] = 0.5
   world.enemies.bossChargeCycle[bossIndex] = 6
 
+  const hitCap = BOSS_MAX_HP * BOSS_SINGLE_HIT_DAMAGE_CAP_RATIO
   assert.equal(damageEnemy(world, bossIndex, BOSS_MAX_HP * 4), false)
-  assert.equal(world.enemies.hp[bossIndex], BOSS_PHASE_TWO_THRESHOLD)
+  assert.equal(world.enemies.hp[bossIndex], BOSS_MAX_HP - hitCap)
+  assert.equal(world.boss.hp, BOSS_MAX_HP - hitCap)
+  assert.equal(world.boss.phaseTwoAt, -1)
+  assert.ok(world.enemies.hp[bossIndex]! > BOSS_PHASE_TWO_THRESHOLD)
+  assert.deepEqual(
+    world.damageFeedback.at(-1),
+    {
+      x: 0,
+      y: 0,
+      amount: hitCap,
+      hpAfter: BOSS_MAX_HP - hitCap,
+      maxHp: BOSS_MAX_HP,
+      enemyType: TYPE_BOSS,
+      lethal: false,
+      capped: true,
+    },
+  )
+
+  // 최대 피해를 계속 넣어도 **한 타가 50% 게이트를 건너뛰지 못한다.**
+  //
+  // 몇 번째 타에서 게이트에 닿는지는 상한 비율에 따라 달라지므로 횟수를
+  // 고정하지 않는다. 지켜야 할 성질은 두 가지다 — 게이트를 반드시 한 번
+  // 밟는다는 것, 그리고 게이트 위에서 한 방에 죽지 않는다는 것. 상한을
+  // 제거하면 첫 타가 곧바로 0까지 내려가 두 조건이 함께 깨진다.
+  let visitedGate = world.enemies.hp[bossIndex] === BOSS_PHASE_TWO_THRESHOLD
+  for (let hit = 0; hit < 12 && world.enemies.hp[bossIndex]! > 0; hit++) {
+    const before = world.enemies.hp[bossIndex]!
+    damageEnemy(world, bossIndex, BOSS_MAX_HP * 4)
+    const after = world.enemies.hp[bossIndex]!
+    if (before > BOSS_PHASE_TWO_THRESHOLD) {
+      assert.ok(
+        after > 0,
+        '게이트 위에서 한 타에 즉사할 수 없다',
+      )
+    }
+    if (after === BOSS_PHASE_TWO_THRESHOLD) {
+      // 게이트에 닿으면 멈춘다. 아래 검사들이 전환 순간의 무적·정지·링을
+      // 확인하므로, 계속 때려서 지나쳐 버리면 그 상태를 볼 수 없다.
+      visitedGate = true
+      break
+    }
+  }
+  assert.ok(visitedGate, '보스는 반드시 50% 게이트를 한 번 밟는다')
+  assert.ok(world.boss.phaseTwoAt >= 0, '2페이즈가 실제로 열린다')
   assert.equal(world.boss.hp, BOSS_PHASE_TWO_THRESHOLD)
   assert.equal(world.boss.phaseTwoAt, 50)
   assert.equal(
@@ -829,9 +886,28 @@ function startPhaseTwoForHazardTest(
   spawnBoss(inactive.enemies, inactive.rng, 0, 0)
   const inactiveBoss = inactive.enemies.count - 1
   assert.equal(inactive.boss.active, false)
+  // 필요한 타수는 상한 비율에서 나온다. 숫자를 박아 두면 비율을 조정할
+  // 때마다 이 검사가 의미 없이 실패한다.
+  const hitsToKill = Math.ceil(1 / BOSS_SINGLE_HIT_DAMAGE_CAP_RATIO)
+  for (let hit = 0; hit < hitsToKill - 1; hit += 1) {
+    assert.equal(
+      damageEnemy(inactive, inactiveBoss, BOSS_MAX_HP),
+      false,
+      `상한이 걸린 ${hit + 1}번째 타는 보스를 죽이지 못한다`,
+    )
+  }
   assert.equal(damageEnemy(inactive, inactiveBoss, BOSS_MAX_HP), true)
   assert.equal(inactive.enemies.hp[inactiveBoss], 0)
   assert.equal(inactive.boss.phaseTwoAt, -1)
+
+  const eliteWorld = createWorld(4502)
+  eliteWorld.spawnEnabled = false
+  const eliteIndex = addTypedTarget(eliteWorld, TYPE_ELITE, 0, 0)
+  const eliteHp = eliteWorld.enemies.hp[eliteIndex]!
+  assert.equal(damageEnemy(eliteWorld, eliteIndex, eliteHp * 4), true)
+  assert.equal(eliteWorld.enemies.hp[eliteIndex], 0)
+  assert.equal(eliteWorld.damageFeedback.at(-1)?.amount, eliteHp)
+  assert.equal(eliteWorld.damageFeedback.at(-1)?.capped, false)
 }
 
 {
