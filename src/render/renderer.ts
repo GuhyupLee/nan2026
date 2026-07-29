@@ -29,6 +29,7 @@ import {
   createCharacterRig,
 } from './characters.ts'
 import { EnemyRenderer } from './enemies.ts'
+import { OutcomeCinematic } from './cinematic.ts'
 import { MOON_DIRECTION, Sky } from './env/sky.ts'
 import { onGlowIntensityChange } from './glow-settings.ts'
 import { ImpactParticles } from './impact-particles.ts'
@@ -163,6 +164,8 @@ export class Renderer {
   private readonly fog: THREE.Fog
   private readonly hemisphere: THREE.HemisphereLight
   private readonly sky: Sky
+  /** 결과 화면의 히어로 샷. 전투 카메라 위에 섞인다. */
+  private readonly cinematic: OutcomeCinematic
   private releaseGlowSubscription: (() => void) | null = null
   private readonly lightRig: THREE.Group
   private readonly sun: THREE.DirectionalLight
@@ -394,6 +397,7 @@ export class Renderer {
     // resize()가 post.setSize를 부르기 때문에 순서가 뒤집히면 첫 호출에서
     // undefined를 건드린다.
     this.post = new PostFx(this.gl, this.scene, this.camera)
+    this.cinematic = new OutcomeCinematic(this.scene)
 
     // 사용자 발광 강도. 설정 패널에서 슬라이더를 움직이면 즉시 반영된다.
     this.releaseGlowSubscription = onGlowIntensityChange((value) => {
@@ -708,10 +712,28 @@ export class Renderer {
     }
 
     this.positionCamera()
+
+    // 결과가 확정되면 전투 카메라 위에 히어로 샷을 섞는다. positionCamera()
+    // 뒤여야 전투 위치를 기준으로 보간할 수 있다.
+    this.cinematic.setOutcome(world.outcome, world.player.facing)
+    this.cinematic.advance(dt)
+    this.cinematic.apply(this.camera, px, pz, this.width / Math.max(1, this.height))
+
+    // 무대 조명이 서려면 주변이 어두워져야 한다. 키 라이트만 올리고 달빛을
+    // 그대로 두면 캐릭터가 밝아지는 게 아니라 화면 전체가 밝아진다.
+    const stage = this.cinematic.amount
+    if (stage > 0) {
+      this.sun.intensity *= 1 - stage * 0.55
+      this.hemisphere.intensity *= 1 - stage * 0.45
+    }
+
     // 반드시 positionCamera() 뒤다. 앞에서 더하면 그 안의 lookAt()이 카메라를
     // 되돌려 흔들림이 거의 상쇄된다 — 조용히 망가지는 종류의 실수다.
-    this.camera.position.add(this.impact.offset)
-    this.camera.rotateZ(this.impact.roll)
+    // 히어로 샷 중에는 흔들림을 재운다. 정지 화면에서 카메라가 떠는 것은
+    // 타격감이 아니라 결함으로 보인다.
+    const shake = 1 - this.cinematic.amount
+    this.camera.position.addScaledVector(this.impact.offset, shake)
+    this.camera.rotateZ(this.impact.roll * shake)
 
     this.post.render(dt)
   }
@@ -1345,6 +1367,7 @@ export class Renderer {
     this.post.dispose()
     this.arena.dispose()
     this.sky.dispose()
+    this.cinematic.dispose()
     this.sun.shadow.map?.dispose()
     this.gl.dispose()
     this.gl.domElement.remove()
