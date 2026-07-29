@@ -8035,24 +8035,73 @@ body.pickup-buff-active #hint:not(.hidden) {
   }
 }
 
-/* 세 단계 도전 선택: 잠긴 단계도 해금 조건을 읽을 수 있게 버튼 자체는 유지한다. */
+/* 스테이지는 한 장씩 넘기고, 선택한 카드를 누르는 순간 바로 진입한다. */
+.mainmenu-stage-picker {
+  width: min(34rem, 100%);
+  margin-top: clamp(0.72rem, 1.6vh, 1.05rem);
+}
+
 .mainmenu-difficulties {
-  width: min(31rem, 100%);
-  margin: 0 0 clamp(0.7rem, 1.4vh, 1rem);
+  position: relative;
+  width: 100%;
+  margin: 0;
+  padding: 0.2rem 2rem 0.55rem;
   display: grid;
-  gap: 0.38rem;
+  grid-auto-flow: column;
+  grid-auto-columns: 100%;
+  gap: 0.72rem;
+  overflow-x: auto;
+  overflow-y: hidden;
+  overscroll-behavior-inline: contain;
+  scroll-padding-inline: 2rem;
+  scroll-snap-type: x mandatory;
+  scrollbar-width: none;
+  touch-action: pan-y;
+  -webkit-overflow-scrolling: touch;
+  cursor: grab;
+}
+
+.mainmenu-difficulties::-webkit-scrollbar {
+  display: none;
+}
+
+.mainmenu-difficulties.dragging {
+  scroll-snap-type: none;
+  cursor: grabbing;
+}
+
+.mainmenu-difficulties.dragging .mainmenu-difficulty {
+  pointer-events: none;
 }
 
 .mainmenu-difficulties .mainmenu-difficulty {
+  --stage-glow: rgba(91, 205, 231, 0.16);
   width: 100%;
-  min-height: 3.5rem;
+  min-height: 5.65rem;
   margin: 0;
-  padding-block: 0.58rem;
+  padding: 0.8rem 1rem;
+  scroll-snap-align: center;
+  scroll-snap-stop: always;
+  opacity: 0.58;
+  transform: scale(0.965);
+  transform-origin: center;
+  transition:
+    opacity 0.18s ease,
+    transform 0.18s ease,
+    border-color 0.18s ease,
+    background-color 0.18s ease,
+    box-shadow 0.18s ease;
 }
 
 .mainmenu-difficulty[data-selected='true'] {
   border-width: 2px;
-  box-shadow: 0 0 1rem rgba(91, 205, 231, 0.14);
+  opacity: 1;
+  transform: scale(1);
+  box-shadow: 0 0 1.35rem var(--stage-glow);
+}
+
+.mainmenu-difficulty[data-mode='hard'] {
+  --stage-glow: rgba(238, 94, 104, 0.18);
 }
 
 .mainmenu-difficulty[aria-disabled='true'] {
@@ -8068,6 +8117,7 @@ body.pickup-buff-active #hint:not(.hidden) {
 }
 
 .mainmenu-difficulty[data-mode='fullmoon'] {
+  --stage-glow: rgba(174, 124, 255, 0.2);
   border-color: rgba(209, 188, 255, 0.5);
   background:
     linear-gradient(90deg, rgba(119, 86, 189, 0.24), transparent 78%),
@@ -8089,6 +8139,133 @@ body.pickup-buff-active #hint:not(.hidden) {
   background:
     linear-gradient(90deg, rgba(136, 97, 218, 0.34), transparent 78%),
     rgba(17, 12, 28, 0.92);
+}
+
+.mainmenu-difficulty[data-mode='fullmoon'][aria-disabled='true'] {
+  border-color: rgba(192, 207, 209, 0.12);
+  background: rgba(8, 13, 17, 0.78);
+}
+
+.mainmenu-difficulty[data-mode='fullmoon'][aria-disabled='true'] b,
+.mainmenu-difficulty[data-mode='fullmoon'][aria-disabled='true'] em,
+.mainmenu-difficulty[data-mode='fullmoon'][aria-disabled='true'] small,
+.mainmenu-difficulty[data-mode='fullmoon'][aria-disabled='true'] i {
+  color: #8a94a2;
+}
+
+.mainmenu-stage-navigation {
+  min-height: 44px;
+  margin: 0.02rem 1.25rem 0;
+  display: grid;
+  grid-template-columns: 44px minmax(0, 1fr) 44px;
+  align-items: center;
+  gap: 0.55rem;
+}
+
+.mainmenu-stage-step {
+  width: 44px;
+  height: 44px;
+  padding: 0;
+  border: 0;
+  color: rgba(230, 224, 211, 0.68);
+  background: transparent;
+  font-family: Georgia, 'Times New Roman', serif;
+  font-size: 1rem;
+  cursor: pointer;
+  -webkit-tap-highlight-color: transparent;
+}
+
+.mainmenu-stage-step:hover:not(:disabled),
+.mainmenu-stage-step:focus-visible {
+  color: #fffdf6;
+  background: rgba(230, 224, 211, 0.08);
+}
+
+.mainmenu-stage-step:focus-visible {
+  outline: 2px solid var(--menu-bronze);
+  outline-offset: -2px;
+}
+
+.mainmenu-stage-step:active:not(:disabled) {
+  transform: translateY(1px);
+}
+
+.mainmenu-stage-step:disabled {
+  color: rgba(230, 224, 211, 0.18);
+  cursor: default;
+}
+
+.mainmenu-stage-guide {
+  min-width: 0;
+  display: grid;
+  place-items: center;
+  gap: 0.28rem;
+  text-align: center;
+}
+
+.mainmenu-stage-indicators {
+  height: 0.44rem;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.42rem;
+}
+
+.mainmenu-stage-indicators i {
+  width: 0.36rem;
+  height: 0.36rem;
+  border: 1px solid rgba(230, 224, 211, 0.48);
+  transform: rotate(45deg);
+  transition:
+    width 0.16s ease,
+    background-color 0.16s ease,
+    border-color 0.16s ease,
+    transform 0.16s ease;
+}
+
+.mainmenu-stage-indicators i[data-selected='true'] {
+  width: 1.45rem;
+  border-color: var(--menu-bronze);
+  background: var(--menu-bronze);
+  transform: none;
+}
+
+.mainmenu-stage-indicators i[data-locked='true'] {
+  opacity: 0.34;
+}
+
+.mainmenu-stage-guide small {
+  overflow: hidden;
+  color: rgba(230, 224, 211, 0.52);
+  font-family: Georgia, 'Times New Roman', serif;
+  font-size: max(10px, 0.48rem);
+  font-weight: 500;
+  letter-spacing: 0.09em;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.mainmenu-stage-status {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  overflow: hidden;
+  clip: rect(0, 0, 0, 0);
+  white-space: nowrap;
+  border: 0;
+}
+
+.mainmenu-stage-picker + .mainmenu-actions {
+  margin-top: 0.42rem;
+}
+
+.mainmenu-actions[data-count='2'] {
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+}
+
+.mainmenu-actions[data-count='3'] {
+  grid-template-columns: repeat(3, minmax(0, 1fr));
 }
 
 .clock[data-mode='fullmoon'] {
@@ -8199,19 +8376,133 @@ body.pickup-buff-active #hint:not(.hidden) {
 }
 
 @media (max-width: 640px) {
+  .mainmenu-stage-picker {
+    width: min(31rem, 100%);
+  }
+
   .mainmenu-difficulties {
-    gap: 0.26rem;
+    padding: 0.15rem 1.25rem 0.45rem;
+    grid-auto-columns: 100%;
+    gap: 0.45rem;
+    scroll-padding-inline: 1.25rem;
   }
 
   .mainmenu-difficulties .mainmenu-difficulty {
-    min-height: 3.1rem;
+    min-height: 5.15rem;
     grid-template-columns: minmax(4.5rem, 0.5fr) minmax(0, 1.5fr) auto;
     gap: 0.52rem;
-    padding: 0.45rem 0.62rem;
+    padding: 0.62rem 0.7rem;
   }
 
   .mainmenu-difficulty em {
     font-size: max(10px, 0.62rem);
+  }
+
+  .mainmenu-stage-navigation {
+    margin-inline: 1.25rem;
+  }
+
+  .mainmenu-stage-guide small {
+    letter-spacing: 0.045em;
+  }
+}
+
+@media (max-height: 560px) and (orientation: landscape) {
+  .mainmenu-content {
+    height: 100dvh;
+    min-height: 0;
+    max-height: 100dvh;
+    justify-content: flex-start;
+    overflow-y: auto;
+    overscroll-behavior-y: contain;
+    scrollbar-width: none;
+  }
+
+  .mainmenu-content::-webkit-scrollbar {
+    display: none;
+  }
+
+  .mainmenu-stage-picker {
+    margin-top: 0.32rem;
+  }
+
+  .mainmenu-difficulties {
+    padding-block: 0.08rem 0.22rem;
+  }
+
+  .mainmenu-difficulties .mainmenu-difficulty {
+    min-height: 3.85rem;
+    padding-block: 0.42rem;
+  }
+
+  .mainmenu-stage-navigation {
+    min-height: 34px;
+    grid-template-columns: 36px minmax(0, 1fr) 36px;
+  }
+
+  .mainmenu-stage-step {
+    width: 36px;
+    height: 34px;
+  }
+
+  .mainmenu-stage-guide {
+    gap: 0.12rem;
+  }
+
+  .mainmenu-stage-picker + .mainmenu-actions {
+    margin-top: 0.18rem;
+  }
+}
+
+@media (max-height: 360px) and (orientation: landscape) {
+  .mainmenu-eyebrow,
+  .mainmenu-tagline {
+    display: none;
+  }
+
+  .mainmenu-title-row {
+    margin-top: 0;
+  }
+
+  .mainmenu h1 {
+    font-size: clamp(2.8rem, 13vh, 3.5rem);
+  }
+
+  .mainmenu-mark {
+    width: 1.8rem;
+    height: 1.8rem;
+  }
+
+  .mainmenu-rule {
+    margin-top: 0.24rem;
+  }
+
+  .mainmenu-difficulties .mainmenu-difficulty {
+    min-height: 3.35rem;
+  }
+
+  .mainmenu-stage-navigation {
+    min-height: 30px;
+    grid-template-columns: 32px minmax(0, 1fr) 32px;
+  }
+
+  .mainmenu-stage-step {
+    width: 32px;
+    height: 30px;
+  }
+
+  .mainmenu-stage-guide small,
+  .mainmenu-action .action-index,
+  .mainmenu-action .action-copy small,
+  .mainmenu-action .action-arrow {
+    display: none;
+  }
+
+  .mainmenu-action {
+    min-height: 36px;
+    padding-block: 0.3rem;
+    grid-template-columns: 1fr;
+    text-align: center;
   }
 }
 
@@ -8272,6 +8563,11 @@ body.pickup-buff-active #hint:not(.hidden) {
 
   .loadout-briefing.closing .loadout-briefing-panel {
     transform: none;
+  }
+
+  .mainmenu-difficulties .mainmenu-difficulty,
+  .mainmenu-stage-indicators i {
+    transition: none;
   }
 }
 
