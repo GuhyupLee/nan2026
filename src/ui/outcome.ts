@@ -1,6 +1,7 @@
 import { computeScore } from '../sim/score.ts'
 import { difficultyRules, runDifficultyLabel } from '../sim/difficulty.ts'
 import type { World } from '../sim/types.ts'
+import { countAttrs, runBriefing } from './briefing.ts'
 import { trapFocus } from './focus-trap.ts'
 import { formatTime, loadRecords, saveRecord, type RunRecord } from './records.ts'
 import {
@@ -23,21 +24,29 @@ interface OutcomeCopy {
   description: string
 }
 
+/**
+ * 결과별 문구.
+ *
+ * 셋의 어조를 일부러 다르게 잡았다. 예전에는 세 문구가 거의 같은 톤이라
+ * 이겼는지 졌는지가 색으로만 구분됐다. 승리는 사건을 선언하고, 패배는
+ * 어디까지 갔는지를 말한다 — 실패 화면에서 점수를 제일 크게 띄우면
+ * 위로가 아니라 조롱으로 읽힌다.
+ */
 const COPY: Record<GameOutcome, OutcomeCopy> = {
   dead: {
     eyebrow: '전투 종료',
     title: '쓰러졌습니다',
-    description: '이번 전투가 끝났습니다. 바로 재도전하거나 기록을 확인할 수 있습니다.',
+    description: '여기까지 왔습니다. 같은 전장에서 바로 다시 시작할 수 있습니다.',
   },
   timeout: {
     eyebrow: '시간 초과',
     title: '시간이 다 됐습니다',
-    description: '5분 안에 보스를 쓰러뜨리지 못했습니다. 바로 재도전하거나 기록을 확인할 수 있습니다.',
+    description: '보스를 끝내지 못한 채 제한 시간이 지났습니다. 조금 더 밀어붙이면 닿습니다.',
   },
   victory: {
     eyebrow: '승리',
-    title: '승리했습니다',
-    description: '보스를 쓰러뜨렸습니다. 계속 싸우거나 보상을 챙기고 돌아갈 수 있습니다.',
+    title: '균열의 군주를 쓰러뜨렸습니다',
+    description: '전장이 조용해졌습니다. 계속 싸우거나 보상을 챙기고 돌아갈 수 있습니다.',
   },
 }
 
@@ -190,10 +199,13 @@ export function showOutcome(
 
     const panel = document.createElement('div')
     panel.className = 'panel'
+    // 헤더가 브리핑의 첫 단계다. 나머지 줄은 아래에서 순서를 이어받는다.
     panel.innerHTML =
+      `<div class="outcome-head" data-brief="0">` +
       `<div class="eyebrow">${copy.eyebrow}</div>` +
       `<h2 id="outcome-title">${copy.title}</h2>` +
-      `<p>${copy.description}</p>`
+      `<p>${copy.description}</p>` +
+      `</div>`
     root.appendChild(panel)
 
     // --- 한눈에 보는 결과와, 필요할 때 펼치는 상세 기록 ---
@@ -265,15 +277,62 @@ export function showOutcome(
               metaAward.progress.eclipseWins === 1
             ? '새 스테이지 해금 · 만월 · 10:00 보스 · 3페이즈'
             : ''
+      // 보스를 얼마나 깎았는가. 패배 화면에서는 이게 점수보다 중요한 정보다 —
+      // "어디까지 갔는지"를 알아야 다음 판에 무엇을 바꿀지 판단이 선다.
+      const bossProgress =
+        world.boss.maxHp > 0
+          ? Math.round(
+              (1 - Math.max(0, world.boss.hp) / world.boss.maxHp) * 100,
+            )
+          : 0
+      const cleared = outcome === 'victory'
+
+      // 승리는 점수를 앞세우고, 패배는 도달 지점을 앞세운다. 실패 화면에서
+      // 점수를 제일 크게 띄우면 위로가 아니라 조롱으로 읽힌다.
+      const headline = cleared
+        ? {
+            label: isBest ? `${stageLabel} 최고 기록 갱신` : '점수',
+            value: s.total,
+            text: s.total.toLocaleString('ko-KR'),
+            format: 'number' as const,
+          }
+        : {
+            label: '보스 진행도',
+            value: bossProgress,
+            text: `${bossProgress}%`,
+            format: 'percent' as const,
+          }
+
+      const metricRow = (
+        key: string,
+        label: string,
+        value: number,
+        text: string,
+        format: 'number' | 'time' | 'percent',
+      ): string =>
+        `<div class="row" data-metric="${key}">` +
+        `<span>${label}</span>` +
+        `<b${countAttrs(value, format)}>${text}</b>` +
+        `<span class="sr-only">${label} ${text}</span>` +
+        `</div>`
+
+      const metrics = cleared
+        ? metricRow('kills', '처치', world.kills, `${world.kills.toLocaleString('ko-KR')}킬`, 'number') +
+          metricRow('time', '전투 시간', Math.floor(world.time), formatTime(world.time), 'time')
+        : metricRow('level', '도달 레벨', world.progression.level, `Lv ${world.progression.level}`, 'number') +
+          metricRow('kills', '처치', world.kills, `${world.kills.toLocaleString('ko-KR')}킬`, 'number') +
+          metricRow('time', '생존 시간', Math.floor(world.time), formatTime(world.time), 'time') +
+          metricRow('score', '점수', s.total, s.total.toLocaleString('ko-KR'), 'number')
+
       score.innerHTML =
         `<section class="score-summary outcome-core-summary" aria-label="이번 전투 핵심 결과">` +
-        `<div class="total${isBest ? ' best' : ''}">` +
-        `<span class="label">${isBest ? `${stageLabel} 최고 기록 갱신` : '점수'}</span>` +
-        `<strong>${s.total.toLocaleString('ko-KR')}</strong>` +
+        `<div class="total${isBest ? ' best' : ''}" data-brief="1">` +
+        `<span class="label">${headline.label}</span>` +
+        `<strong${countAttrs(headline.value, headline.format)}>${headline.text}</strong>` +
+        `<span class="sr-only">${headline.label} ${headline.text}</span>` +
         `</div>` +
-        `<div class="rows outcome-core-metrics">` +
-        `<div class="row" data-metric="kills"><span>처치</span><b>${world.kills.toLocaleString('ko-KR')}킬</b></div>` +
-        `<div class="row" data-metric="time"><span>전투 시간</span><b>${formatTime(world.time)}</b></div>` +
+        `<div class="rows outcome-core-metrics" data-brief="2">` +
+        metrics +
         `</div>` +
         `</section>`
 
@@ -302,6 +361,7 @@ export function showOutcome(
       const legacy = document.createElement('section')
       legacy.className = 'meta-run-reward'
       legacy.setAttribute('aria-label', '월광 전승 보상')
+      legacy.dataset.brief = '3'
       legacy.innerHTML =
         (unlockedStage
           ? `<div class="stage-unlock"><span>${unlockedStage}</span><strong>NEW</strong></div>`
@@ -328,6 +388,7 @@ export function showOutcome(
 
     const actions = document.createElement('div')
     actions.className = 'actions'
+    actions.dataset.brief = '4'
     panel.appendChild(actions)
 
     let endless: HTMLButtonElement | null = null
@@ -366,21 +427,40 @@ export function showOutcome(
 
     const note = document.createElement('div')
     note.className = 'note'
+    note.dataset.brief = '5'
     note.textContent = world
       ? '같은 캐릭터와 전장 코드로 적 배치와 보상 순서를 다시 재현합니다.'
       : '재시작하면 같은 캐릭터와 같은 전장 배치를 사용합니다.'
     panel.appendChild(note)
-    if (outcomeDetails) panel.appendChild(outcomeDetails)
+    if (outcomeDetails) {
+      outcomeDetails.dataset.brief = '6'
+      panel.appendChild(outcomeDetails)
+    }
 
     let done = false
     let releaseFocusTrap = (): void => {}
+    let briefing: { finish(): void; dispose(): void } | null = null
     const finish = (action: OutcomeAction): void => {
       if (done) return
       done = true
       window.removeEventListener('keydown', onKey)
+      window.removeEventListener('pointerdown', skipBriefing, true)
+      briefing?.dispose()
       releaseFocusTrap()
       root.remove()
       resolve(action)
+    }
+
+    /**
+     * 연출을 건너뛴다.
+     *
+     * 결과를 이미 아는 사람에게 브리핑은 기다림일 뿐이다. 아무 입력이나
+     * 들어오면 즉시 최종 상태로 간다. 버튼 자체는 연출 중에도 눌리므로
+     * (`briefing.ts`가 투명도만 건드린다) 이건 조작을 여는 게 아니라
+     * **눈을 편하게** 해 주는 장치다.
+     */
+    const skipBriefing = (): void => {
+      briefing?.finish()
     }
 
     const onKey = (e: KeyboardEvent): void => {
@@ -388,15 +468,21 @@ export function showOutcome(
       if (e.key === 'Escape') {
         e.preventDefault()
         finish('menu')
+        return
       }
+      skipBriefing()
     }
 
     restart.addEventListener('click', () => finish('restart'))
     endless?.addEventListener('click', () => finish('endless'))
     menu.addEventListener('click', () => finish('menu'))
     window.addEventListener('keydown', onKey)
+    window.addEventListener('pointerdown', skipBriefing, true)
     parent.appendChild(root)
     releaseFocusTrap = trapFocus(root)
+    // 포커스를 먼저 준다. 브리핑이 끝나기를 기다리지 않으므로 키보드
+    // 사용자는 첫 프레임부터 Enter로 재도전할 수 있다.
     ;(endless ?? restart).focus()
+    briefing = runBriefing(panel)
   })
 }
