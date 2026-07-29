@@ -14,6 +14,7 @@ import {
   collectedBattlefieldPickupCount,
   createBattlefieldPickupPool,
   dropBattlefieldPickup,
+  nonBombKillTotal,
   resetBattlefieldPickupPool,
   stepBattlefieldPickups,
   tryDropBattlefieldPickup,
@@ -194,6 +195,7 @@ function addEnemy(
   pool.healActivations = 2
   pool.magnetActivations = 3
   pool.bombActivations = 4
+  pool.bombKills = 5
 
   resetBattlefieldPickupPool(pool)
   assert.strictEqual(pool.x, xStorage)
@@ -203,6 +205,7 @@ function addEnemy(
   assert.equal(pool.healActivations, 0)
   assert.equal(pool.magnetActivations, 0)
   assert.equal(pool.bombActivations, 0)
+  assert.equal(pool.bombKills, 0)
   assert.deepEqual(Array.from(pool.x), [0, 0, 0])
 }
 
@@ -291,6 +294,14 @@ function addEnemy(
   assert.equal(world.xpGems.count, 3)
   assert.equal(world.battlefieldPickups.count, 0)
   assert.equal(world.battlefieldPickups.bombActivations, 1)
+  assert.equal(world.battlefieldPickups.bombKills, 3)
+  assert.equal(
+    nonBombKillTotal(
+      world.kills,
+      world.battlefieldPickups.bombKills,
+    ),
+    0,
+  )
   assert.equal(world.pickupRng.state(), 0)
   assert.equal(world.enemies.count, 2)
   assert.deepEqual(
@@ -320,7 +331,35 @@ function addEnemy(
   dropBattlefieldPickup(world.battlefieldPickups, 0, 0, PICKUP_BOMB, 0)
   stepWorld(world, createInput())
   assert.equal(world.kills, BATTLEFIELD_BOMB_MAX_KILLS)
+  assert.equal(world.battlefieldPickups.bombKills, BATTLEFIELD_BOMB_MAX_KILLS)
   assert.equal(world.enemies.count, 5)
+}
+
+// 한 고정 틱에 폭탄 상한과 일반 평타 처치가 함께 일어나도 직접 처치 하나는
+// cadence 누적값에 남는다. 렌더 프레임 단위 합산으로도 출처가 섞이지 않는다.
+{
+  const world = createWorld(405, 'ranged')
+  world.spawnEnabled = false
+  world.player.invulnUntil = Number.POSITIVE_INFINITY
+  const directTarget = addEnemy(world, TYPE_WALKER, 1, 0)
+  world.enemies.hp[directTarget] = 1
+  world.enemies.maxHp[directTarget] = 1
+  for (let i = 0; i < BATTLEFIELD_BOMB_MAX_KILLS; i += 1) {
+    addEnemy(world, TYPE_WALKER, 10, i * 0.01)
+  }
+  dropBattlefieldPickup(world.battlefieldPickups, 0, 0, PICKUP_BOMB, 0)
+
+  stepWorld(world, createInput())
+
+  assert.equal(world.kills, BATTLEFIELD_BOMB_MAX_KILLS + 1)
+  assert.equal(world.battlefieldPickups.bombKills, BATTLEFIELD_BOMB_MAX_KILLS)
+  assert.equal(
+    nonBombKillTotal(
+      world.kills,
+      world.battlefieldPickups.bombKills,
+    ),
+    1,
+  )
 }
 
 // Only ordinary direct kills roll utility drops; elite and boss deaths keep

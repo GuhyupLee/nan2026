@@ -130,6 +130,11 @@ function addEnemy(
   assert.ok(revival.player.hp >= revival.stats.maxHp * 0.49)
   assert.ok(revival.player.invulnUntil > revival.time)
   assert.ok(revival.upgradesTaken.has('state:revival:spent'))
+  assert.equal(
+    revival.battlefieldPickups.bombKills,
+    revival.kills,
+    '귀환 정화 폭발 처치가 bombKills에 기록되지 않음',
+  )
 }
 
 console.log(

@@ -245,14 +245,46 @@ const SKY_PALETTE = {
 } as const
 
 type Palette5 = readonly [number, number, number, number, number]
+type ColorPalette5 = readonly [
+  THREE.Color,
+  THREE.Color,
+  THREE.Color,
+  THREE.Color,
+  THREE.Color,
+]
 
-function sampleArcColor(target: THREE.Color, palette: Palette5, arc: Readonly<ArenaArc>): void {
+function cachePalette(palette: Palette5): ColorPalette5 {
+  return [
+    new THREE.Color(palette[0]),
+    new THREE.Color(palette[1]),
+    new THREE.Color(palette[2]),
+    new THREE.Color(palette[3]),
+    new THREE.Color(palette[4]),
+  ]
+}
+
+const SKY_COLORS = {
+  zenith: cachePalette(SKY_PALETTE.zenith),
+  horizon: cachePalette(SKY_PALETTE.horizon),
+  ground: cachePalette(SKY_PALETTE.ground),
+  moon: cachePalette(SKY_PALETTE.moon),
+  corona: cachePalette(SKY_PALETTE.corona),
+  cloudLit: cachePalette(SKY_PALETTE.cloudLit),
+  cloudDark: cachePalette(SKY_PALETTE.cloudDark),
+} as const
+const ECLIPSE_KEY_LIGHT = new THREE.Color(0x8c2436)
+
+function sampleArcColor(
+  target: THREE.Color,
+  palette: ColorPalette5,
+  arc: Readonly<ArenaArc>,
+): void {
   target
-    .setHex(palette[0])
-    .lerp(new THREE.Color(palette[1]), arc.dusk)
-    .lerp(new THREE.Color(palette[2]), arc.eclipse)
-    .lerp(new THREE.Color(palette[3]), arc.boss)
-    .lerp(new THREE.Color(palette[4]), arc.phaseTwo)
+    .copy(palette[0])
+    .lerp(palette[1], arc.dusk)
+    .lerp(palette[2], arc.eclipse)
+    .lerp(palette[3], arc.boss)
+    .lerp(palette[4], arc.phaseTwo)
 }
 
 export interface SkyOptions {
@@ -359,13 +391,13 @@ export class Sky {
     const uniforms = this.material.uniforms
     uniforms.uTime.value = this.time
 
-    sampleArcColor(uniforms.uZenith.value as THREE.Color, SKY_PALETTE.zenith, arc)
-    sampleArcColor(uniforms.uHorizon.value as THREE.Color, SKY_PALETTE.horizon, arc)
-    sampleArcColor(uniforms.uGround.value as THREE.Color, SKY_PALETTE.ground, arc)
-    sampleArcColor(uniforms.uMoonColor.value as THREE.Color, SKY_PALETTE.moon, arc)
-    sampleArcColor(uniforms.uCoronaColor.value as THREE.Color, SKY_PALETTE.corona, arc)
-    sampleArcColor(uniforms.uCloudLit.value as THREE.Color, SKY_PALETTE.cloudLit, arc)
-    sampleArcColor(uniforms.uCloudDark.value as THREE.Color, SKY_PALETTE.cloudDark, arc)
+    sampleArcColor(uniforms.uZenith.value as THREE.Color, SKY_COLORS.zenith, arc)
+    sampleArcColor(uniforms.uHorizon.value as THREE.Color, SKY_COLORS.horizon, arc)
+    sampleArcColor(uniforms.uGround.value as THREE.Color, SKY_COLORS.ground, arc)
+    sampleArcColor(uniforms.uMoonColor.value as THREE.Color, SKY_COLORS.moon, arc)
+    sampleArcColor(uniforms.uCoronaColor.value as THREE.Color, SKY_COLORS.corona, arc)
+    sampleArcColor(uniforms.uCloudLit.value as THREE.Color, SKY_COLORS.cloudLit, arc)
+    sampleArcColor(uniforms.uCloudDark.value as THREE.Color, SKY_COLORS.cloudDark, arc)
 
     uniforms.uEclipse.value = arc.eclipse
     uniforms.uBoss.value = arc.boss
@@ -378,7 +410,7 @@ export class Sky {
     // 다른 팔레트를 갖고 있으면 아무리 맞춰도 어긋난 순간이 생긴다.
     this.keyLightColor
       .copy(uniforms.uMoonColor.value as THREE.Color)
-      .lerp(new THREE.Color(0x8c2436), arc.eclipse * 0.42)
+      .lerp(ECLIPSE_KEY_LIGHT, arc.eclipse * 0.42)
     this.bounceColor.copy(uniforms.uGround.value as THREE.Color)
 
     this.iblCooldown -= dt

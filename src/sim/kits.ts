@@ -739,12 +739,16 @@ export function castSkill(world: World, slot: SkillId, aim?: Vec2): boolean {
   const table = world.playerClass === 'melee' ? MELEE : RANGED
   const fn = table[slot]
   if (!fn) return false
+  const lockedAim =
+    aim && Number.isFinite(aim.x) && Number.isFinite(aim.y)
+      ? aim
+      : undefined
   if (world.playerAction) {
-    bufferPlayerSkill(world, slot)
+    bufferPlayerSkill(world, slot, lockedAim)
     return false
   }
   if (!consumeCooldown(world.skills, slot)) {
-    bufferPlayerSkill(world, slot)
+    bufferPlayerSkill(world, slot, lockedAim)
     return false
   }
   const p = world.player
@@ -752,8 +756,8 @@ export function castSkill(world: World, slot: SkillId, aim?: Vec2): boolean {
     world,
     slot,
     castTarget,
-    aim?.x,
-    aim?.y,
+    lockedAim?.x,
+    lockedAim?.y,
   )
   const angle = target.angle
 
@@ -765,6 +769,7 @@ export function castSkill(world: World, slot: SkillId, aim?: Vec2): boolean {
     target.x,
     target.y,
     slot,
+    lockedAim !== undefined,
   )
   if (!accepted) return false
 

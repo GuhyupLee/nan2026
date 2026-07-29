@@ -496,6 +496,12 @@ export class ImpactFx {
     this.hitstopSpent += admitted
     this.hitstopRemain += admitted
     this.hitstopStrength = s
+    // 요청 프레임의 다음 시뮬레이션 스텝부터 바로 감속한다. update()에서만
+    // 값을 계산하면 피격 프레임 뒤에 한 프레임이 더 지나 타격 정지가 늦게 느껴진다.
+    this.timeScaleValue = Math.min(
+      this.timeScaleValue,
+      1 - s * (1 - HITSTOP_FLOOR),
+    )
   }
 
   /**
@@ -691,6 +697,35 @@ export class ImpactFx {
     this.updateHitstop(dt)
     this.updateShake(dt)
     this.updateNumbers(dt)
+  }
+
+  /**
+   * 현재 프레임에 막 추가된 흔들림·숫자를 시간 경과 없이 즉시 샘플링한다.
+   * update() 뒤 이벤트를 소비하는 렌더 순서에서 이전 프레임의 dt가 새 히트스톱
+   * 수명을 깎지 않으면서도, 접촉 프레임의 시각 피드백은 늦지 않게 한다.
+   */
+  refreshPresentation(): void {
+    this.updateShake(0)
+    this.updateNumbers(0)
+  }
+
+  /** 새 런이 직전 판의 정지·흔들림·숫자·플래시를 물려받지 않게 한다. */
+  reset(): void {
+    this.hitstopRemain = 0
+    this.hitstopStrength = 0
+    this.hitstopSpent = 0
+    this.timeScaleValue = 1
+    this.trauma = 0
+    this.traumaDecay = 0
+    this.frequency = SHAKE_DEFAULT_FREQUENCY
+    this.shakePhase = 0
+    this.offsetVec.set(0, 0, 0)
+    this.rollValue = 0
+    this.driftAngle = 0
+    for (const pop of this.numbers) pop.active = false
+    this.mesh.count = 0
+    this.flashEnd.fill(0)
+    this.flashSpan.fill(0)
   }
 
   private updateHitstop(dt: number): void {

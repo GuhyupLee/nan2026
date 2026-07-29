@@ -408,6 +408,7 @@ function frame(now: number): void {
         simInput.skillAim = skillPointerAim
       } else {
         simInput.skillAim = undefined
+        simInput.aimedSkillSlot = undefined
       }
       if (
         !controlHintMoved &&
@@ -561,6 +562,7 @@ function beginRun(
   outcomeOpen = false
   pauseOpen = false
   audio.reset()
+  renderer.resetTransientFx()
   audio.playGameMusic()
   void audio.unlock()
 
@@ -573,6 +575,8 @@ function beginRun(
   simInput.move.y = 0
   simInput.aim.x = 1
   simInput.aim.y = 0
+  simInput.skillAim = undefined
+  simInput.aimedSkillSlot = undefined
   simInput.skillsPressed = 0
 
   // 숨겨진 동안 새 월드 상태를 먼저 반영해 낡은 쿨다운·체력바가 비치지 않게 한다.

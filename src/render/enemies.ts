@@ -251,15 +251,6 @@ interface TypeBatch {
   baseColor: THREE.Color
 }
 
-/** 사망 팝 하나. */
-interface Pop {
-  x: number
-  y: number
-  type: number
-  /** 진행도 0..1 */
-  t: number
-}
-
 const POP_DURATION = 0.16
 const MAX_POPS = 64
 
@@ -273,7 +264,14 @@ const MAX_POPS = 64
 
 export class EnemyRenderer {
   private readonly batches: TypeBatch[] = []
-  private readonly pops: Pop[] = []
+  private readonly counts = new Uint16Array(ENEMY_TYPES.length)
+  /** 사망 팝은 군중전 핫패스라 객체/배열 변경 없이 고정 SoA 풀로 유지한다. */
+  private readonly popX = new Float64Array(MAX_POPS)
+  private readonly popY = new Float64Array(MAX_POPS)
+  private readonly popType = new Uint8Array(MAX_POPS)
+  /** 진행도 0..1. */
+  private readonly popProgress = new Float64Array(MAX_POPS)
+  private popCount = 0
   private readonly popMesh: THREE.InstancedMesh
   private readonly relicMesh: THREE.InstancedMesh
 
@@ -363,7 +361,8 @@ export class EnemyRenderer {
 
   private drawEnemies(world: World, alpha: number): void {
     const pool = world.enemies
-    const counts = new Array<number>(this.batches.length).fill(0)
+    const counts = this.counts
+    counts.fill(0)
 
     for (let i = 0; i < pool.count; i++) {
       const t = pool.type[i]!
@@ -471,33 +470,50 @@ export class EnemyRenderer {
   }
 
   private drawPops(world: World, dt: number): void {
-    // 새로 죽은 적을 받아 큐에 넣는다
+    // 새로 죽은 적을 빈 슬롯에 쓴다. 포화 시 나머지를 버리는 기존 상한을 유지한다.
     for (const d of world.deaths) {
-      if (this.pops.length >= MAX_POPS) break
-      this.pops.push({ x: d.x, y: d.y, type: d.type, t: 0 })
+      if (this.popCount >= MAX_POPS) break
+      const index = this.popCount++
+      this.popX[index] = d.x
+      this.popY[index] = d.y
+      this.popType[index] = d.type
+      this.popProgress[index] = 0
+    }
+
+    // 역순으로 갱신하면 swap-remove로 가져오는 마지막 슬롯은 이미 이번 dt를
+    // 적용한 상태다. 새 슬롯을 두 번 진행시키지 않으면서 객체 splice를 없앤다.
+    for (let i = this.popCount - 1; i >= 0; i--) {
+      const progress = this.popProgress[i]! + dt / POP_DURATION
+      if (progress >= 1) {
+        // 순서가 필요 없는 짧은 이펙트 풀이라 마지막 슬롯으로 덮는 swap-remove를 쓴다.
+        const last = --this.popCount
+        if (i !== last) {
+          this.popX[i] = this.popX[last]!
+          this.popY[i] = this.popY[last]!
+          this.popType[i] = this.popType[last]!
+          this.popProgress[i] = this.popProgress[last]!
+        }
+        continue
+      }
+      this.popProgress[i] = progress
     }
 
     let n = 0
-    for (let i = this.pops.length - 1; i >= 0; i--) {
-      const p = this.pops[i]!
-      p.t += dt / POP_DURATION
-      if (p.t >= 1) {
-        this.pops.splice(i, 1)
-        continue
-      }
-      if (n >= MAX_POPS) continue
-
-      const def = ENEMY_TYPES[p.type]!
+    // 기존 구현처럼 최신 팝부터 인스턴스에 써 투명 블렌딩 순서를 최대한 보존한다.
+    for (let i = this.popCount - 1; i >= 0; i--) {
+      const progress = this.popProgress[i]!
+      const type = this.popType[i]!
+      const def = ENEMY_TYPES[type]!
       // 1.0 → 1.5 로 부풀었다가 0으로 꺼진다. 이 팝 하나가 킬 손맛의 바닥을 깐다.
-      const grow = 1 + p.t * 0.5
-      const fade = 1 - p.t
+      const grow = 1 + progress * 0.5
+      const fade = 1 - progress
       const s = def.radius * grow * fade * 1.6
-      this.pos.set(p.x, def.radius, p.y)
+      this.pos.set(this.popX[i]!, def.radius, this.popY[i]!)
       this.q.identity()
       this.scl.set(s, s, s)
       this.m.compose(this.pos, this.q, this.scl)
       this.popMesh.setMatrixAt(n, this.m)
-      this.color.set(ENEMY_COLORS[p.type]!).lerp(this.white, 0.55)
+      this.color.set(ENEMY_COLORS[type]!).lerp(this.white, 0.55)
       this.popMesh.setColorAt(n, this.color)
       n++
     }
@@ -532,6 +548,13 @@ export class EnemyRenderer {
     mesh.geometry.dispose()
     const materials = Array.isArray(mesh.material) ? mesh.material : [mesh.material]
     for (const material of materials) material.dispose()
+  }
+
+  reset(): void {
+    this.popCount = 0
+    this.popMesh.count = 0
+    this.relicMesh.count = 0
+    for (const batch of this.batches) batch.mesh.count = 0
   }
 
   dispose(): void {

@@ -154,6 +154,21 @@ function pushRing(world: World, x: number, y: number, radius: number, kind: numb
 }
 
 /**
+ * 브라우저는 스킬바가 실제로 조준한 슬롯만 잠근다. aimedSkillSlot이 없는
+ * 헤드리스 입력은 기존 계약대로 단일 skillAim을 모든 동시 시전에 사용한다.
+ */
+function inputSkillAim(input: Input, slot: SkillId): Vec2 | undefined {
+  if (!input.skillAim) return undefined
+  if (
+    input.aimedSkillSlot !== undefined &&
+    input.aimedSkillSlot !== slot
+  ) {
+    return undefined
+  }
+  return input.skillAim
+}
+
+/**
  * 이번 틱에 눌린 스킬을 처리한다.
  * Q/W/E/R은 클래스별 킷이 붙으면 여기에 추가된다.
  */
@@ -161,14 +176,21 @@ export function stepAbilities(world: World, input: Input): void {
   const pressed = input.skillsPressed
 
   const buffered = takeBufferedPlayerSkill(world)
-  if (buffered === 'f') tryFlash(world)
-  else if (buffered === 'd') tryHeal(world)
-  else if (buffered) castSkill(world, buffered)
+  if (buffered?.slot === 'f') {
+    tryFlash(world, buffered.lockedAim ?? undefined)
+  } else if (buffered?.slot === 'd') {
+    tryHeal(world)
+  } else if (buffered) {
+    castSkill(world, buffered.slot, buffered.lockedAim ?? undefined)
+  }
   if (pressed === 0) return
 
   // 소환사 주문이 먼저다. 위기에서 점멸이 스킬 뒤로 밀리면 안 된다.
   if (pressed & SKILL_F) {
-    if (!tryFlash(world, input.skillAim)) bufferPlayerSkill(world, 'f')
+    const aim = inputSkillAim(input, 'f')
+    if (!tryFlash(world, aim)) {
+      bufferPlayerSkill(world, 'f', aim)
+    }
   }
   if (pressed & SKILL_D) {
     if (!tryHeal(world)) bufferPlayerSkill(world, 'd')
@@ -184,7 +206,7 @@ export function stepAbilities(world: World, input: Input): void {
     ) {
       continue
     }
-    castSkill(world, slot, input.skillAim)
+    castSkill(world, slot, inputSkillAim(input, slot))
     handled |= SKILL_BIT[slot]
   }
 
@@ -192,7 +214,7 @@ export function stepAbilities(world: World, input: Input): void {
   for (const slot of fallback) {
     const bit = SKILL_BIT[slot]
     if ((pressed & bit) !== 0 && (handled & bit) === 0) {
-      castSkill(world, slot, input.skillAim)
+      castSkill(world, slot, inputSkillAim(input, slot))
     }
   }
 }

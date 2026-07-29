@@ -50,6 +50,9 @@ const ARC_TINT: readonly [number, number, number][] = [
   [1.16, 0.84, 0.90],
   [1.28, 0.75, 0.79],
 ]
+const ARC_TINT_COLORS = ARC_TINT.map(
+  ([r, g, b]) => new THREE.Color(r, g, b),
+)
 
 /**
  * 지면 블렌드에 쓰는 세트 이름.
@@ -506,11 +509,11 @@ export class EnvMaterialFactory {
   applyArc(arc: Readonly<ArenaArc>): void {
     const tint = this.shared.arcTint.value
     tint
-      .setRGB(...ARC_TINT[0])
-      .lerp(new THREE.Color(...ARC_TINT[1]), arc.dusk)
-      .lerp(new THREE.Color(...ARC_TINT[2]), arc.eclipse)
-      .lerp(new THREE.Color(...ARC_TINT[3]), arc.boss)
-      .lerp(new THREE.Color(...ARC_TINT[4]), arc.phaseTwo)
+      .copy(ARC_TINT_COLORS[0]!)
+      .lerp(ARC_TINT_COLORS[1]!, arc.dusk)
+      .lerp(ARC_TINT_COLORS[2]!, arc.eclipse)
+      .lerp(ARC_TINT_COLORS[3]!, arc.boss)
+      .lerp(ARC_TINT_COLORS[4]!, arc.phaseTwo)
 
     // 비가 오는 게임이 아니므로 젖음은 상수에 가깝지만, 보스 단계에서
     // 살짝 올려 지면이 빛을 더 되비치게 한다. 화면이 붉어질 때 반사가

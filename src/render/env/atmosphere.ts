@@ -154,21 +154,43 @@ const MOTE_FRAGMENT = /* glsl */ `
 `
 
 /** 아크 단계별 안개 색. 하늘의 지평선 색과 어긋나면 안개만 떠 보인다. */
-const FOG_COLOR: readonly number[] = [0x2c3f5c, 0x2e3856, 0x392c50, 0x4b1f38, 0x571528]
+const FOG_COLOR = [0x2c3f5c, 0x2e3856, 0x392c50, 0x4b1f38, 0x571528] as const
 /** 부유 입자 색. 후반에는 재가 날리는 쪽으로 간다. */
-const MOTE_COLOR: readonly number[] = [0xbcd2f2, 0xb4c4ee, 0xc4aee2, 0xe89ab0, 0xf58a8a]
+const MOTE_COLOR = [0xbcd2f2, 0xb4c4ee, 0xc4aee2, 0xe89ab0, 0xf58a8a] as const
+
+type HexPalette5 = readonly [number, number, number, number, number]
+type ColorPalette5 = readonly [
+  THREE.Color,
+  THREE.Color,
+  THREE.Color,
+  THREE.Color,
+  THREE.Color,
+]
+
+function cachePalette(palette: HexPalette5): ColorPalette5 {
+  return [
+    new THREE.Color(palette[0]),
+    new THREE.Color(palette[1]),
+    new THREE.Color(palette[2]),
+    new THREE.Color(palette[3]),
+    new THREE.Color(palette[4]),
+  ]
+}
+
+const FOG_COLORS = cachePalette(FOG_COLOR)
+const MOTE_COLORS = cachePalette(MOTE_COLOR)
 
 function sampleArc(
   target: THREE.Color,
-  palette: readonly number[],
+  palette: ColorPalette5,
   arc: Readonly<ArenaArc>,
 ): void {
   target
-    .setHex(palette[0])
-    .lerp(new THREE.Color(palette[1]), arc.dusk)
-    .lerp(new THREE.Color(palette[2]), arc.eclipse)
-    .lerp(new THREE.Color(palette[3]), arc.boss)
-    .lerp(new THREE.Color(palette[4]), arc.phaseTwo)
+    .copy(palette[0])
+    .lerp(palette[1], arc.dusk)
+    .lerp(palette[2], arc.eclipse)
+    .lerp(palette[3], arc.boss)
+    .lerp(palette[4], arc.phaseTwo)
 }
 
 /**
@@ -342,8 +364,8 @@ export class Atmosphere {
     // 자체를 없애면 화면이 다시 평평해져 접근성 이득보다 손해가 크다.
     this.time += dt * (this.reducedMotion.matches ? 0.25 : 1)
 
-    sampleArc(this.fogColor, FOG_COLOR, arc)
-    sampleArc(this.moteColor, MOTE_COLOR, arc)
+    sampleArc(this.fogColor, FOG_COLORS, arc)
+    sampleArc(this.moteColor, MOTE_COLORS, arc)
 
     // 월식이 깊어질수록 안개가 올라온다. 보스 단계에서 가장 짙다.
     const density = 1 + arc.dusk * 0.25 + arc.eclipse * 0.4 + arc.boss * 0.55 + arc.phaseTwo * 0.3

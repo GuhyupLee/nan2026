@@ -25,6 +25,11 @@ export interface Input {
   aim: Vec2
   /** 스킬바 드래그가 이번 틱에 지정한 별도 조준점. 전장 이동·시선과 섞지 않는다. */
   skillAim?: Vec2
+  /**
+   * skillAim을 만든 스킬바 슬롯. 브라우저의 혼합 입력에서 이 슬롯만 잠근다.
+   * 생략한 헤드리스 입력은 기존처럼 이번 틱의 모든 시전에 skillAim을 적용한다.
+   */
+  aimedSkillSlot?: SkillId
   /** 이번 틱에 "새로" 눌린 스킬 비트마스크. 누르고 있는 상태가 아니라 엣지. */
   skillsPressed: number
   /** 실제 QWER 입력 순서. 없는 헤드리스 입력은 비트마스크의 고정 순서를 쓴다. */
@@ -100,6 +105,11 @@ export interface PendingPlayerAction {
   kind: PlayerActionKind
   /** 평타면 null, QWER면 해당 슬롯. */
   slot: SkillId | null
+  /**
+   * 스킬바 드래그처럼 별도 조준점을 명시한 시전인가.
+   * true면 선딜 중 전장 호버 조준으로 target/angle을 덮어쓰지 않는다.
+   */
+  aimLocked: boolean
   /** 판정 직전에 현재 조준점으로 갱신하는 시전 방향. 근접 W 경로만 시작 시 고정한다. */
   angle: number
   /** 판정 직전에 갱신하는 조준점. 근접 W 경로만 시작 시 고정한다. */
@@ -135,6 +145,11 @@ export interface BufferedSkillInput {
   slot: SkillId
   queuedAt: number
   expiresAt: number
+  /**
+   * 스킬바가 지정한 별도 조준점의 스냅샷.
+   * null인 키보드·호버 입력은 버퍼에서 나온 뒤에도 현재 전장 조준을 따른다.
+   */
+  lockedAim: Vec2 | null
 }
 
 export interface ActionStartEvent {

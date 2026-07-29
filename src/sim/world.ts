@@ -541,7 +541,10 @@ export function stepWorld(world: World, input: Input): void {
       p.hp = Math.max(1, world.stats.maxHp * 0.5)
       p.invulnUntil = world.time + 2
       incoming = 0
-      detonateBattlefieldBomb(world, BATTLEFIELD_BOMB_MAX_KILLS)
+      world.battlefieldPickups.bombKills += detonateBattlefieldBomb(
+        world,
+        BATTLEFIELD_BOMB_MAX_KILLS,
+      )
       if (world.rings.length < 32) {
         world.rings.push({ x: p.pos.x, y: p.pos.y, radius: 9, kind: 3 })
       }
@@ -618,7 +621,10 @@ function applyBattlefieldPickupEffects(world: World, collected: number): void {
 
   const bombCount = collectedBattlefieldPickupCount(collected, PICKUP_BOMB)
   if (bombCount > 0) {
-    detonateBattlefieldBomb(world, BATTLEFIELD_BOMB_MAX_KILLS * bombCount)
+    pickups.bombKills += detonateBattlefieldBomb(
+      world,
+      BATTLEFIELD_BOMB_MAX_KILLS * bombCount,
+    )
     pickups.bombActivations += bombCount
   }
 }
@@ -627,7 +633,7 @@ function applyBattlefieldPickupEffects(world: World, collected: number): void {
  * Clears ordinary enemies only. Elites and the boss stay on their authored
  * reward/victory paths, and bomb kills cannot recursively roll utility drops.
  */
-function detonateBattlefieldBomb(world: World, maxKills: number): void {
+function detonateBattlefieldBomb(world: World, maxKills: number): number {
   const pool = world.enemies
   let kills = 0
   for (let i = pool.count - 1; i >= 0 && kills < maxKills; i -= 1) {
@@ -636,6 +642,7 @@ function detonateBattlefieldBomb(world: World, maxKills: number): void {
     if (type === TYPE_BOSS || type === TYPE_ELITE) continue
     if (damageEnemy(world, i, pool.hp[i]!, false)) kills += 1
   }
+  return kills
 }
 
 /**
@@ -826,7 +833,9 @@ function stepPlayer(world: World, input: Input): void {
     ) {
       p.invulnUntil = Math.max(
         p.invulnUntil,
-        action.startedAt + skillDash.moveEnd,
+        skillDash.lockUntilActionEnd
+          ? action.endAt
+          : action.startedAt + skillDash.moveEnd,
       )
     }
   } else if (!dashControlsMovement) {

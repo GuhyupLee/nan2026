@@ -2,6 +2,7 @@ import * as THREE from 'three'
 
 import { playerActionDuration, playerActionTiming } from '../sim/action-timing.ts'
 import {
+  nonBombKillTotal,
   PICKUP_BOMB,
   PICKUP_HEAL,
   PICKUP_MAGNET,
@@ -35,6 +36,10 @@ import { MOON_DIRECTION, Sky } from './env/sky.ts'
 import { onGlowIntensityChange } from './glow-settings.ts'
 import { ImpactParticles } from './impact-particles.ts'
 import { ImpactFx } from './impact.ts'
+import {
+  KillCadenceTracker,
+  KillCrescendoFx,
+} from './kill-crescendo.ts'
 import { CLASS_COLORS, REWARD_COLORS } from './palette.ts'
 import { PostFx } from './post.ts'
 import { SkillFx } from './skillfx.ts'
@@ -194,6 +199,8 @@ export class Renderer {
   private readonly post: PostFx
   private readonly impact: ImpactFx
   private readonly impactParticles: ImpactParticles
+  private readonly killCadence = new KillCadenceTracker()
+  private readonly killCrescendo: KillCrescendoFx
   private readonly battlefieldPickupRenderer: BattlefieldPickupRenderer
   private readonly xpGemRenderer: XpGemRenderer
   private readonly skillFx: SkillFx
@@ -290,6 +297,10 @@ export class Renderer {
     this.combatReadability = new CombatReadabilityFx(this.scene)
     this.impact = new ImpactFx(this.scene)
     this.impactParticles = new ImpactParticles(this.scene)
+    this.killCrescendo = new KillCrescendoFx(
+      this.scene,
+      import.meta.env.BASE_URL,
+    )
     this.battlefieldPickupRenderer = new BattlefieldPickupRenderer(this.scene)
     this.xpGemRenderer = new XpGemRenderer(this.scene)
     // 스킬 이펙트가 타격 연출을 직접 만들지 않고 훅으로 위임한다.
@@ -599,6 +610,16 @@ export class Renderer {
       this.renderedWorld = world
       this.skillFx.reset()
       this.impactParticles.reset()
+      this.impact.reset()
+      this.enemyRenderer.reset()
+      this.killCadence.reset(
+        nonBombKillTotal(
+          world.kills,
+          world.battlefieldPickups.bombKills,
+        ),
+        world.time,
+      )
+      this.killCrescendo.reset()
       this.battlefieldPickupRenderer.reset()
       this.xpGemRenderer.reset()
       this.feedbackBloom = 1
@@ -628,6 +649,10 @@ export class Renderer {
       this.presentedOutcome = 'alive'
       this.outcomePresentationAt = now
     }
+
+    // 지난 프레임의 실제 경과만 먼저 소비한다. 아래에서 새 타격을 받은 뒤
+    // 다시 dt를 빼면 짧은 히트스톱이 다음 시뮬레이션 스텝 전에 사라진다.
+    this.impact.update(now, dt)
 
     // VRM 다운로드가 스킬 도중 끝나 절차 리그를 교체한 경우, 시작 이벤트는
     // 이미 지난 프레임에 비워졌을 수 있다. 시뮬이 보관한 현재 QWER을 원래
@@ -682,13 +707,14 @@ export class Renderer {
     )
     this.enemyRenderer.update(world, visualAlpha, dt)
     this.combatReadability.update(world, visualAlpha)
-    // 훅이 같은 프레임의 벽시계를 birth time으로 쓰도록 SkillFx보다 먼저 갱신한다.
+    // 파티클 풀의 프레임 예산을 먼저 연다. 그 다음 처치 피드백을 넣어
+    // 같은 지점의 일반 스킬 파편보다 lethal/연참 파편이 우선권을 갖게 한다.
     this.impactParticles.update(now)
-    this.skillFx.update(world, visualAlpha, now, dt)
-    // 히트스톱으로 스케일한 dt를 주면 안 된다 — 화면이 멈춘 동안 흔들림과
-    // 숫자까지 멈춰서 타격감이 아니라 프레임 드랍으로 읽힌다.
-    this.impact.update(now, dt)
     this.consumeFeedback(world, px, pz, now)
+    this.skillFx.update(world, visualAlpha, now, dt)
+    this.killCrescendo.update(px, pz, dt)
+    // 이번 프레임에 추가된 흔들림과 숫자는 시간 경과 없이 접촉 순간부터 보인다.
+    this.impact.refreshPresentation()
     this.feedbackBloom +=
       (1 - this.feedbackBloom) * (1 - Math.exp(-7.5 * dt))
     this.post.setBloomBoost(this.feedbackBloom)
@@ -846,6 +872,32 @@ export class Renderer {
 
     const bombPickupTriggered =
       this.consumeBattlefieldPickupFeedback(world, px, pz)
+    const cadenceBeat = this.killCadence.observe(
+      nonBombKillTotal(
+        world.kills,
+        world.battlefieldPickups.bombKills,
+      ),
+      world.time,
+    )
+    if (cadenceBeat) {
+      const color = CLASS_COLORS[world.playerClass]
+      this.killCrescendo.trigger(cadenceBeat.tier, color)
+
+      // 문구를 띄우지 않는다. 지면 초승 문양, 빛, 저주파 카메라 펀치가
+      // 한 덩어리로 티어 상승을 말한다. 최상위도 보스 연출보다 작게 제한한다.
+      const tier = cadenceBeat.tier
+      this.impact.shake(
+        0.18 + tier * 0.065,
+        0.24 + tier * 0.055,
+        11 - tier * 0.7,
+      )
+      this.post.flash(color, 0.07 + tier * 0.025, 0.18 + tier * 0.035)
+      this.pulseBloom(1.32 + tier * 0.17)
+    }
+    // 보스 처치의 순간 pulse는 남기되 결과 화면에서는 지속 오라만 감쇠한다.
+    this.killCrescendo.setFlow(
+      world.outcome === 'alive' ? this.killCadence.activeTier : -1,
+    )
     this.consumeDamageImpactFeedback(
       world,
       px,
@@ -1288,6 +1340,7 @@ export class Renderer {
     const nextShadowMapSize = nextConstrained ? 1024 : 2048
     this.impact.setShakeScale(nextConstrained ? 0.6 : 1)
     this.impactParticles.setQuality(nextConstrained ? 0.45 : 1)
+    this.killCrescendo.setQuality(nextConstrained ? 0.45 : 1)
     this.battlefieldPickupRenderer.setQuality(nextConstrained ? 0.45 : 1)
     this.xpGemRenderer.setQuality(nextConstrained ? 0.45 : 1)
     this.skillFx.setQuality(nextConstrained ? 0.45 : 1)
@@ -1545,6 +1598,7 @@ export class Renderer {
     this.skillFx.dispose()
     this.battlefieldPickupRenderer.dispose()
     this.xpGemRenderer.dispose()
+    this.killCrescendo.dispose()
     this.impactParticles.dispose()
     this.impact.dispose()
     this.post.dispose()
@@ -1591,5 +1645,14 @@ export class Renderer {
 
   get simTimeScale(): number {
     return this.impact.timeScale
+  }
+
+  /** 새 판의 첫 시뮬레이션 스텝 전에 직전 판의 순간 연출을 끊는다. */
+  resetTransientFx(): void {
+    this.impact.reset()
+    this.enemyRenderer.reset()
+    this.impactParticles.reset()
+    this.skillFx.reset()
+    this.killCrescendo.reset()
   }
 }

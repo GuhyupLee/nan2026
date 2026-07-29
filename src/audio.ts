@@ -13,12 +13,17 @@ import magicRiseUrl from './assets/audio/kenney/magic-rise.ogg?url'
 import uiBackUrl from './assets/audio/kenney/ui-back.ogg?url'
 import uiConfirmUrl from './assets/audio/kenney/ui-confirm.ogg?url'
 import uiSelectUrl from './assets/audio/kenney/ui-select.ogg?url'
+import { nonBombKillTotal } from './sim/battlefield-pickups.ts'
 import {
   TYPE_BOSS,
   TYPE_BRUTE,
   TYPE_ELITE,
 } from './sim/enemies.ts'
 import type { AttackEvent, CastEvent, PlayerClass, World } from './sim/types.ts'
+import {
+  KillCadenceTracker,
+  type KillCadenceTier,
+} from './render/kill-crescendo.ts'
 
 export interface AudioSettings {
   master: number
@@ -106,6 +111,7 @@ export class GameAudio {
   private readonly activeSources = new Set<AudioScheduledSourceNode>()
   private readonly sampleBuffers = new Map<SampleId, AudioBuffer>()
   private readonly sampleLoads = new Map<SampleId, Promise<AudioBuffer | null>>()
+  private generation = 0
   private music: HTMLAudioElement | null = null
   private musicMode: MusicMode = 'stopped'
   private musicSuspended = false
@@ -135,6 +141,7 @@ export class GameAudio {
   private lastSurgeWarningIndex = 0
   private lastSurgeBeatIndex = 0
   private lastOutcome: World['outcome'] = 'alive'
+  private readonly killCadence = new KillCadenceTracker()
 
   getSettings(): AudioSettings {
     return { ...this.settings }
@@ -285,6 +292,24 @@ export class GameAudio {
       !newWorld && world.surgeBeatIndex > this.lastSurgeBeatIndex
     const outcomeChanged =
       !newWorld && world.outcome !== this.lastOutcome && world.outcome !== 'alive'
+    let cadenceBeat: ReturnType<KillCadenceTracker['observe']> = null
+    if (newWorld) {
+      this.killCadence.reset(
+        nonBombKillTotal(
+          world.kills,
+          world.battlefieldPickups.bombKills,
+        ),
+        world.time,
+      )
+    } else if (newTick) {
+      cadenceBeat = this.killCadence.observe(
+        nonBombKillTotal(
+          world.kills,
+          world.battlefieldPickups.bombKills,
+        ),
+        world.time,
+      )
+    }
 
     this.lastSeed = world.seed
     this.lastTick = world.tick
@@ -315,6 +340,9 @@ export class GameAudio {
     }
     if (surgeWarned && this.allow('surge', 0.8)) this.surgeWarning()
     if (surgeStarted && this.allow('surge', 0.8)) this.surgeImpact()
+    if (cadenceBeat) {
+      this.killCrescendo(cadenceBeat.tier, world.playerClass)
+    }
     if (outcomeChanged && this.allow('outcome', 0.8)) this.outcome(world.outcome)
 
     // 동일한 시뮬레이션 틱을 여러 번 그려도 이벤트음을 중복 재생하지 않는다.
@@ -365,6 +393,7 @@ export class GameAudio {
   }
 
   reset(): void {
+    this.generation += 1
     for (const source of this.activeSources) {
       try {
         source.stop()
@@ -387,6 +416,7 @@ export class GameAudio {
     this.lastSurgeWarningIndex = 0
     this.lastSurgeBeatIndex = 0
     this.lastOutcome = 'alive'
+    this.killCadence.reset()
   }
 
   private ensureContext(): AudioContext | null {
@@ -547,8 +577,10 @@ export class GameAudio {
     const context = this.context
     const bus = this.sfxBus
     if (!this.isAudible() || !context || !bus || context.state !== 'running') return
+    const generation = this.generation
     const play = (buffer: AudioBuffer): void => {
       if (
+        generation !== this.generation ||
         !this.isAudible() ||
         context !== this.context ||
         context.state !== 'running' ||
@@ -921,6 +953,37 @@ export class GameAudio {
       'triangle',
       heavy ? 44 : 58,
     )
+  }
+
+  /**
+   * 연속 처치의 단계 상승을 짧은 상승 화음으로 들려준다.
+   * 처치음 자체보다 작게 두고, 단계가 오를수록 음역과 배음만 넓혀
+   * 반복 전투에서 소리가 뭉개지지 않게 한다.
+   */
+  private killCrescendo(
+    tier: KillCadenceTier,
+    playerClass: PlayerClass,
+  ): void {
+    const rangedRoots = [392, 466, 523, 659] as const
+    const meleeRoots = [196, 233, 262, 330] as const
+    const root =
+      playerClass === 'ranged' ? rangedRoots[tier] : meleeRoots[tier]
+    const lift = 1 + tier * 0.12
+
+    this.sample(
+      playerClass === 'ranged' ? 'magic-glass' : 'blade-impact',
+      0.045 + tier * 0.008,
+      playerClass === 'ranged' ? 1.04 + tier * 0.06 : 0.9 + tier * 0.05,
+    )
+    this.tone(root, 0.11 + tier * 0.012, 0.026 * lift, 'triangle', root * 1.25)
+    this.tone(root * 1.5, 0.14 + tier * 0.015, 0.022 * lift, 'sine', root * 2, 0.045)
+    if (tier >= 2) {
+      this.tone(root * 2, 0.18, 0.018 * lift, 'sine', root * 2.5, 0.095)
+    }
+    if (tier === 3) {
+      this.noise(0.08, 0.016, 1750, 0.025)
+      this.tone(root * 3, 0.23, 0.018, 'sine', root * 2, 0.14)
+    }
   }
 
   private levelUp(): void {

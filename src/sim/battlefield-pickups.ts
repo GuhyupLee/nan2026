@@ -46,6 +46,8 @@ export interface BattlefieldPickupPool {
   healActivations: number
   magnetActivations: number
   bombActivations: number
+  /** 픽업·부활 폭발로 실제 처치한 누적 수. world.kills의 부분집합이다. */
+  bombKills: number
 }
 
 export function createBattlefieldPickupPool(
@@ -63,6 +65,7 @@ export function createBattlefieldPickupPool(
     healActivations: 0,
     magnetActivations: 0,
     bombActivations: 0,
+    bombKills: 0,
   }
 }
 
@@ -77,6 +80,18 @@ export function resetBattlefieldPickupPool(pool: BattlefieldPickupPool): void {
   pool.healActivations = 0
   pool.magnetActivations = 0
   pool.bombActivations = 0
+  pool.bombKills = 0
+}
+
+/** 연속 처치처럼 직접 처치만 필요한 소비자가 공유하는 누적 기준값. */
+export function nonBombKillTotal(totalKills: number, bombKills: number): number {
+  const safeTotal = Number.isFinite(totalKills)
+    ? Math.max(0, Math.floor(totalKills))
+    : 0
+  const safeBombKills = Number.isFinite(bombKills)
+    ? Math.max(0, Math.floor(bombKills))
+    : 0
+  return Math.max(0, safeTotal - safeBombKills)
 }
 
 /**

@@ -1,10 +1,12 @@
 import { playerActionTiming } from './action-timing.ts'
 import type {
+  BufferedSkillInput,
   PendingPlayerAction,
   PlayerActionKind,
   PlayerActionSource,
   World,
 } from './types.ts'
+import type { Vec2 } from './vec.ts'
 import {
   resolveTargeting,
   type TargetingSolution,
@@ -47,6 +49,7 @@ export function beginPlayerAction(
   targetX: number,
   targetY: number,
   slot: PendingPlayerAction['slot'],
+  aimLocked = false,
 ): boolean {
   if (world.playerAction) return false
 
@@ -56,6 +59,7 @@ export function beginPlayerAction(
     source,
     kind,
     slot,
+    aimLocked,
     angle,
     targetX,
     targetY,
@@ -106,7 +110,7 @@ export function retargetPendingImpact(
   world: World,
   action: PendingPlayerAction,
 ): void {
-  if (action.skillDash) return
+  if (action.skillDash || action.aimLocked) return
 
   if (action.slot === null) return
   const target = resolveTargeting(world, action.slot, retargetedAim)
@@ -127,6 +131,7 @@ export function trackPlayerActionAim(world: World): void {
     action.source !== 'skill' ||
     action.resolved ||
     action.skillDash ||
+    action.aimLocked ||
     action.slot === null
   ) {
     return
@@ -141,6 +146,7 @@ export function trackPlayerActionAim(world: World): void {
 export function bufferPlayerSkill(
   world: World,
   slot: BufferedSkillSlot,
+  lockedAim?: Vec2,
 ): boolean {
   const action = world.playerAction
   const runtime = world.skills[slot]
@@ -173,12 +179,20 @@ export function bufferPlayerSkill(
       ? Math.max(action.endAt, world.time + cooldownLeft) +
         PLAYER_ACTION_BUFFER_WINDOW
       : world.time + PLAYER_COOLDOWN_BUFFER_WINDOW,
+    lockedAim:
+      lockedAim &&
+      Number.isFinite(lockedAim.x) &&
+      Number.isFinite(lockedAim.y)
+        ? { x: lockedAim.x, y: lockedAim.y }
+        : null,
   }
   return true
 }
 
 /** 잠금이 풀린 첫 틱에만 버퍼를 꺼내 연속 입력의 리듬을 보존한다. */
-export function takeBufferedPlayerSkill(world: World): BufferedSkillSlot | null {
+export function takeBufferedPlayerSkill(
+  world: World,
+): BufferedSkillInput | null {
   const buffered = world.bufferedSkill
   if (!buffered) return null
   if (buffered.expiresAt + TIME_EPSILON < world.time) {
@@ -198,9 +212,12 @@ export function takeBufferedPlayerSkill(world: World): BufferedSkillSlot | null 
     return null
   }
   if (runtime.cooldown > TIME_EPSILON) return null
+  // tickSkills의 부동소수점 잔여값을 준비 상태와 같은 틱으로 정규화한다.
+  // 여기서 버퍼를 비운 뒤 consumeCooldown이 0 초과로 거절하면 입력이 유실된다.
+  runtime.cooldown = 0
 
   world.bufferedSkill = null
-  return buffered.slot
+  return buffered
 }
 
 export function markPlayerActionResolved(

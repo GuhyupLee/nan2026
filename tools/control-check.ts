@@ -4,6 +4,8 @@ import {
   PLAYER_ACTION_BUFFER_WINDOW,
 } from '../src/sim/actions.ts'
 import {
+  MELEE_W_DASH_END,
+  MELEE_W_PREPARE_END,
   RANGED_W_DASH_END,
   RANGED_W_DASH_START,
 } from '../src/sim/action-timing.ts'
@@ -323,6 +325,9 @@ for (const mode of ['instant', 'release'] as const) {
   if (mode === 'release') {
     approx(input.sampledSkillPointerX, 120, 'release skillbar keeps cast-only x')
     approx(input.sampledSkillPointerY, 740, 'release skillbar keeps cast-only y')
+    assert.equal(castSample.aimedSkillSlot, 'w')
+  } else {
+    assert.equal(castSample.aimedSkillSlot, undefined)
   }
 
   surface.dispatch(
@@ -348,6 +353,26 @@ for (const mode of ['instant', 'release'] as const) {
   input.dispose()
 }
 
+// 실제 브라우저 이벤트 순서에서 스킬바 E의 드래그 조준과 같은 샘플에 들어온
+// 키보드 Q를 구분한다. 조준 없는 Q keyup이 E의 pending aim을 지우면 안 된다.
+{
+  const { input } = createInputHarness()
+  input.setCastMode('release')
+  input.startSkill('e')
+  input.setSkillPointerAim(180, 720)
+  input.releaseSkill('e')
+  inputWindow.dispatch('keydown', keyEvent('KeyQ'))
+  inputWindow.dispatch('keyup', keyEvent('KeyQ'))
+
+  const sampled = createInput()
+  input.sample(sampled)
+  assert.deepEqual(sampled.skillSequence, ['e', 'q'])
+  assert.equal(sampled.aimedSkillSlot, 'e')
+  approx(input.sampledSkillPointerX, 180, 'mixed input keeps skillbar E aim x')
+  approx(input.sampledSkillPointerY, 720, 'mixed input keeps skillbar E aim y')
+  input.dispose()
+}
+
 // The simulation receives the skillbar target separately: a skill can cast to
 // the drag coordinate while the same tick's held movement and persistent
 // battlefield aim continue toward the canvas coordinate.
@@ -368,6 +393,118 @@ for (const mode of ['instant', 'release'] as const) {
   approx(world.playerAction?.targetX ?? -1, 14, 'E uses skill-only target x')
   approx(world.playerAction?.targetY ?? -1, 0, 'E uses skill-only target y')
   assert.ok(world.player.pos.y > 0, 'same-tick held movement still uses canvas aim')
+}
+
+// 브라우저가 aimedSkillSlot을 제공하면 그 슬롯만 잠긴다. 같은 틱의 키보드
+// 스킬은 버퍼에 들어가도 lockedAim 없이 현재 전장 조준을 계속 따른다.
+{
+  const world = createWorld(9_015, 'ranged')
+  world.spawnEnabled = false
+  world.player.attackCooldown = Number.POSITIVE_INFINITY
+  unlockSkill(world.skills, 'e', 1)
+  unlockSkill(world.skills, 'q', 1)
+  const mixed = idleAt(0, 20)
+  mixed.skillAim = { x: 20, y: 0 }
+  mixed.aimedSkillSlot = 'e'
+  mixed.skillsPressed = SKILL_BIT.e | SKILL_BIT.q
+  mixed.skillSequence = ['e', 'q']
+
+  stepWorld(world, mixed)
+
+  assert.equal(world.playerAction?.slot, 'e')
+  assert.equal(world.playerAction?.aimLocked, true)
+  assert.equal(world.bufferedSkill?.slot, 'q')
+  assert.equal(
+    world.bufferedSkill?.lockedAim,
+    null,
+    'same-tick keyboard Q remains live-targeted',
+  )
+  stepUntil(
+    world,
+    () => world.playerAction?.slot === 'q',
+    idleAt(0, 20),
+  )
+  assert.equal(world.playerAction?.aimLocked, false)
+}
+
+// A skillbar drag is an explicit target commitment. It must survive both the
+// windup retarget pass and the final impact retarget pass, while ordinary
+// keyboard/hover casts keep following the live battlefield pointer.
+{
+  const locked = createWorld(9_010, 'ranged')
+  locked.spawnEnabled = false
+  locked.player.attackCooldown = Number.POSITIVE_INFINITY
+  unlockSkill(locked.skills, 'e', 1)
+  const dragCast = idleAt(0, 20)
+  dragCast.skillAim = { x: 20, y: 0 }
+  dragCast.skillsPressed = SKILL_BIT.e
+  dragCast.skillSequence = ['e']
+  stepWorld(locked, dragCast)
+  assert.equal(locked.playerAction?.aimLocked, true)
+  stepUntil(
+    locked,
+    () => locked.casts.some((event) => event.slot === 'e'),
+    idleAt(0, 20),
+  )
+  const lockedCast = locked.casts.find((event) => event.slot === 'e')!
+  approx(lockedCast.targetX, 14, 'drag-targeted E keeps locked impact x')
+  approx(lockedCast.targetY, 0, 'drag-targeted E keeps locked impact y')
+
+  const live = createWorld(9_011, 'ranged')
+  live.spawnEnabled = false
+  live.player.attackCooldown = Number.POSITIVE_INFINITY
+  unlockSkill(live.skills, 'e', 1)
+  live.lastAim.x = 20
+  live.lastAim.y = 0
+  assert.equal(castSkill(live, 'e'), true)
+  assert.equal(live.playerAction?.aimLocked, false)
+  stepUntil(
+    live,
+    () => live.casts.some((event) => event.slot === 'e'),
+    idleAt(0, 20),
+  )
+  const liveCast = live.casts.find((event) => event.slot === 'e')!
+  approx(liveCast.targetX, 0, 'keyboard E follows live impact x')
+  approx(liveCast.targetY, 14, 'keyboard E follows live impact y')
+}
+
+// A drag target queued during another action must be copied into the buffer.
+// The main loop reuses its skillAim object, so retaining only the reference or
+// only the slot would make the eventual cast follow the battlefield pointer.
+{
+  const world = createWorld(9_012, 'ranged')
+  world.spawnEnabled = false
+  world.player.attackCooldown = Number.POSITIVE_INFINITY
+  unlockSkill(world.skills, 'q', 1)
+  unlockSkill(world.skills, 'e', 1)
+  world.lastAim.x = 10
+  assert.equal(castSkill(world, 'q'), true)
+  stepUntil(
+    world,
+    () =>
+      world.playerAction !== null &&
+      world.playerAction.endAt - world.time <=
+        PLAYER_ACTION_BUFFER_WINDOW - DT,
+  )
+
+  const buffered = idleAt(0, 20)
+  buffered.skillAim = { x: 20, y: 0 }
+  buffered.skillsPressed = SKILL_BIT.e
+  buffered.skillSequence = ['e']
+  stepWorld(world, buffered)
+  approx(world.bufferedSkill?.lockedAim?.x ?? -1, 20, 'buffer copies drag x')
+  approx(world.bufferedSkill?.lockedAim?.y ?? -1, 0, 'buffer copies drag y')
+  buffered.skillAim.x = -20
+  buffered.skillAim.y = -20
+
+  stepUntil(
+    world,
+    () => world.casts.some((event) => event.slot === 'e'),
+    idleAt(0, 20),
+  )
+  const cast = world.casts.find((event) => event.slot === 'e')!
+  approx(cast.targetX, 14, 'buffered drag E keeps locked impact x')
+  approx(cast.targetY, 0, 'buffered drag E keeps locked impact y')
 }
 
 // Keyboard casting while a mouse move is already held must not drop movement
@@ -580,6 +717,72 @@ for (const mode of ['instant', 'release'] as const) {
   approx(Math.hypot(full.move.x, full.move.y), 1, 'far movement remains full speed')
 }
 
+// The floating touch stick is genuinely analog between its 8 px deadzone and
+// 32 px edge. Aim remains a unit direction so micro-movement does not shorten
+// the world-space skill/attack aim distance.
+{
+  const { input, surface } = createInputHarness()
+  surface.dispatch(
+    'pointerdown',
+    pointerEvent(surface, {
+      pointerId: 18,
+      pointerType: 'touch',
+      buttons: 1,
+      clientX: 100,
+      clientY: 100,
+    }),
+  )
+
+  const deadzone = idleAt()
+  inputWindow.dispatch(
+    'pointermove',
+    pointerEvent(surface, {
+      pointerId: 18,
+      pointerType: 'touch',
+      buttons: 1,
+      clientX: 108,
+      clientY: 100,
+    }),
+  )
+  assert.equal(input.applyTouchMove(deadzone, { x: 0, y: 0 }), true)
+  approx(Math.hypot(deadzone.move.x, deadzone.move.y), 0, 'touch deadzone stops')
+
+  const middle = idleAt()
+  inputWindow.dispatch(
+    'pointermove',
+    pointerEvent(surface, {
+      pointerId: 18,
+      pointerType: 'touch',
+      buttons: 1,
+      clientX: 116,
+      clientY: 100,
+    }),
+  )
+  input.applyTouchMove(middle, { x: 0, y: 0 })
+  approx(
+    Math.hypot(middle.move.x, middle.move.y),
+    7 / 27,
+    'touch midpoint uses smoothstep magnitude',
+  )
+  approx(middle.aim.x, 12, 'touch midpoint keeps full aim distance')
+  approx(middle.aim.y, 0, 'touch midpoint keeps aim direction')
+
+  const edge = idleAt()
+  inputWindow.dispatch(
+    'pointermove',
+    pointerEvent(surface, {
+      pointerId: 18,
+      pointerType: 'touch',
+      buttons: 1,
+      clientX: 140,
+      clientY: 100,
+    }),
+  )
+  input.applyTouchMove(edge, { x: 0, y: 0 })
+  approx(Math.hypot(edge.move.x, edge.move.y), 1, 'touch edge reaches full speed')
+  input.dispose()
+}
+
 // Simultaneous QWER input respects the recorded key order rather than the
 // fallback Q-W-E-R bit order.
 {
@@ -665,6 +868,26 @@ for (const mode of ['instant', 'release'] as const) {
   approx(world.skills.f.cooldown, 0, 'blocked flash preserves cooldown')
 }
 
+// F has a separate execution path from QWER. A near-ready buffered flash must
+// use the copied skillbar target rather than the live battlefield hover.
+{
+  const world = createWorld(9_014, 'ranged')
+  world.spawnEnabled = false
+  world.player.attackCooldown = Number.POSITIVE_INFINITY
+  world.skills.f.cooldown = 0.1
+  const flash = idleAt(20, 0)
+  flash.skillAim = { x: 0, y: 20 }
+  flash.skillsPressed = SKILL_BIT.f
+  flash.skillSequence = ['f']
+  stepWorld(world, flash)
+  approx(world.bufferedSkill?.lockedAim?.x ?? -1, 0, 'buffered F copies drag x')
+  approx(world.bufferedSkill?.lockedAim?.y ?? -1, 20, 'buffered F copies drag y')
+
+  stepUntil(world, () => world.player.pos.y > 0, idleAt(20, 0), 30)
+  approx(world.player.pos.x, 0, 'buffered F ignores later hover x')
+  approx(world.player.pos.y, 8, 'buffered F lands toward locked y')
+}
+
 // The melee ultimate owns movement while active, so F is rejected without
 // consuming its cooldown.
 {
@@ -735,6 +958,47 @@ for (const mode of ['instant', 'release'] as const) {
   assert.ok(
     world.player.rangedDashInvulnUntil > world.time,
     'ranged W guard outlasts movement for the residual HUD state',
+  )
+}
+
+// Melee W remains vulnerable during its authored preparation, then carries
+// invulnerability from the first movement sample through the locked recovery.
+// Ranged W keeps its separate residual-guard rule above.
+{
+  const world = createWorld(9_013, 'melee')
+  world.spawnEnabled = false
+  world.player.attackCooldown = Number.POSITIVE_INFINITY
+  unlockSkill(world.skills, 'w', 1)
+  world.lastAim.x = 20
+  world.lastAim.y = 0
+  assert.equal(castSkill(world, 'w'), true)
+
+  const action = world.playerAction!
+  stepWorld(world, idleAt(20, 0))
+  assert.ok(
+    world.time < action.startedAt + MELEE_W_PREPARE_END,
+    'melee W probe remains in prepare',
+  )
+  assert.ok(
+    world.player.invulnUntil < world.time,
+    'melee W prepare does not grant invulnerability early',
+  )
+
+  stepUntil(world, () => world.player.pos.x > 0, idleAt(20, 0))
+  approx(
+    world.player.invulnUntil,
+    action.endAt,
+    'melee W dash extends invulnerability through recovery',
+  )
+  stepUntil(
+    world,
+    () => world.time >= action.startedAt + MELEE_W_DASH_END + DT,
+    idleAt(20, 0),
+  )
+  assert.equal(world.playerAction, action, 'melee W recovery still owns the action')
+  assert.ok(
+    world.player.invulnUntil > world.time,
+    'melee W remains invulnerable after movement ends',
   )
 }
 
@@ -841,5 +1105,5 @@ for (const mode of ['instant', 'release'] as const) {
 }
 
 console.log(
-  'control-check: targeting, assist, arrival, FIFO, buffer, flash guards, ranged dash, W→F origin, Q volley, and deferred Q cooldown ok',
+  'control-check: targeting, locked aim, analog touch, FIFO, buffer, flash guards, dash immunity, W→F origin, Q volley, and deferred Q cooldown ok',
 )

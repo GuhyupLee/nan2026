@@ -74,7 +74,13 @@ export class InputState {
   private targetedSkill: SkillId | null = null
   private skillPointerAimActive = false
   private skillPointerAimPending = false
+  private skillPointerAimPendingSlot: SkillId | null = null
+  private skillPointerAimPendingX = 0
+  private skillPointerAimPendingY = 0
   private sampledSkillPointerAim = false
+  private sampledSkillPointerAimSlot: SkillId | null = null
+  private sampledSkillPointerClientX = 0
+  private sampledSkillPointerClientY = 0
   private skillPointerX = 0
   private skillPointerY = 0
   private readonly surface: HTMLElement
@@ -271,10 +277,21 @@ export class InputState {
       return
     }
 
-    this.touchDirectionX = rawX / length
-    this.touchDirectionY = rawY / length
-    this.touchAimX = this.touchDirectionX
-    this.touchAimY = this.touchDirectionY
+    const directionX = rawX / length
+    const directionY = rawY / length
+    const linearMagnitude = Math.min(
+      1,
+      (length - TOUCH_STICK_DEADZONE) /
+        (TOUCH_STICK_RADIUS - TOUCH_STICK_DEADZONE),
+    )
+    const magnitude =
+      linearMagnitude * linearMagnitude * (3 - 2 * linearMagnitude)
+    this.touchDirectionX = directionX * magnitude
+    this.touchDirectionY = directionY * magnitude
+    // 이동 크기만 아날로그로 만든다. 조준 거리는 줄이지 않아 작은 스틱
+    // 입력에서도 자동 공격과 스킬 방향이 충분히 먼 월드 지점을 가리킨다.
+    this.touchAimX = directionX
+    this.touchAimY = directionY
   }
 
   private readonly onContextMenu = (e: MouseEvent): void => {
@@ -361,7 +378,9 @@ export class InputState {
     this.targetedSkill = null
     this.skillPointerAimActive = false
     this.skillPointerAimPending = false
+    this.skillPointerAimPendingSlot = null
     this.sampledSkillPointerAim = false
+    this.sampledSkillPointerAimSlot = null
   }
 
   /** 화면 중앙을 클릭해 정지하면 이후 밀림이 자동 이동을 되살리지 않게 한다. */
@@ -384,7 +403,9 @@ export class InputState {
     this.targetedSkill = null
     this.skillPointerAimActive = false
     this.skillPointerAimPending = false
+    this.skillPointerAimPendingSlot = null
     this.sampledSkillPointerAim = false
+    this.sampledSkillPointerAimSlot = null
     this.castMode = mode
     try {
       localStorage.setItem(CAST_MODE_STORAGE_KEY, mode)
@@ -423,7 +444,12 @@ export class InputState {
   releaseSkill(id: SkillId): void {
     if (this.castMode !== 'release' || this.targetedSkill !== id) return
     this.targetedSkill = null
-    this.skillPointerAimPending = this.skillPointerAimActive
+    if (this.skillPointerAimActive) {
+      this.skillPointerAimPending = true
+      this.skillPointerAimPendingSlot = id
+      this.skillPointerAimPendingX = this.skillPointerX
+      this.skillPointerAimPendingY = this.skillPointerY
+    }
     this.skillPointerAimActive = false
     this.queueSkill(id)
     this.hasActed = true
@@ -449,11 +475,11 @@ export class InputState {
   }
 
   get sampledSkillPointerX(): number {
-    return this.skillPointerX
+    return this.sampledSkillPointerClientX
   }
 
   get sampledSkillPointerY(): number {
-    return this.skillPointerY
+    return this.sampledSkillPointerClientY
   }
 
   /** 기존 호출부를 위한 시전 모드 비의존 즉시 큐잉 메서드. */
@@ -485,7 +511,20 @@ export class InputState {
     out.aimAssist = this.aimAssist
     this.sampledSkillPointerAim =
       this.skillPointerAimActive || this.skillPointerAimPending
+    this.sampledSkillPointerAimSlot = this.skillPointerAimPending
+      ? this.skillPointerAimPendingSlot
+      : this.skillPointerAimActive
+        ? this.targetedSkill
+        : null
+    this.sampledSkillPointerClientX = this.skillPointerAimPending
+      ? this.skillPointerAimPendingX
+      : this.skillPointerX
+    this.sampledSkillPointerClientY = this.skillPointerAimPending
+      ? this.skillPointerAimPendingY
+      : this.skillPointerY
+    out.aimedSkillSlot = this.sampledSkillPointerAimSlot ?? undefined
     this.skillPointerAimPending = false
+    this.skillPointerAimPendingSlot = null
     this.pendingSkills = 0
     this.pendingSkillOrder.length = 0
 
