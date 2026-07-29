@@ -1,5 +1,5 @@
 import assert from 'node:assert/strict'
-import { applyPointerMove, type InputState } from '../src/input.ts'
+import { InputState, applyPointerMove } from '../src/input.ts'
 import {
   PLAYER_ACTION_BUFFER_WINDOW,
 } from '../src/sim/actions.ts'
@@ -27,6 +27,168 @@ import {
 import { createWorld, stepWorld } from '../src/sim/world.ts'
 
 const EPSILON = 1e-6
+
+type StubListener = (event: Record<string, unknown>) => void
+
+class StubEventTarget {
+  private readonly listeners = new Map<string, StubListener[]>()
+
+  addEventListener(type: string, listener: StubListener): void {
+    const listeners = this.listeners.get(type) ?? []
+    listeners.push(listener)
+    this.listeners.set(type, listeners)
+  }
+
+  removeEventListener(type: string, listener: StubListener): void {
+    const listeners = this.listeners.get(type)
+    if (!listeners) return
+    const index = listeners.indexOf(listener)
+    if (index >= 0) listeners.splice(index, 1)
+  }
+
+  dispatch(type: string, event: Record<string, unknown>): void {
+    event.type ??= type
+    for (const listener of [...(this.listeners.get(type) ?? [])]) listener(event)
+  }
+}
+
+class StubNode extends StubEventTarget {
+  readonly children: StubNode[] = []
+
+  appendChild(child: StubNode): StubNode {
+    this.children.push(child)
+    return child
+  }
+
+  contains(target: StubNode): boolean {
+    return target === this || this.children.some((child) => child.contains(target))
+  }
+}
+
+class StubElement extends StubNode {
+  className = ''
+  isContentEditable = false
+  readonly dataset: Record<string, string> = {}
+  readonly style = {
+    touchAction: '',
+    left: '',
+    top: '',
+    setProperty: (_name: string, _value: string): void => {},
+  }
+  private readonly capturedPointers = new Set<number>()
+
+  constructor(readonly tagName = 'DIV') {
+    super()
+  }
+
+  setAttribute(_name: string, _value: string): void {}
+
+  getBoundingClientRect(): DOMRect {
+    return {
+      left: 0,
+      top: 0,
+      right: 1_000,
+      bottom: 800,
+      width: 1_000,
+      height: 800,
+      x: 0,
+      y: 0,
+      toJSON: () => ({}),
+    }
+  }
+
+  setPointerCapture(pointerId: number): void {
+    this.capturedPointers.add(pointerId)
+  }
+
+  hasPointerCapture(pointerId: number): boolean {
+    return this.capturedPointers.has(pointerId)
+  }
+
+  releasePointerCapture(pointerId: number): void {
+    this.capturedPointers.delete(pointerId)
+  }
+
+  remove(): void {}
+}
+
+const inputWindow = new StubEventTarget()
+const storedInputSettings = new Map<string, string>()
+Object.assign(globalThis, {
+  Node: StubNode,
+  HTMLElement: StubElement,
+  document: {
+    createElement: (tagName: string) => new StubElement(tagName.toUpperCase()),
+  },
+  localStorage: {
+    getItem: (key: string) => storedInputSettings.get(key) ?? null,
+    setItem: (key: string, value: string) => storedInputSettings.set(key, value),
+  },
+  window: inputWindow,
+})
+
+function pointerEvent(
+  target: StubNode,
+  overrides: Partial<{
+    pointerId: number
+    pointerType: string
+    button: number
+    buttons: number
+    clientX: number
+    clientY: number
+  }> = {},
+): Record<string, unknown> {
+  return {
+    target,
+    pointerId: 1,
+    pointerType: 'mouse',
+    button: 0,
+    buttons: 0,
+    clientX: 0,
+    clientY: 0,
+    preventDefault: () => {},
+    stopImmediatePropagation: () => {},
+    ...overrides,
+  }
+}
+
+function keyEvent(
+  code: string,
+  overrides: Partial<{
+    repeat: boolean
+    defaultPrevented: boolean
+    ctrlKey: boolean
+    metaKey: boolean
+    altKey: boolean
+  }> = {},
+): Record<string, unknown> {
+  return {
+    code,
+    target: null,
+    repeat: false,
+    defaultPrevented: false,
+    ctrlKey: false,
+    metaKey: false,
+    altKey: false,
+    preventDefault: () => {},
+    stopImmediatePropagation: () => {},
+    ...overrides,
+  }
+}
+
+function createInputHarness(): {
+  input: InputState
+  surface: StubElement
+  hud: StubElement
+} {
+  const surface = new StubElement()
+  const hud = new StubElement()
+  return {
+    input: new InputState(surface as unknown as HTMLElement),
+    surface,
+    hud,
+  }
+}
 
 function approx(actual: number, expected: number, message: string): void {
   assert.ok(
@@ -86,6 +248,187 @@ function stepUntil(
     stepWorld(world, input)
   }
   assert.ok(predicate(), `condition was not met within ${maxTicks} ticks`)
+}
+
+// InputState is DOM-backed, so these checks use only the event surface methods
+// it actually touches. They reproduce the main loop's sample -> screenToGround
+// -> applyPointerMove order with screen coordinates standing in for ground
+// coordinates.
+for (const mode of ['instant', 'release'] as const) {
+  for (const [code, slot] of [
+    ['KeyQ', 'q'],
+    ['KeyW', 'w'],
+    ['KeyE', 'e'],
+    ['KeyR', 'r'],
+  ] as const) {
+    const { input, surface } = createInputHarness()
+    input.setCastMode(mode)
+    inputWindow.dispatch(
+      'pointermove',
+      pointerEvent(surface, { clientX: 640, clientY: 260 }),
+    )
+
+    inputWindow.dispatch('keydown', keyEvent(code))
+    inputWindow.dispatch('keyup', keyEvent(code))
+    surface.dispatch(
+      'pointerdown',
+      pointerEvent(surface, {
+        pointerId: 11,
+        buttons: 1,
+        clientX: 780,
+        clientY: 220,
+      }),
+    )
+
+    const sampled = createInput()
+    input.sample(sampled)
+    assert.equal(
+      sampled.skillsPressed,
+      SKILL_BIT[slot],
+      `${mode} keyboard ${slot.toUpperCase()} remains queued`,
+    )
+    approx(input.pointerX, 780, `${mode} keyboard ${slot.toUpperCase()} click x`)
+    approx(input.pointerY, 220, `${mode} keyboard ${slot.toUpperCase()} click y`)
+    assert.equal(input.pointerHeld, true)
+    input.dispose()
+  }
+}
+
+// SkillBar calls these handlers in pointerdown -> pointermove -> pointerup
+// order. Its HUD coordinate may aim the skill, but it must never replace the
+// last battlefield pointer used by the next ordinary movement/aim tick.
+for (const mode of ['instant', 'release'] as const) {
+  const { input, surface } = createInputHarness()
+  input.setCastMode(mode)
+  inputWindow.dispatch(
+    'pointermove',
+    pointerEvent(surface, { clientX: 660, clientY: 240 }),
+  )
+
+  input.startSkill('w')
+  input.setSkillPointerAim(120, 740)
+  input.releaseSkill('w')
+
+  approx(input.pointerX, 660, `${mode} skillbar cast preserves battlefield x`)
+  approx(input.pointerY, 240, `${mode} skillbar cast preserves battlefield y`)
+
+  const castSample = createInput()
+  input.sample(castSample)
+  assert.equal(castSample.skillsPressed, SKILL_BIT.w)
+  assert.equal(
+    input.hasSkillPointerAim,
+    mode === 'release',
+    `${mode} skillbar cast exposes only a release-drag skill aim`,
+  )
+  if (mode === 'release') {
+    approx(input.sampledSkillPointerX, 120, 'release skillbar keeps cast-only x')
+    approx(input.sampledSkillPointerY, 740, 'release skillbar keeps cast-only y')
+  }
+
+  surface.dispatch(
+    'pointerdown',
+    pointerEvent(surface, {
+      pointerId: 12,
+      buttons: 1,
+      clientX: 820,
+      clientY: 200,
+    }),
+  )
+  approx(input.pointerX, 820, `${mode} post-skill canvas click x`)
+  approx(input.pointerY, 200, `${mode} post-skill canvas click y`)
+  assert.equal(input.pointerHeld, true)
+  const postCastSample = createInput()
+  input.sample(postCastSample)
+  assert.equal(
+    input.hasSkillPointerAim,
+    false,
+    `${mode} skillbar aim expires after the cast sample`,
+  )
+  assert.equal(postCastSample.skillsPressed, 0)
+  input.dispose()
+}
+
+// The simulation receives the skillbar target separately: a skill can cast to
+// the drag coordinate while the same tick's held movement and persistent
+// battlefield aim continue toward the canvas coordinate.
+{
+  const world = createWorld(9_000, 'ranged')
+  world.spawnEnabled = false
+  world.player.attackCooldown = Number.POSITIVE_INFINITY
+  unlockSkill(world.skills, 'e', 1)
+  const splitAim = idleAt(0, 20)
+  splitAim.skillAim = { x: 20, y: 0 }
+  splitAim.move.y = 1
+  splitAim.skillsPressed = SKILL_BIT.e
+  splitAim.skillSequence = ['e']
+  stepWorld(world, splitAim)
+
+  approx(world.lastAim.x, 0, 'skill-only aim does not replace battlefield x')
+  approx(world.lastAim.y, 20, 'skill-only aim does not replace battlefield y')
+  approx(world.playerAction?.targetX ?? -1, 14, 'E uses skill-only target x')
+  approx(world.playerAction?.targetY ?? -1, 0, 'E uses skill-only target y')
+  assert.ok(world.player.pos.y > 0, 'same-tick held movement still uses canvas aim')
+}
+
+// Keyboard casting while a mouse move is already held must not drop movement
+// ownership in either casting mode.
+for (const mode of ['instant', 'release'] as const) {
+  const { input, surface } = createInputHarness()
+  input.setCastMode(mode)
+  surface.dispatch(
+    'pointerdown',
+    pointerEvent(surface, {
+      pointerId: 13,
+      buttons: 1,
+      clientX: 760,
+      clientY: 300,
+    }),
+  )
+  inputWindow.dispatch('keydown', keyEvent('KeyE'))
+  inputWindow.dispatch('keyup', keyEvent('KeyE'))
+
+  const sampled = createInput()
+  input.sample(sampled)
+  sampled.aim.x = input.pointerX
+  sampled.aim.y = input.pointerY
+  applyPointerMove(input, sampled, { x: 0, y: 0 })
+  assert.equal(sampled.skillsPressed, SKILL_BIT.e)
+  assert.ok(
+    Math.hypot(sampled.move.x, sampled.move.y) > 0,
+    `${mode} held mouse keeps moving through a skill cast`,
+  )
+  input.dispose()
+}
+
+// HUD hover remains isolated from battlefield aim, and a drag that starts on
+// HUD never acquires movement merely by crossing the game surface.
+{
+  const { input, surface, hud } = createInputHarness()
+  inputWindow.dispatch(
+    'pointermove',
+    pointerEvent(surface, { clientX: 620, clientY: 280 }),
+  )
+  inputWindow.dispatch(
+    'pointermove',
+    pointerEvent(hud, { clientX: 100, clientY: 760 }),
+  )
+  approx(input.pointerX, 620, 'HUD hover preserves battlefield pointer x')
+  approx(input.pointerY, 280, 'HUD hover preserves battlefield pointer y')
+
+  inputWindow.dispatch(
+    'pointermove',
+    pointerEvent(surface, {
+      pointerId: 14,
+      buttons: 1,
+      clientX: 500,
+      clientY: 400,
+    }),
+  )
+  assert.equal(input.pointerHeld, false, 'HUD drag never owns movement')
+  const dragSample = idleAt(500, 400)
+  applyPointerMove(input, dragSample, { x: 0, y: 0 })
+  approx(Math.hypot(dragSample.move.x, dragSample.move.y), 0, 'HUD drag cannot move')
+  input.dispose()
 }
 
 // Targeting contracts: ranged Q is self-cast, while ranged W travels toward

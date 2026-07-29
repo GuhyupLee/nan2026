@@ -18,7 +18,11 @@ export const BOSS_PHASE_TWO_KNOCKBACK_IMPULSE = 32
 /** 2페이즈 압박 펄스마다 현재 위치와 예측 위치에 놓는 2원 장판. */
 export const BOSS_PHASE_ZONE_RADIUS = 3.5
 export const BOSS_PHASE_ZONE_WARNING_DURATION = 1.1
-export const BOSS_PHASE_ZONE_DAMAGE = 24
+// 24에서 올렸다. 초반 XP를 웨이브 리듬에 맞춰 재조정하면서 첫 강화가
+// 빨라졌고, 그 복리로 원거리 보스 승률이 19/24까지 되돌아갔다(상한 18).
+// 성장 계약은 이제 맞으므로 그쪽을 다시 건드리지 않고, 원거리가 카이팅으로
+// 남기던 여유(최저 체력 58%)를 장판 쪽에서 거둬들인다.
+export const BOSS_PHASE_ZONE_DAMAGE = 29
 export const BOSS_PHASE_ZONE_PREDICTION_SECONDS = 0.65
 /** 돌진 사이에도 공간을 계속 바꾸는 2페이즈 장판 주기. */
 export const BOSS_PHASE_ZONE_INTERVAL = 2.2

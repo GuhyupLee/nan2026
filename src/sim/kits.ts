@@ -29,6 +29,7 @@ import {
   type TargetingSolution,
 } from './targeting.ts'
 import type { PendingPlayerAction, World } from './types.ts'
+import type { Vec2 } from './vec.ts'
 import { pushBlast, pushZone } from './zones.ts'
 
 /**
@@ -731,7 +732,7 @@ const MELEE: Record<string, SkillFn> = {
  * QWER 하나를 시전한다.
  * @returns 실제로 나갔으면 true
  */
-export function castSkill(world: World, slot: SkillId): boolean {
+export function castSkill(world: World, slot: SkillId, aim?: Vec2): boolean {
   // 궁극기가 도는 중에는 다른 스킬을 받지 않는다 — 무적으로 사라진 상태다.
   if (world.ult.active) return false
   if (slot === 'd' || slot === 'f') return false
@@ -747,7 +748,13 @@ export function castSkill(world: World, slot: SkillId): boolean {
     return false
   }
   const p = world.player
-  const target = resolveTargeting(world, slot, castTarget)
+  const target = resolveTargeting(
+    world,
+    slot,
+    castTarget,
+    aim?.x,
+    aim?.y,
+  )
   const angle = target.angle
 
   const accepted = beginPlayerAction(

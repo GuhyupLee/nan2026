@@ -63,6 +63,10 @@ export class InputState {
   private aimAssist = readAimAssist()
   private targetedSkill: SkillId | null = null
   private skillPointerAimActive = false
+  private skillPointerAimPending = false
+  private sampledSkillPointerAim = false
+  private skillPointerX = 0
+  private skillPointerY = 0
   private readonly surface: HTMLElement
   private readonly previousTouchAction: string
 
@@ -326,6 +330,8 @@ export class InputState {
     this.touchStick.style.setProperty('--stick-y', '0px')
     this.targetedSkill = null
     this.skillPointerAimActive = false
+    this.skillPointerAimPending = false
+    this.sampledSkillPointerAim = false
   }
 
   get targetingSkill(): SkillId | null {
@@ -340,6 +346,8 @@ export class InputState {
     if (mode === this.castMode) return
     this.targetedSkill = null
     this.skillPointerAimActive = false
+    this.skillPointerAimPending = false
+    this.sampledSkillPointerAim = false
     this.castMode = mode
     try {
       localStorage.setItem(CAST_MODE_STORAGE_KEY, mode)
@@ -378,6 +386,7 @@ export class InputState {
   releaseSkill(id: SkillId): void {
     if (this.castMode !== 'release' || this.targetedSkill !== id) return
     this.targetedSkill = null
+    this.skillPointerAimPending = this.skillPointerAimActive
     this.skillPointerAimActive = false
     this.queueSkill(id)
     this.hasActed = true
@@ -393,9 +402,21 @@ export class InputState {
 
   setSkillPointerAim(clientX: number, clientY: number): void {
     if (this.targetedSkill === null) return
-    this.pointerX = clientX
-    this.pointerY = clientY
+    this.skillPointerX = clientX
+    this.skillPointerY = clientY
     this.skillPointerAimActive = true
+  }
+
+  get hasSkillPointerAim(): boolean {
+    return this.sampledSkillPointerAim
+  }
+
+  get sampledSkillPointerX(): number {
+    return this.skillPointerX
+  }
+
+  get sampledSkillPointerY(): number {
+    return this.skillPointerY
   }
 
   /** 기존 호출부를 위한 시전 모드 비의존 즉시 큐잉 메서드. */
@@ -425,6 +446,9 @@ export class InputState {
     sequence.length = 0
     sequence.push(...this.pendingSkillOrder)
     out.aimAssist = this.aimAssist
+    this.sampledSkillPointerAim =
+      this.skillPointerAimActive || this.skillPointerAimPending
+    this.skillPointerAimPending = false
     this.pendingSkills = 0
     this.pendingSkillOrder.length = 0
 
@@ -440,12 +464,10 @@ export class InputState {
     out.move.x = this.touchDirectionX
     out.move.y = this.touchDirectionY
 
-    // 데드존에서 멈춘 동안에도 마지막 유효 방향을 유지한다. 그렇지 않으면
-    // 두 번째 손가락으로 스킬을 누르는 순간 조준이 조이스틱 원점으로 튄다.
-    if (!this.skillPointerAimActive) {
-      out.aim.x = player.x + this.touchAimX * TOUCH_AIM_DISTANCE
-      out.aim.y = player.y + this.touchAimY * TOUCH_AIM_DISTANCE
-    }
+    // 데드존에서 멈춘 동안에도 마지막 유효 방향을 유지한다. 스킬바 드래그의
+    // 별도 조준점은 Input.skillAim으로 전달되므로 전장 조준을 덮지 않는다.
+    out.aim.x = player.x + this.touchAimX * TOUCH_AIM_DISTANCE
+    out.aim.y = player.y + this.touchAimY * TOUCH_AIM_DISTANCE
 
     return true
   }

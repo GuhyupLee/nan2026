@@ -347,31 +347,96 @@ const SPAWN_CURVE: ReadonlyArray<readonly [number, number]> = [
   [300, 95], // 5:00  보스전 내내 측면 압박은 유지한다
 ]
 
-/** 한 파동은 10.5초간 밀려오고 19.5초간 수확 시간을 남긴다. */
+/** 한 파동은 12초간 밀려오고 18초간 수확 시간을 남긴다. */
 export const WAVE_PERIOD = 30
-export const WAVE_INCOMING_FRACTION = 0.35
+/**
+ * 파동 주기 중 밀려오는 구간의 비율.
+ *
+ * 0.35에서는 램프가 평균 공급을 지나치게 줄여 만렙 도달과 QWER 우위가
+ * 함께 깨졌고, 0.42에서는 성장이 너무 빨랐다. 0.40은 두 값 사이에서
+ * 파고의 공급량을 보존하면서 수확 구간을 18초 남긴다.
+ *
+ * 정점(1.7)이나 소강(0.5) 값을 건드리는 대신 **정점을 유지하는 시간**을
+ * 조절해 평균을 맞춘다. 파고의 세기와 소강의 한산함은 그대로 두고 총량만
+ * 맞추는 방식이라, 플레이어가 느끼는 리듬은 바뀌지 않는다.
+ */
+export const WAVE_INCOMING_FRACTION = 0.4
 export const WAVE_PEAK_MULTIPLIER = 1.7
 export const WAVE_LULL_MULTIPLIER = 0.5
 /**
  * 소강에 신규 스폰을 멈춘 만큼 한 파동의 수확 가치가 줄지 않게 보정한다.
  * 각본 서지는 자체 XP 배율을 쓰므로 이 값과 중첩되지 않는다.
  */
-export const WAVE_XP_SCALE = 2
+export const WAVE_XP_SCALE = 1.8
 /**
- * 런 시작은 소강, 3:20은 파고, 3:30 보스 등장은 다시 소강이 되게 맞춘다.
- * 월드 시각 이외의 상태나 난수를 읽지 않는 결정적 위상이다.
+ * 런 시작은 소강, 3:20은 파고 **정점**, 3:30 보스 등장은 다시 소강이 되게 맞춘다.
+ *
+ * 포락선이 계단이었을 때는 파고의 시작만 맞추면 됐지만, 램프를 넣으면서
+ * 정점 도달이 4.2초 뒤로 밀렸다. 기준 밀도 곡선이 최대(135)가 되는 3:20에
+ * 포락선 정점도 겹쳐야 그 순간이 런에서 가장 압박이 센 지점이 된다.
+ *
+ * `(200 + 14.2) mod 30 = 4.2 = WAVE_PERIOD × WAVE_RAMP_FRACTION`이라
+ * 3:20의 위상은 정확히 램프 끝의 정점에 놓인다. 월드 시각 이외의 상태나 난수를
+ * 읽지 않는 결정적 값이다.
  */
-const WAVE_PHASE_OFFSET = WAVE_PERIOD * WAVE_INCOMING_FRACTION
+const WAVE_PHASE_OFFSET = 14.2
 /** 편대·보스가 들어갈 슬롯을 항상 남긴다. */
 const MAX_WAVE_TARGET = MAX_ENEMIES - 24
 /** 소강에도 완전히 빈 화면으로 고정되지 않게 두는 최소 보충 간격. */
 const WAVE_LULL_SPAWN_INTERVAL = 0.75
 
+/**
+ * 파고가 최대 밀도에 도달하기까지의 비율(파동 주기 대비).
+ *
+ * 처음에는 포락선이 계단이었다 — 0.5배에서 1.7배로 한 틱에 뛰었고, 스포너가
+ * 틱당 6마리를 뿌려 3:20의 부족분 162마리를 **0.45초** 만에 채웠다. 화면에는
+ * 사방에서 벽이 한꺼번에 솟는 것으로 보였다. 세기가 아니라 **반응할 시간이
+ * 없다**는 문제였다.
+ *
+ * 다음 시도는 스폰 **속도**를 초당 30~40마리로 제한하는 것이었는데, 그게 더
+ * 나빴다. 처치 속도보다 스폰 속도가 먼저 병목이 되면서 강한 빌드가 약한
+ * 빌드보다 더 죽일 수 없게 됐다 — QWER 우위가 2.00배에서 1.51배로 무너졌다.
+ * 스폰을 막으면 플레이어의 화력이 무의미해진다.
+ *
+ * 그래서 속도가 아니라 **목표치**를 재운다. 부족분이 서서히 커지므로 스포너는
+ * 전속력으로 채워도 도착이 4.2초에 걸쳐 나뉘고, 일단 최대 밀도에 도달한 뒤에는
+ * 죽인 만큼 즉시 보충되어 화력이 그대로 처치 수로 이어진다.
+ */
+const WAVE_RAMP_FRACTION = 0.14
+
+/**
+ * 파고마다 비워 두는 탈출 회랑의 반각(라디안).
+ *
+ * 스폰 각도가 완전 균등이면 증원이 플레이어를 **완전히 둘러싼다.** 속도를
+ * 늦춰 시간을 벌어 줘도 나갈 문이 없으면 소용이 없다. 40°(전체 80°)를
+ * 비우면 스폰 링 거리에서 20m 폭의 통로가 되어, 보고 달리면 확실히 빠져나간다.
+ *
+ * 이 회랑은 **파동마다 다른 방향**이다. 고정이면 플레이어가 그 방향에
+ * 미리 서 있는 게 최적해가 되어 판단이 사라진다.
+ */
+const WAVE_ESCAPE_HALF_ANGLE = Math.PI * (40 / 180)
+
+/** 현재 파동의 순번. 시각에서만 파생하는 결정적 값이다. */
+export function waveIndexAt(time: number): number {
+  if (!Number.isFinite(time)) return 0
+  return Math.floor((Math.max(0, time) + WAVE_PHASE_OFFSET) / WAVE_PERIOD)
+}
+
+/**
+ * 이번 파동에서 비워 둘 방향.
+ *
+ * 황금각으로 돌린다 — 연속한 파동의 회랑이 최대한 멀리 떨어져서, 두 파동을
+ * 연달아 같은 쪽으로 빠져나가는 일이 생기지 않는다.
+ */
+export function waveEscapeBearing(time: number): number {
+  return positiveModulo(waveIndexAt(time) * GOLDEN_ANGLE, Math.PI * 2)
+}
+
 function positiveModulo(value: number, divisor: number): number {
   return ((value % divisor) + divisor) % divisor
 }
 
-/** 현재 파동의 0..1 위상. 0..0.35가 밀려오는 구간이다. */
+/** 현재 파동의 0..1 위상. 0..WAVE_INCOMING_FRACTION이 밀려오는 구간이다. */
 export function wavePhaseAt(time: number): number {
   if (!Number.isFinite(time)) return WAVE_INCOMING_FRACTION
   return (
@@ -391,9 +456,16 @@ export function waveEnvelopeMultiplier(
   surgeSuppressed = false,
 ): number {
   if (surgeSuppressed) return WAVE_LULL_MULTIPLIER
-  return wavePhaseAt(time) < WAVE_INCOMING_FRACTION
-    ? WAVE_PEAK_MULTIPLIER
-    : WAVE_LULL_MULTIPLIER
+  const phase = wavePhaseAt(time)
+  if (phase >= WAVE_INCOMING_FRACTION) return WAVE_LULL_MULTIPLIER
+  // 파고의 앞머리에서만 올라간다. smoothstep이라 시작과 끝이 모두 완만해서
+  // 증원이 "갑자기 나타났다"가 아니라 "밀려온다"로 읽힌다.
+  const t = Math.min(1, phase / WAVE_RAMP_FRACTION)
+  const eased = t * t * (3 - 2 * t)
+  return (
+    WAVE_LULL_MULTIPLIER +
+    (WAVE_PEAK_MULTIPLIER - WAVE_LULL_MULTIPLIER) * eased
+  )
 }
 
 /** 포락선을 씌우기 전의 장기 밀도 곡선. 무한전 증분도 여기에 붙는다. */
@@ -608,13 +680,22 @@ export function spawnEnemy(
   time = 0,
   healthScale = 1,
   xpScale = 1,
+  escapeBearing = 0,
+  escapeHalfAngle = 0,
 ): void {
   if (pool.count >= MAX_ENEMIES) return
 
   const def = ENEMY_TYPES[type]!
   // 플레이어 주변 링 위. 첫 각도가 경계 밖이면 같은 거리의 대체 각도를 찾는다.
   // 각도와 거리용 RNG 두 번만 소비해 기존 결정론적 스트림을 보존한다.
-  const a = rng.next() * Math.PI * 2
+  let a = rng.next() * Math.PI * 2
+  if (escapeHalfAngle > 0) {
+    // 균등한 [0, 2π)를 회랑을 뺀 호로 **재사상**한다. 난수를 다시 뽑아
+    // 재시도하는 방식이면 소비 횟수가 각도에 따라 달라져 결정론이 깨진다.
+    // 이 방식은 정확히 한 번만 쓰고도 회랑이 절대 채워지지 않는다.
+    const span = Math.PI * 2 - escapeHalfAngle * 2
+    a = escapeBearing + escapeHalfAngle + (a / (Math.PI * 2)) * span
+  }
   const d = randRange(
     rng,
     SPAWN_RING_MIN_DISTANCE,
@@ -1088,16 +1169,28 @@ export function updateSpawner(
 
   const incoming =
     !surgeSuppressed && wavePhaseAt(time) < WAVE_INCOMING_FRACTION
+  const tick = Math.max(0, Math.round(time / DT))
+
+  // 파고에는 부족분을 전속력으로 채운다. 도착을 나누는 일은 포락선의 램프가
+  // 이미 하고 있고, 여기서까지 막으면 스폰 속도가 처치 속도보다 먼저 병목이
+  // 되어 강한 빌드의 화력이 사라진다.
   let spawnBudget = incoming ? 6 : 0
   if (!incoming) {
     const intervalTicks = Math.max(
       1,
       Math.round(WAVE_LULL_SPAWN_INTERVAL / DT),
     )
-    const tick = Math.max(0, Math.round(time / DT))
     if (tick % intervalTicks === 0) spawnBudget = 1
   }
+
   const budget = Math.min(deficit, spawnBudget)
+  if (budget <= 0) return
+
+  // 파고에는 한 방향을 비워 탈출 회랑을 남긴다. 소강에는 필요 없다 —
+  // 드문드문 들어오는 개체가 포위를 만들지 않는다.
+  const escapeHalfAngle = incoming ? WAVE_ESCAPE_HALF_ANGLE : 0
+  const escapeBearing = incoming ? waveEscapeBearing(time) : 0
+
   for (let k = 0; k < budget; k++) {
     spawnEnemy(
       pool,
@@ -1108,6 +1201,8 @@ export function updateSpawner(
       time,
       healthScale,
       WAVE_XP_SCALE,
+      escapeBearing,
+      escapeHalfAngle,
     )
   }
 }

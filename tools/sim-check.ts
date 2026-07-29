@@ -234,8 +234,15 @@ console.log('\nsim smoke check\n')
     XP_FOR_NEXT.every((xp) => xp > 0),
   )
   check(
-    '초반 XP 곡선이 Lv2·Lv3 진입을 앞당기고 Lv5 누적 XP는 보존한다',
-    XP_FOR_NEXT.slice(0, 4).join(',') === '16,36,60,88' &&
+    '초반 XP 곡선이 Lv2를 먼저 열고 Lv5 누적 XP는 보존한다',
+    // 값을 그대로 박아 두면 도달 시각 계약과 이중으로 잠겨서, 스폰 리듬이
+    // 바뀔 때 둘 다 실패하고 어느 쪽이 원인인지 알 수 없게 된다. 여기서는
+    // **모양**만 검증한다 — Lv2가 가장 싸고 이후 단조 증가하며 Lv5 누적이
+    // 200이라는 것. 실제 도달 시각은 아래 12시드 중앙값 검사가 지킨다.
+    XP_FOR_NEXT[0]! < XP_FOR_NEXT[1]! &&
+      XP_FOR_NEXT[1]! < XP_FOR_NEXT[2]! &&
+      XP_FOR_NEXT[2]! < XP_FOR_NEXT[3]! &&
+      XP_FOR_NEXT[0]! <= 18 &&
       XP_FOR_NEXT.slice(0, 4).reduce((sum, xp) => sum + xp, 0) === 200,
     XP_FOR_NEXT.slice(0, 4).join(','),
   )
@@ -1222,7 +1229,7 @@ console.log('\nsim smoke check\n')
   // 초반 목표 마릿수는 4. 스폰이 폭주하지 않아야 한다.
   check('목표 마릿수를 크게 넘지 않는다', w.enemies.count <= 8, `count=${w.enemies.count}`)
 
-  // 첫 파고가 19.5초에 시작한 뒤 스폰 링에서 접근할 시간까지 관찰한다.
+  // 첫 파고가 15.8초에 시작한 뒤 스폰 링에서 접근할 시간까지 관찰한다.
   for (let i = 0; i < 60 * 30; i++) stepWorld(w, input)
   check('첫 웨이브 후에도 살아있다', w.outcome === 'alive', `outcome=${w.outcome} hp=${w.player.hp.toFixed(1)}`)
   check('자동 공격이 적을 잡아 XP가 오른다', w.progression.totalXp > 0, `xp=${w.progression.totalXp}`)
@@ -1235,8 +1242,8 @@ console.log('\nsim smoke check\n')
   check('기준 곡선의 3:20 목표는 135마리', baseTargetAliveCount(200) === 135)
   check('웨이브 주기는 24~30초다', WAVE_PERIOD >= 24 && WAVE_PERIOD <= 30)
   check(
-    '밀려오는 구간은 주기의 약 35%다',
-    Math.abs(WAVE_INCOMING_FRACTION - 0.35) < 1e-9,
+    '밀려오는 구간은 주기의 3분의 1~절반이다',
+    WAVE_INCOMING_FRACTION >= 1 / 3 && WAVE_INCOMING_FRACTION <= 1 / 2,
   )
   check(
     '포락선은 파고 1.5~1.8배·소강 0.4~0.5배다',

@@ -14,6 +14,7 @@ import {
   type TargetingSolution,
 } from './targeting.ts'
 import type { Input, World } from './types.ts'
+import type { Vec2 } from './vec.ts'
 import { pushBlast } from './zones.ts'
 
 /**
@@ -46,13 +47,19 @@ const flashTarget: TargetingSolution = {
   snapped: false,
 }
 
-function tryFlash(world: World): boolean {
+function tryFlash(world: World, aim?: Vec2): boolean {
   if (world.ult.active) return false
 
   const p = world.player
   const fromX = p.pos.x
   const fromY = p.pos.y
-  const target = resolveTargeting(world, 'f', flashTarget)
+  const target = resolveTargeting(
+    world,
+    'f',
+    flashTarget,
+    aim?.x,
+    aim?.y,
+  )
   const nx = target.x
   const ny = target.y
 
@@ -161,7 +168,7 @@ export function stepAbilities(world: World, input: Input): void {
 
   // 소환사 주문이 먼저다. 위기에서 점멸이 스킬 뒤로 밀리면 안 된다.
   if (pressed & SKILL_F) {
-    if (!tryFlash(world)) bufferPlayerSkill(world, 'f')
+    if (!tryFlash(world, input.skillAim)) bufferPlayerSkill(world, 'f')
   }
   if (pressed & SKILL_D) {
     if (!tryHeal(world)) bufferPlayerSkill(world, 'd')
@@ -177,7 +184,7 @@ export function stepAbilities(world: World, input: Input): void {
     ) {
       continue
     }
-    castSkill(world, slot)
+    castSkill(world, slot, input.skillAim)
     handled |= SKILL_BIT[slot]
   }
 
@@ -185,7 +192,7 @@ export function stepAbilities(world: World, input: Input): void {
   for (const slot of fallback) {
     const bit = SKILL_BIT[slot]
     if ((pressed & bit) !== 0 && (handled & bit) === 0) {
-      castSkill(world, slot)
+      castSkill(world, slot, input.skillAim)
     }
   }
 }

@@ -464,7 +464,12 @@ export class Renderer {
    * 시전 대기 중인 스킬의 실제 월드 범위를 표시한다.
    * 단위 링과 선을 이동·회전·스케일만 하므로 매 프레임 지오메트리를 만들지 않는다.
    */
-  setTargeting(world: World, skill: SkillId | null, alpha = 1): void {
+  setTargeting(
+    world: World,
+    skill: SkillId | null,
+    alpha = 1,
+    aim?: Vec2,
+  ): void {
     if (skill === null) {
       this.targetingGroup.visible = false
       return
@@ -473,7 +478,13 @@ export class Renderer {
     const player = world.player
     const playerClass = world.playerClass
     const spec = getTargetingSpec(playerClass, skill)
-    const target = resolveTargeting(world, skill, targetingSolution)
+    const target = resolveTargeting(
+      world,
+      skill,
+      targetingSolution,
+      aim?.x,
+      aim?.y,
+    )
     const px = lerp(player.prevPos.x, player.pos.x, alpha)
     const pz = lerp(player.prevPos.y, player.pos.y, alpha)
     const color =

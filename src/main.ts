@@ -136,6 +136,7 @@ try {
 const initialSeed = resolveSeed()
 const input = new InputState(app)
 const simInput = createInput()
+const skillPointerAim = { x: 0, y: 0 }
 
 if (import.meta.env.DEV) assertSlotsCoverAllSkills(DEFAULT_SLOTS)
 // 스킬바는 body에 붙인다. 캔버스 컨테이너 밖이어야 슬롯 클릭이
@@ -389,6 +390,16 @@ function frame(now: number): void {
       // 조준점(월드 좌표)을 먼저 구해야 포인터 이동 방향을 계산할 수 있다.
       renderer.screenToGround(input.pointerX, input.pointerY, simInput.aim)
       applyPointerMove(input, simInput, world.player.pos)
+      if (input.hasSkillPointerAim) {
+        renderer.screenToGround(
+          input.sampledSkillPointerX,
+          input.sampledSkillPointerY,
+          skillPointerAim,
+        )
+        simInput.skillAim = skillPointerAim
+      } else {
+        simInput.skillAim = undefined
+      }
       if (
         !controlHintMoved &&
         (Math.abs(simInput.move.x) > 0.001 || Math.abs(simInput.move.y) > 0.001)
@@ -418,6 +429,7 @@ function frame(now: number): void {
     world,
     activeRun && running && !world.awaitingChoice ? input.targetingSkill : null,
     renderAlpha,
+    simInput.skillAim,
   )
 
   // 전면 불투명 오버레이 뒤에서는 평상시 3D를 쉬되, 메뉴·캐릭터 선택에 들어간

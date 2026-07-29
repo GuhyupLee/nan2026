@@ -27,6 +27,23 @@ export type Projector = (
   out: { x: number; y: number },
 ) => boolean
 
+/**
+ * 연참(멀티킬) 티어. 이 게임은 후반에 초당 10마리 가까이 죽으므로,
+ * 임계값이 낮으면 배너가 배경이 된다 — "큰 광역 한 방"만 축하하도록
+ * 시작점을 10으로 잡고 궁극기급(월아 R 광역, 일현 R 관통)에서 최고 티어가 나온다.
+ */
+const KILL_STREAK_TIERS: readonly { count: number; label: string }[] = [
+  { count: 10, label: '연참' },
+  { count: 20, label: '질풍참' },
+  { count: 35, label: '월광 일소' },
+  { count: 60, label: '월식 학살' },
+]
+
+/** 이 간격(초) 안에 이어진 처치만 같은 연참으로 센다. */
+const KILL_STREAK_GAP = 0.9
+/** 배너가 화면에 머무는 시간(초). 전투를 가리지 않게 짧게 끊는다. */
+const KILL_STREAK_BANNER_DURATION = 1.15
+
 export class Hud {
   private readonly floatBar: HTMLDivElement
   private readonly fill: HTMLDivElement
@@ -62,6 +79,13 @@ export class Hud {
   private magnetProgressCeiling = BATTLEFIELD_MAGNET_DURATION
   private magnetWasActive = false
   private surgeDisplayKey = ''
+  private readonly killStreak: HTMLDivElement
+  private readonly killStreakLabel: HTMLElement
+  private readonly killStreakCount: HTMLElement
+  private streakCount = 0
+  private streakLastKillAt = -1
+  private streakShownTier = -1
+  private streakHideAt = -1
   private readonly reducedMotion = window.matchMedia('(prefers-reduced-motion: reduce)')
 
   constructor(parent: HTMLElement) {
@@ -137,6 +161,18 @@ export class Hud {
     this.damageVignette.setAttribute('aria-hidden', 'true')
     parent.appendChild(this.damageVignette)
 
+    // 연참 배너 — 큰 광역 한 방을 그 순간에 축하한다. 처치 수는 run-info가
+    // 이미 스크린리더에 알리므로 이 배너는 순수 장식이다.
+    this.killStreak = document.createElement('div')
+    this.killStreak.className = 'kill-streak'
+    this.killStreak.hidden = true
+    this.killStreak.setAttribute('aria-hidden', 'true')
+    this.killStreak.innerHTML =
+      `<strong data-streak-label></strong><b data-streak-count></b>`
+    this.killStreakLabel = this.killStreak.querySelector('[data-streak-label]')!
+    this.killStreakCount = this.killStreak.querySelector('[data-streak-count]')!
+    parent.appendChild(this.killStreak)
+
     this.setVisible(false)
   }
 
@@ -158,6 +194,11 @@ export class Hud {
       this.magnetProgressCeiling = BATTLEFIELD_MAGNET_DURATION
       this.magnetWasActive = false
       this.surgeDisplayKey = ''
+      this.streakCount = 0
+      this.streakLastKillAt = -1
+      this.streakShownTier = -1
+      this.streakHideAt = -1
+      this.killStreak.hidden = true
       document.body.classList.remove('pickup-buff-active')
     }
 
@@ -212,9 +253,17 @@ export class Hud {
       runInfoChanged = true
     }
     if (world.kills !== this.lastKills) {
+      // 첫 프레임(-1 → 현재값)은 연참이 아니라 상태 동기화다.
+      if (this.lastKills >= 0) {
+        this.trackKillStreak(world.kills - this.lastKills, world.time)
+      }
       this.lastKills = world.kills
       this.runKills.textContent = String(world.kills).padStart(3, '0')
       runInfoChanged = true
+    }
+    if (this.streakHideAt >= 0 && world.time >= this.streakHideAt) {
+      this.streakHideAt = -1
+      this.killStreak.dataset.visible = 'false'
     }
     if (world.relicsClaimed !== this.lastRelics) {
       this.lastRelics = world.relicsClaimed
@@ -351,6 +400,45 @@ export class Hud {
 
   }
 
+  /**
+   * 처치 델타를 연참으로 누적하고, 티어를 새로 넘을 때만 배너를 띄운다.
+   * 후반 상시 학살 구간에서는 최고 티어 도달 후 연참이 끊길 때까지 침묵한다 —
+   * 배너가 배경이 되는 순간 축하는 소음이 된다.
+   */
+  private trackKillStreak(delta: number, now: number): void {
+    if (delta <= 0) return
+    if (now - this.streakLastKillAt > KILL_STREAK_GAP) {
+      this.streakCount = 0
+      this.streakShownTier = -1
+    }
+    this.streakCount += delta
+    this.streakLastKillAt = now
+
+    let tier = -1
+    for (let i = KILL_STREAK_TIERS.length - 1; i >= 0; i--) {
+      if (this.streakCount >= KILL_STREAK_TIERS[i]!.count) {
+        tier = i
+        break
+      }
+    }
+    if (tier <= this.streakShownTier) return
+    this.streakShownTier = tier
+
+    const def = KILL_STREAK_TIERS[tier]!
+    this.killStreak.hidden = false
+    this.killStreak.dataset.tier = String(tier)
+    this.killStreak.dataset.visible = 'true'
+    this.killStreakLabel.textContent = def.label
+    this.killStreakCount.textContent = `×${this.streakCount}`
+    // 같은 티어 안에서 숫자만 갱신되도록 재생 트리거는 티어 상승에만 건다.
+    if (!this.reducedMotion.matches) {
+      this.killStreak.style.animation = 'none'
+      void this.killStreak.offsetWidth
+      this.killStreak.style.animation = ''
+    }
+    this.streakHideAt = now + KILL_STREAK_BANNER_DURATION
+  }
+
   private updateSurgeAlert(
     key: string,
     title: string,
@@ -384,5 +472,6 @@ export class Hud {
     this.surgeAlert.style.display = d
     this.runInfo.style.display = d
     this.damageVignette.style.display = d
+    this.killStreak.style.display = d
   }
 }
