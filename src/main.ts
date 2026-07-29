@@ -2,6 +2,7 @@ import { GameAudio } from './audio.ts'
 import { getClassSkills } from './content/skills.ts'
 import { applyUpgrade } from './content/upgrades.ts'
 import { InputState, applyPointerMove } from './input.ts'
+import { installDevShot } from './render/env/devshot.ts'
 import { Renderer } from './render/renderer.ts'
 import {
   ensureVrm,
@@ -850,5 +851,8 @@ document.addEventListener('visibilitychange', () => {
 // 셰이더 컴파일 비용을 미리 치른다.
 bootEl.classList.add('hidden')
 bootEl.setAttribute('aria-hidden', 'true')
+// 개발 빌드에서만 오프라인 캡처 훅을 설치한다. 자동화된 탭은 hidden 상태라
+// rAF가 멈추는데, 환경 아트를 만드는 동안 렌더 결과를 계속 확인해야 한다.
+installDevShot(renderer, () => world)
 void start()
 requestAnimationFrame(frame)

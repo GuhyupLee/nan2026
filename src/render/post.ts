@@ -165,9 +165,16 @@ export class PostFx {
     this.composer = new EffectComposer(gl)
     this.composer.addPass(new RenderPass(scene, camera))
 
-    // 해상도는 setSize에서 다시 잡는다. 여기 값은 자리를 만들기만 한다.
+    // 실제 캔버스 크기로 만든다. `setSize`가 어차피 다시 잡지만, 생성자에
+    // 1×1을 넘기면 UnrealBloomPass가 내부 밉 체인을 0×0으로 만들고 그 중
+    // 일부 렌더 타겟이 불완전(framebuffer incomplete) 상태로 굳는다. 이후
+    // setSize로 크기를 고쳐도 되살아나지 않아, 블룸 패스가 화면 전체를
+    // 검게 덮는다. 원인을 찾기 어려운 종류의 실패다 — 콘솔에 아무것도
+    // 남지 않고 "블룸을 끄면 정상"으로만 보인다.
+    const size = new THREE.Vector2()
+    gl.getSize(size)
     this.bloom = new UnrealBloomPass(
-      new THREE.Vector2(1, 1),
+      new THREE.Vector2(Math.max(2, size.x), Math.max(2, size.y)),
       BLOOM.strength,
       BLOOM.radius,
       BLOOM.threshold,

@@ -1,0 +1,1206 @@
+{
+  "assets": [
+    {
+      "name": "brazier",
+      "path": "env/brazier.glb",
+      "triangles": 1956,
+      "bytes": 22600,
+      "objects": [
+        "brazier",
+        "brazier-charcoal",
+        "brazier-glow"
+      ],
+      "animated": false,
+      "notes": "0.92m three-legged cast brazier; curved sweep legs, charcoal mound, separate emissive hemisphere"
+    },
+    {
+      "name": "foliage-kit",
+      "path": "env/foliage-kit.glb",
+      "triangles": 1876,
+      "bytes": 24512,
+      "objects": [
+        "grass-a",
+        "grass-b",
+        "grass-c",
+        "fern-a",
+        "reed-a"
+      ],
+      "animated": false,
+      "notes": "5 independent geometry-foliage variants; FLOAT_COLOR Col.R stores wind weight"
+    },
+    {
+      "name": "haetae",
+      "path": "env/haetae.glb",
+      "triangles": 7602,
+      "bytes": 60816,
+      "objects": [
+        "haetae"
+      ],
+      "animated": false,
+      "notes": "1.45m seated haetae with recessed ansang pedestal, asymmetric paws/head, and baked high-poly normal",
+      "extras": {
+        "normalBake": "env/tex/haetae_normal.webp",
+        "aoBake": "env/tex/haetae_ao.webp"
+      }
+    },
+    {
+      "name": "moon-altar",
+      "path": "env/moon-altar.glb",
+      "triangles": 7876,
+      "bytes": 63844,
+      "objects": [
+        "moon-altar",
+        "moon-altar-inlay"
+      ],
+      "animated": false,
+      "notes": "4.5cm 보행 월대, 연화문 저부조, 실제 8방 배수홈, 발광 초승 상감",
+      "extras": {
+        "zMin": 0.0,
+        "zMax": 0.049,
+        "grooveDepth": 0.018,
+        "vertexColor": "Col: R center wear, G drain moss"
+      }
+    },
+    {
+      "name": "outer-terrace",
+      "path": "env/outer-terrace.glb",
+      "triangles": 33324,
+      "bytes": 236356,
+      "objects": [
+        "outer-terrace"
+      ],
+      "animated": false,
+      "notes": "0.42m 석연, 실제 3단, 4개 60도 경사로, 소맷돌, 작은 회랑 판석",
+      "extras": {
+        "zMin": 0.0,
+        "zMax": 0.626724,
+        "brokenFraction": 0.1,
+        "vertexColor": "Col: R route wear, G high terrace moss, B crack proximity"
+      }
+    },
+    {
+      "name": "outer-terrain",
+      "path": "env/outer-terrain.glb",
+      "triangles": 46884,
+      "bytes": 191208,
+      "objects": [
+        "outer-terrain"
+      ],
+      "animated": false,
+      "notes": "dense r=33..48 displaced soil ring; r=42 cliff onset to -6m; ten rock outcrops, forked dry stream and three fallen-wall rubble piles",
+      "extras": {
+        "zMin": -6.0,
+        "zMax": 2.059927,
+        "radiusMin": 32.999998,
+        "radiusMax": 48.000002,
+        "outerEdgeZ": -6.0,
+        "vertexColor": "Col: R wear, G shaded rock/stream damp, B cliff/outcrop cracks"
+      }
+    },
+    {
+      "name": "plaza-floor",
+      "path": "env/plaza-floor.glb",
+      "triangles": 93124,
+      "bytes": 1013348,
+      "objects": [
+        "plaza-floor",
+        "plaza-inlay"
+      ],
+      "animated": false,
+      "notes": "동심 판석, 실제 이음매 홈/베벨, 파손 조각, RGB 지면 블렌드 마스크, 발광 상감",
+      "extras": {
+        "zMin": -0.03998,
+        "zMax": 0.014978,
+        "brokenFraction": 0.079137,
+        "vertexColor": "Col: R wear, G moss/wetness, B crack proximity"
+      }
+    },
+    {
+      "name": "probe",
+      "path": "env/probe/probe.glb",
+      "triangles": 442,
+      "bytes": 4832,
+      "objects": [
+        "probe"
+      ],
+      "animated": false,
+      "notes": "pipeline probe"
+    },
+    {
+      "name": "scatter-kit",
+      "path": "env/scatter-kit.glb",
+      "triangles": 4970,
+      "bytes": 63156,
+      "objects": [
+        "pebble-a",
+        "pebble-b",
+        "pebble-c",
+        "pebble-d",
+        "pebble-e",
+        "rubble-a",
+        "rubble-b",
+        "rubble-c",
+        "rubble-d",
+        "shard-a",
+        "shard-b",
+        "shard-c",
+        "mossclump-a",
+        "mossclump-b",
+        "root-a",
+        "root-b"
+      ],
+      "animated": false,
+      "notes": "16 independent ground-scatter variants; preserve object boundaries for InstancedMesh"
+    },
+    {
+      "name": "stone-lantern",
+      "path": "env/stone-lantern.glb",
+      "triangles": 2454,
+      "bytes": 35756,
+      "objects": [
+        "stone-lantern",
+        "stone-lantern-glow"
+      ],
+      "animated": false,
+      "notes": "2.05m Korean stone lantern; four boolean-cut arched windows and separate emissive core"
+    },
+    {
+      "name": "stone-pagoda",
+      "path": "env/stone-pagoda.glb",
+      "triangles": 3556,
+      "bytes": 30892,
+      "objects": [
+        "stone-pagoda"
+      ],
+      "animated": false,
+      "notes": "3.6m five-story stone pagoda; two relief bases, three roof supports per floor, upturned and chipped eaves"
+    },
+    {
+      "name": "wall-breached",
+      "path": "env/wall-breached.glb",
+      "triangles": 2914,
+      "bytes": 48332,
+      "objects": [
+        "wall-breached"
+      ],
+      "animated": false,
+      "notes": "r=34 curved 15deg wall; real staggered masonry blocks, 3% batter, projecting footing/coping and through embrasures",
+      "extras": {
+        "zMin": -0.0,
+        "zMax": 2.600076,
+        "arcDegrees": 15.0,
+        "innerRadius": 33.2,
+        "outerRadius": 34.8,
+        "vertexColor": "Col: R wear, G moss/damp shade, B breach/crack proximity"
+      }
+    },
+    {
+      "name": "wall-intact",
+      "path": "env/wall-intact.glb",
+      "triangles": 3746,
+      "bytes": 63892,
+      "objects": [
+        "wall-intact"
+      ],
+      "animated": false,
+      "notes": "r=34 curved 15deg wall; real staggered masonry blocks, 3% batter, projecting footing/coping and through embrasures",
+      "extras": {
+        "zMin": -0.0,
+        "zMax": 3.390001,
+        "arcDegrees": 15.0,
+        "innerRadius": 33.2,
+        "outerRadius": 34.8,
+        "vertexColor": "Col: R wear, G moss/damp shade, B breach/crack proximity"
+      }
+    },
+    {
+      "name": "wall-stair",
+      "path": "env/wall-stair.glb",
+      "triangles": 2064,
+      "bytes": 15948,
+      "objects": [
+        "wall-stair"
+      ],
+      "animated": false,
+      "notes": "1.8m wide wall stair; 14 real stone steps to z=2.6m with paired sleeve stones",
+      "extras": {
+        "zMin": -0.009542,
+        "zMax": 2.884565,
+        "stepCount": 14,
+        "placementDegrees": [
+          45,
+          135,
+          225,
+          315
+        ],
+        "vertexColor": "Col: R tread wear, G sleeve moss, B riser seam proximity"
+      }
+    },
+    {
+      "name": "wall-worn",
+      "path": "env/wall-worn.glb",
+      "triangles": 3294,
+      "bytes": 52296,
+      "objects": [
+        "wall-worn"
+      ],
+      "animated": false,
+      "notes": "r=34 curved 15deg wall; real staggered masonry blocks, 3% batter, projecting footing/coping and through embrasures",
+      "extras": {
+        "zMin": -0.0,
+        "zMax": 3.39,
+        "arcDegrees": 15.0,
+        "innerRadius": 33.2,
+        "outerRadius": 34.8,
+        "vertexColor": "Col: R wear, G moss/damp shade, B breach/crack proximity"
+      }
+    }
+  ],
+  "textures": [
+    {
+      "name": "bark_basecolor",
+      "path": "env/tex/arch/bark_basecolor.webp",
+      "raw": "art-src/blender/tex-raw/arch/bark_basecolor.png",
+      "size": [
+        512,
+        512
+      ],
+      "srgb": true
+    },
+    {
+      "name": "bark_normal",
+      "path": "env/tex/arch/bark_normal.webp",
+      "raw": "art-src/blender/tex-raw/arch/bark_normal.png",
+      "size": [
+        512,
+        512
+      ],
+      "srgb": false
+    },
+    {
+      "name": "bark_orm",
+      "path": "env/tex/arch/bark_orm.webp",
+      "raw": "art-src/blender/tex-raw/arch/bark_orm.png",
+      "size": [
+        512,
+        512
+      ],
+      "srgb": false
+    },
+    {
+      "name": "bronze_basecolor",
+      "path": "env/tex/arch/bronze_basecolor.webp",
+      "raw": "art-src/blender/tex-raw/arch/bronze_basecolor.png",
+      "size": [
+        512,
+        512
+      ],
+      "srgb": true
+    },
+    {
+      "name": "bronze_normal",
+      "path": "env/tex/arch/bronze_normal.webp",
+      "raw": "art-src/blender/tex-raw/arch/bronze_normal.png",
+      "size": [
+        512,
+        512
+      ],
+      "srgb": false
+    },
+    {
+      "name": "bronze_orm",
+      "path": "env/tex/arch/bronze_orm.webp",
+      "raw": "art-src/blender/tex-raw/arch/bronze_orm.png",
+      "size": [
+        512,
+        512
+      ],
+      "srgb": false
+    },
+    {
+      "name": "cloth_basecolor",
+      "path": "env/tex/arch/cloth_basecolor.webp",
+      "raw": "art-src/blender/tex-raw/arch/cloth_basecolor.png",
+      "size": [
+        512,
+        512
+      ],
+      "srgb": true
+    },
+    {
+      "name": "cloth_normal",
+      "path": "env/tex/arch/cloth_normal.webp",
+      "raw": "art-src/blender/tex-raw/arch/cloth_normal.png",
+      "size": [
+        512,
+        512
+      ],
+      "srgb": false
+    },
+    {
+      "name": "cloth_orm",
+      "path": "env/tex/arch/cloth_orm.webp",
+      "raw": "art-src/blender/tex-raw/arch/cloth_orm.png",
+      "size": [
+        512,
+        512
+      ],
+      "srgb": false
+    },
+    {
+      "name": "granite-slab_basecolor",
+      "path": "env/tex/ground/granite-slab_basecolor.webp",
+      "raw": "art-src/blender/tex-raw/ground/granite-slab_basecolor.png",
+      "size": [
+        1024,
+        1024
+      ],
+      "srgb": true
+    },
+    {
+      "name": "granite-slab_normal",
+      "path": "env/tex/ground/granite-slab_normal.webp",
+      "raw": "art-src/blender/tex-raw/ground/granite-slab_normal.png",
+      "size": [
+        1024,
+        1024
+      ],
+      "srgb": false
+    },
+    {
+      "name": "granite-slab_orm",
+      "path": "env/tex/ground/granite-slab_orm.webp",
+      "raw": "art-src/blender/tex-raw/ground/granite-slab_orm.png",
+      "size": [
+        1024,
+        1024
+      ],
+      "srgb": false
+    },
+    {
+      "name": "haetae_ao",
+      "path": "env/tex/haetae_ao.webp",
+      "raw": "art-src/blender/tex-raw/haetae_ao.png",
+      "size": [
+        1024,
+        1024
+      ],
+      "srgb": false
+    },
+    {
+      "name": "haetae_normal",
+      "path": "env/tex/haetae_normal.webp",
+      "raw": "art-src/blender/tex-raw/haetae_normal.png",
+      "size": [
+        1024,
+        1024
+      ],
+      "srgb": false
+    },
+    {
+      "name": "masonry_basecolor",
+      "path": "env/tex/arch/masonry_basecolor.webp",
+      "raw": "art-src/blender/tex-raw/arch/masonry_basecolor.png",
+      "size": [
+        1024,
+        1024
+      ],
+      "srgb": true
+    },
+    {
+      "name": "masonry_normal",
+      "path": "env/tex/arch/masonry_normal.webp",
+      "raw": "art-src/blender/tex-raw/arch/masonry_normal.png",
+      "size": [
+        1024,
+        1024
+      ],
+      "srgb": false
+    },
+    {
+      "name": "masonry_orm",
+      "path": "env/tex/arch/masonry_orm.webp",
+      "raw": "art-src/blender/tex-raw/arch/masonry_orm.png",
+      "size": [
+        1024,
+        1024
+      ],
+      "srgb": false
+    },
+    {
+      "name": "moss-lichen_basecolor",
+      "path": "env/tex/ground/moss-lichen_basecolor.webp",
+      "raw": "art-src/blender/tex-raw/ground/moss-lichen_basecolor.png",
+      "size": [
+        512,
+        512
+      ],
+      "srgb": true
+    },
+    {
+      "name": "moss-lichen_normal",
+      "path": "env/tex/ground/moss-lichen_normal.webp",
+      "raw": "art-src/blender/tex-raw/ground/moss-lichen_normal.png",
+      "size": [
+        512,
+        512
+      ],
+      "srgb": false
+    },
+    {
+      "name": "moss-lichen_orm",
+      "path": "env/tex/ground/moss-lichen_orm.webp",
+      "raw": "art-src/blender/tex-raw/ground/moss-lichen_orm.png",
+      "size": [
+        512,
+        512
+      ],
+      "srgb": false
+    },
+    {
+      "name": "painted-wood_basecolor",
+      "path": "env/tex/arch/painted-wood_basecolor.webp",
+      "raw": "art-src/blender/tex-raw/arch/painted-wood_basecolor.png",
+      "size": [
+        1024,
+        1024
+      ],
+      "srgb": true
+    },
+    {
+      "name": "painted-wood_normal",
+      "path": "env/tex/arch/painted-wood_normal.webp",
+      "raw": "art-src/blender/tex-raw/arch/painted-wood_normal.png",
+      "size": [
+        1024,
+        1024
+      ],
+      "srgb": false
+    },
+    {
+      "name": "painted-wood_orm",
+      "path": "env/tex/arch/painted-wood_orm.webp",
+      "raw": "art-src/blender/tex-raw/arch/painted-wood_orm.png",
+      "size": [
+        1024,
+        1024
+      ],
+      "srgb": false
+    },
+    {
+      "name": "plaster_basecolor",
+      "path": "env/tex/arch/plaster_basecolor.webp",
+      "raw": "art-src/blender/tex-raw/arch/plaster_basecolor.png",
+      "size": [
+        512,
+        512
+      ],
+      "srgb": true
+    },
+    {
+      "name": "plaster_normal",
+      "path": "env/tex/arch/plaster_normal.webp",
+      "raw": "art-src/blender/tex-raw/arch/plaster_normal.png",
+      "size": [
+        512,
+        512
+      ],
+      "srgb": false
+    },
+    {
+      "name": "plaster_orm",
+      "path": "env/tex/arch/plaster_orm.webp",
+      "raw": "art-src/blender/tex-raw/arch/plaster_orm.png",
+      "size": [
+        512,
+        512
+      ],
+      "srgb": false
+    },
+    {
+      "name": "probe_basecolor",
+      "path": "env/tex/probe/probe_basecolor.webp",
+      "raw": "art-src/blender/tex-raw/probe/probe_basecolor.png",
+      "size": [
+        256,
+        256
+      ],
+      "srgb": true
+    },
+    {
+      "name": "probe_normal",
+      "path": "env/tex/probe/probe_normal.webp",
+      "raw": "art-src/blender/tex-raw/probe/probe_normal.png",
+      "size": [
+        256,
+        256
+      ],
+      "srgb": false
+    },
+    {
+      "name": "probe_orm",
+      "path": "env/tex/probe/probe_orm.webp",
+      "raw": "art-src/blender/tex-raw/probe/probe_orm.png",
+      "size": [
+        256,
+        256
+      ],
+      "srgb": false
+    },
+    {
+      "name": "roof-tile_basecolor",
+      "path": "env/tex/arch/roof-tile_basecolor.webp",
+      "raw": "art-src/blender/tex-raw/arch/roof-tile_basecolor.png",
+      "size": [
+        1024,
+        1024
+      ],
+      "srgb": true
+    },
+    {
+      "name": "roof-tile_normal",
+      "path": "env/tex/arch/roof-tile_normal.webp",
+      "raw": "art-src/blender/tex-raw/arch/roof-tile_normal.png",
+      "size": [
+        1024,
+        1024
+      ],
+      "srgb": false
+    },
+    {
+      "name": "roof-tile_orm",
+      "path": "env/tex/arch/roof-tile_orm.webp",
+      "raw": "art-src/blender/tex-raw/arch/roof-tile_orm.png",
+      "size": [
+        1024,
+        1024
+      ],
+      "srgb": false
+    },
+    {
+      "name": "sand-drift_basecolor",
+      "path": "env/tex/ground/sand-drift_basecolor.webp",
+      "raw": "art-src/blender/tex-raw/ground/sand-drift_basecolor.png",
+      "size": [
+        512,
+        512
+      ],
+      "srgb": true
+    },
+    {
+      "name": "sand-drift_normal",
+      "path": "env/tex/ground/sand-drift_normal.webp",
+      "raw": "art-src/blender/tex-raw/ground/sand-drift_normal.png",
+      "size": [
+        512,
+        512
+      ],
+      "srgb": false
+    },
+    {
+      "name": "sand-drift_orm",
+      "path": "env/tex/ground/sand-drift_orm.webp",
+      "raw": "art-src/blender/tex-raw/ground/sand-drift_orm.png",
+      "size": [
+        512,
+        512
+      ],
+      "srgb": false
+    },
+    {
+      "name": "soil-gravel_basecolor",
+      "path": "env/tex/ground/soil-gravel_basecolor.webp",
+      "raw": "art-src/blender/tex-raw/ground/soil-gravel_basecolor.png",
+      "size": [
+        512,
+        512
+      ],
+      "srgb": true
+    },
+    {
+      "name": "soil-gravel_normal",
+      "path": "env/tex/ground/soil-gravel_normal.webp",
+      "raw": "art-src/blender/tex-raw/ground/soil-gravel_normal.png",
+      "size": [
+        512,
+        512
+      ],
+      "srgb": false
+    },
+    {
+      "name": "soil-gravel_orm",
+      "path": "env/tex/ground/soil-gravel_orm.webp",
+      "raw": "art-src/blender/tex-raw/ground/soil-gravel_orm.png",
+      "size": [
+        512,
+        512
+      ],
+      "srgb": false
+    },
+    {
+      "name": "stone-detail_normal",
+      "path": "env/tex/ground/stone-detail_normal.webp",
+      "raw": "art-src/blender/tex-raw/ground/stone-detail_normal.png",
+      "size": [
+        512,
+        512
+      ],
+      "srgb": false
+    },
+    {
+      "name": "stone-detail_orm",
+      "path": "env/tex/ground/stone-detail_orm.webp",
+      "raw": "art-src/blender/tex-raw/ground/stone-detail_orm.png",
+      "size": [
+        512,
+        512
+      ],
+      "srgb": false
+    },
+    {
+      "name": "timber_basecolor",
+      "path": "env/tex/arch/timber_basecolor.webp",
+      "raw": "art-src/blender/tex-raw/arch/timber_basecolor.png",
+      "size": [
+        512,
+        512
+      ],
+      "srgb": true
+    },
+    {
+      "name": "timber_normal",
+      "path": "env/tex/arch/timber_normal.webp",
+      "raw": "art-src/blender/tex-raw/arch/timber_normal.png",
+      "size": [
+        512,
+        512
+      ],
+      "srgb": false
+    },
+    {
+      "name": "timber_orm",
+      "path": "env/tex/arch/timber_orm.webp",
+      "raw": "art-src/blender/tex-raw/arch/timber_orm.png",
+      "size": [
+        512,
+        512
+      ],
+      "srgb": false
+    },
+    {
+      "name": "worn-stone_basecolor",
+      "path": "env/tex/ground/worn-stone_basecolor.webp",
+      "raw": "art-src/blender/tex-raw/ground/worn-stone_basecolor.png",
+      "size": [
+        1024,
+        1024
+      ],
+      "srgb": true
+    },
+    {
+      "name": "worn-stone_normal",
+      "path": "env/tex/ground/worn-stone_normal.webp",
+      "raw": "art-src/blender/tex-raw/ground/worn-stone_normal.png",
+      "size": [
+        1024,
+        1024
+      ],
+      "srgb": false
+    },
+    {
+      "name": "worn-stone_orm",
+      "path": "env/tex/ground/worn-stone_orm.webp",
+      "raw": "art-src/blender/tex-raw/ground/worn-stone_orm.png",
+      "size": [
+        1024,
+        1024
+      ],
+      "srgb": false
+    }
+  ],
+  "materials": [
+    {
+      "name": "mw/arch/bronze",
+      "baseColor": [
+        1.0,
+        1.0,
+        1.0,
+        1.0
+      ],
+      "roughness": 0.52,
+      "metalness": 1.0,
+      "emission": null,
+      "emissionStrength": 0.0,
+      "maps": {
+        "baseColor": "env/tex/arch/bronze_basecolor.webp",
+        "normal": "env/tex/arch/bronze_normal.webp",
+        "orm": "env/tex/arch/bronze_orm.webp"
+      },
+      "normalScale": 1.0,
+      "uvScale": 0.85,
+      "transparent": false,
+      "alphaTest": 0.0,
+      "doubleSided": false,
+      "shader": "default",
+      "arcResponse": 0.55
+    },
+    {
+      "name": "mw/arch/cloth",
+      "baseColor": [
+        1.0,
+        1.0,
+        1.0,
+        1.0
+      ],
+      "roughness": 0.88,
+      "metalness": 0.0,
+      "emission": null,
+      "emissionStrength": 0.0,
+      "maps": {
+        "baseColor": "env/tex/arch/cloth_basecolor.webp",
+        "normal": "env/tex/arch/cloth_normal.webp",
+        "orm": "env/tex/arch/cloth_orm.webp"
+      },
+      "normalScale": 1.0,
+      "uvScale": 0.8,
+      "transparent": false,
+      "alphaTest": 0.0,
+      "doubleSided": false,
+      "shader": "cloth",
+      "arcResponse": 0.85
+    },
+    {
+      "name": "mw/arch/masonry",
+      "baseColor": [
+        1.0,
+        1.0,
+        1.0,
+        1.0
+      ],
+      "roughness": 0.82,
+      "metalness": 0.0,
+      "emission": null,
+      "emissionStrength": 0.0,
+      "maps": {
+        "baseColor": "env/tex/arch/masonry_basecolor.webp",
+        "normal": "env/tex/arch/masonry_normal.webp",
+        "orm": "env/tex/arch/masonry_orm.webp"
+      },
+      "normalScale": 1.0,
+      "uvScale": 0.35,
+      "transparent": false,
+      "alphaTest": 0.0,
+      "doubleSided": false,
+      "shader": "stone",
+      "arcResponse": 1.0
+    },
+    {
+      "name": "mw/arch/painted-wood",
+      "baseColor": [
+        1.0,
+        1.0,
+        1.0,
+        1.0
+      ],
+      "roughness": 0.58,
+      "metalness": 0.0,
+      "emission": null,
+      "emissionStrength": 0.0,
+      "maps": {
+        "baseColor": "env/tex/arch/painted-wood_basecolor.webp",
+        "normal": "env/tex/arch/painted-wood_normal.webp",
+        "orm": "env/tex/arch/painted-wood_orm.webp"
+      },
+      "normalScale": 1.0,
+      "uvScale": 0.6,
+      "transparent": false,
+      "alphaTest": 0.0,
+      "doubleSided": false,
+      "shader": "default",
+      "arcResponse": 0.35
+    },
+    {
+      "name": "mw/arch/plaster",
+      "baseColor": [
+        1.0,
+        1.0,
+        1.0,
+        1.0
+      ],
+      "roughness": 0.86,
+      "metalness": 0.0,
+      "emission": null,
+      "emissionStrength": 0.0,
+      "maps": {
+        "baseColor": "env/tex/arch/plaster_basecolor.webp",
+        "normal": "env/tex/arch/plaster_normal.webp",
+        "orm": "env/tex/arch/plaster_orm.webp"
+      },
+      "normalScale": 1.0,
+      "uvScale": 0.3,
+      "transparent": false,
+      "alphaTest": 0.0,
+      "doubleSided": false,
+      "shader": "stone",
+      "arcResponse": 1.0
+    },
+    {
+      "name": "mw/arch/roof-tile",
+      "baseColor": [
+        1.0,
+        1.0,
+        1.0,
+        1.0
+      ],
+      "roughness": 0.74,
+      "metalness": 0.0,
+      "emission": null,
+      "emissionStrength": 0.0,
+      "maps": {
+        "baseColor": "env/tex/arch/roof-tile_basecolor.webp",
+        "normal": "env/tex/arch/roof-tile_normal.webp",
+        "orm": "env/tex/arch/roof-tile_orm.webp"
+      },
+      "normalScale": 1.0,
+      "uvScale": 1.2,
+      "transparent": false,
+      "alphaTest": 0.0,
+      "doubleSided": false,
+      "shader": "stone",
+      "arcResponse": 1.0
+    },
+    {
+      "name": "mw/arch/timber",
+      "baseColor": [
+        1.0,
+        1.0,
+        1.0,
+        1.0
+      ],
+      "roughness": 0.82,
+      "metalness": 0.0,
+      "emission": null,
+      "emissionStrength": 0.0,
+      "maps": {
+        "baseColor": "env/tex/arch/timber_basecolor.webp",
+        "normal": "env/tex/arch/timber_normal.webp",
+        "orm": "env/tex/arch/timber_orm.webp"
+      },
+      "normalScale": 1.0,
+      "uvScale": 0.45,
+      "transparent": false,
+      "alphaTest": 0.0,
+      "doubleSided": false,
+      "shader": "default",
+      "arcResponse": 0.9
+    },
+    {
+      "name": "mw/ground/granite-slab",
+      "baseColor": [
+        1.0,
+        1.0,
+        1.0,
+        1.0
+      ],
+      "roughness": 0.78,
+      "metalness": 0.0,
+      "emission": null,
+      "emissionStrength": 0.0,
+      "maps": {
+        "baseColor": "env/tex/ground/granite-slab_basecolor.webp",
+        "normal": "env/tex/ground/granite-slab_normal.webp",
+        "orm": "env/tex/ground/granite-slab_orm.webp"
+      },
+      "normalScale": 1.0,
+      "uvScale": 0.5,
+      "transparent": false,
+      "alphaTest": 0.0,
+      "doubleSided": false,
+      "shader": "stone",
+      "arcResponse": 1.0
+    },
+    {
+      "name": "mw/ground/inlay",
+      "baseColor": [
+        0.35,
+        0.62,
+        0.7,
+        1.0
+      ],
+      "roughness": 0.34,
+      "metalness": 0.0,
+      "emission": [
+        0.35,
+        0.62,
+        0.7
+      ],
+      "emissionStrength": 1.8,
+      "maps": {
+        "baseColor": null,
+        "normal": null,
+        "orm": null
+      },
+      "normalScale": 1.0,
+      "uvScale": 1.0,
+      "transparent": false,
+      "alphaTest": 0.0,
+      "doubleSided": false,
+      "shader": "emissive",
+      "arcResponse": 0.35
+    },
+    {
+      "name": "mw/ground/moss-lichen",
+      "baseColor": [
+        1.0,
+        1.0,
+        1.0,
+        1.0
+      ],
+      "roughness": 0.94,
+      "metalness": 0.0,
+      "emission": null,
+      "emissionStrength": 0.0,
+      "maps": {
+        "baseColor": "env/tex/ground/moss-lichen_basecolor.webp",
+        "normal": "env/tex/ground/moss-lichen_normal.webp",
+        "orm": "env/tex/ground/moss-lichen_orm.webp"
+      },
+      "normalScale": 1.0,
+      "uvScale": 0.7,
+      "transparent": false,
+      "alphaTest": 0.0,
+      "doubleSided": false,
+      "shader": "stone",
+      "arcResponse": 1.0
+    },
+    {
+      "name": "mw/ground/sand-drift",
+      "baseColor": [
+        1.0,
+        1.0,
+        1.0,
+        1.0
+      ],
+      "roughness": 0.96,
+      "metalness": 0.0,
+      "emission": null,
+      "emissionStrength": 0.0,
+      "maps": {
+        "baseColor": "env/tex/ground/sand-drift_basecolor.webp",
+        "normal": "env/tex/ground/sand-drift_normal.webp",
+        "orm": "env/tex/ground/sand-drift_orm.webp"
+      },
+      "normalScale": 1.0,
+      "uvScale": 0.45,
+      "transparent": false,
+      "alphaTest": 0.0,
+      "doubleSided": false,
+      "shader": "stone",
+      "arcResponse": 1.0
+    },
+    {
+      "name": "mw/ground/soil-gravel",
+      "baseColor": [
+        1.0,
+        1.0,
+        1.0,
+        1.0
+      ],
+      "roughness": 0.92,
+      "metalness": 0.0,
+      "emission": null,
+      "emissionStrength": 0.0,
+      "maps": {
+        "baseColor": "env/tex/ground/soil-gravel_basecolor.webp",
+        "normal": "env/tex/ground/soil-gravel_normal.webp",
+        "orm": "env/tex/ground/soil-gravel_orm.webp"
+      },
+      "normalScale": 1.0,
+      "uvScale": 0.34,
+      "transparent": false,
+      "alphaTest": 0.0,
+      "doubleSided": false,
+      "shader": "stone",
+      "arcResponse": 1.0
+    },
+    {
+      "name": "mw/ground/stone-detail",
+      "baseColor": [
+        0.5,
+        0.5,
+        0.5,
+        1.0
+      ],
+      "roughness": 0.8,
+      "metalness": 0.0,
+      "emission": null,
+      "emissionStrength": 0.0,
+      "maps": {
+        "baseColor": null,
+        "normal": "env/tex/ground/stone-detail_normal.webp",
+        "orm": "env/tex/ground/stone-detail_orm.webp"
+      },
+      "normalScale": 1.0,
+      "uvScale": 4.0,
+      "transparent": false,
+      "alphaTest": 0.0,
+      "doubleSided": false,
+      "shader": "detail",
+      "arcResponse": 0.0
+    },
+    {
+      "name": "mw/ground/worn-stone",
+      "baseColor": [
+        1.0,
+        1.0,
+        1.0,
+        1.0
+      ],
+      "roughness": 0.86,
+      "metalness": 0.0,
+      "emission": null,
+      "emissionStrength": 0.0,
+      "maps": {
+        "baseColor": "env/tex/ground/worn-stone_basecolor.webp",
+        "normal": "env/tex/ground/worn-stone_normal.webp",
+        "orm": "env/tex/ground/worn-stone_orm.webp"
+      },
+      "normalScale": 1.0,
+      "uvScale": 0.5,
+      "transparent": false,
+      "alphaTest": 0.0,
+      "doubleSided": false,
+      "shader": "stone",
+      "arcResponse": 1.0
+    },
+    {
+      "name": "mw/light/flame",
+      "baseColor": [
+        1.0,
+        0.72,
+        0.38,
+        1.0
+      ],
+      "roughness": 0.24,
+      "metalness": 0.0,
+      "emission": [
+        1.0,
+        0.62,
+        0.28
+      ],
+      "emissionStrength": 6.0,
+      "maps": {
+        "baseColor": null,
+        "normal": null,
+        "orm": null
+      },
+      "normalScale": 1.0,
+      "uvScale": 1.0,
+      "transparent": false,
+      "alphaTest": 0.0,
+      "doubleSided": false,
+      "shader": "emissive",
+      "arcResponse": 0.15
+    },
+    {
+      "name": "mw/nature/bark",
+      "baseColor": [
+        1.0,
+        1.0,
+        1.0,
+        1.0
+      ],
+      "roughness": 0.88,
+      "metalness": 0.0,
+      "emission": null,
+      "emissionStrength": 0.0,
+      "maps": {
+        "baseColor": "env/tex/arch/bark_basecolor.webp",
+        "normal": "env/tex/arch/bark_normal.webp",
+        "orm": "env/tex/arch/bark_orm.webp"
+      },
+      "normalScale": 1.0,
+      "uvScale": 0.55,
+      "transparent": false,
+      "alphaTest": 0.0,
+      "doubleSided": false,
+      "shader": "stone",
+      "arcResponse": 0.95
+    },
+    {
+      "name": "mw/nature/blade",
+      "baseColor": [
+        0.16,
+        0.19,
+        0.11,
+        1.0
+      ],
+      "roughness": 0.88,
+      "metalness": 0.0,
+      "emission": null,
+      "emissionStrength": 0.0,
+      "maps": {
+        "baseColor": null,
+        "normal": null,
+        "orm": null
+      },
+      "normalScale": 1.0,
+      "uvScale": 1.0,
+      "transparent": false,
+      "alphaTest": 0.0,
+      "doubleSided": true,
+      "shader": "foliage",
+      "arcResponse": 1.0
+    },
+    {
+      "name": "mw/prop/haetae",
+      "baseColor": [
+        1.0,
+        1.0,
+        1.0,
+        1.0
+      ],
+      "roughness": 0.8,
+      "metalness": 0.0,
+      "emission": null,
+      "emissionStrength": 0.0,
+      "maps": {
+        "baseColor": "env/tex/ground/granite-slab_basecolor.webp",
+        "normal": "env/tex/haetae_normal.webp",
+        "orm": "env/tex/ground/granite-slab_orm.webp"
+      },
+      "normalScale": 1.0,
+      "uvScale": 0.5,
+      "transparent": false,
+      "alphaTest": 0.0,
+      "doubleSided": false,
+      "shader": "stone",
+      "arcResponse": 1.0
+    },
+    {
+      "name": "probe-stone",
+      "baseColor": [
+        0.5,
+        0.5,
+        0.5,
+        1.0
+      ],
+      "roughness": 0.85,
+      "metalness": 0.0,
+      "emission": null,
+      "emissionStrength": 0.0,
+      "maps": {
+        "baseColor": "env/tex/probe/probe_basecolor.webp",
+        "normal": "env/tex/probe/probe_normal.webp",
+        "orm": "env/tex/probe/probe_orm.webp"
+      },
+      "normalScale": 1.0,
+      "uvScale": 1.0,
+      "transparent": false,
+      "alphaTest": 0.0,
+      "doubleSided": false,
+      "shader": "default",
+      "arcResponse": 1.0
+    }
+  ]
+}

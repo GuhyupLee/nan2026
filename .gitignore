@@ -9,3 +9,15 @@ tools/_*
 
 # 임시 미리보기 하네스
 _*.html
+
+# --- Blender 환경 에셋 파이프라인 ---
+# 중간 산출물 PNG. 2048 세트가 18MB인데, 배포본은 WebP로 변환된
+# public/env/tex/ 쪽이고 이건 언제든 재생성된다(스크립트가 결정적이다).
+art-src/blender/tex-raw/
+art-src/blender/logs/
+art-src/blender/.work/
+__pycache__/
+*.pyc
+# 큐 러너의 락·티켓
+.blender-lock/
+.blender-queue/

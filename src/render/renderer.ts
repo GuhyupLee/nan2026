@@ -20,12 +20,8 @@ import type { PlayerClass, World } from '../sim/types.ts'
 import type { Vec2 } from '../sim/vec.ts'
 import { length, lerp, lerpAngle } from '../sim/vec.ts'
 import { AdaptiveQualityPolicy } from './adaptive-quality.ts'
-import {
-  type ArenaArc,
-  type ArenaVisual,
-  createArena,
-  sampleArenaArc,
-} from './arena.ts'
+import { type ArenaArc, sampleArenaArc } from './arena.ts'
+import { createEnvironment, type EnvironmentVisual } from './env/environment.ts'
 import { BattlefieldPickupRenderer } from './battlefield-pickups.ts'
 import { CombatReadabilityFx } from './combat-readability.ts'
 import {
@@ -33,6 +29,7 @@ import {
   createCharacterRig,
 } from './characters.ts'
 import { EnemyRenderer } from './enemies.ts'
+import { MOON_DIRECTION, Sky } from './env/sky.ts'
 import { ImpactParticles } from './impact-particles.ts'
 import { ImpactFx } from './impact.ts'
 import { CLASS_COLORS, REWARD_COLORS } from './palette.ts'
@@ -160,10 +157,11 @@ export class Renderer {
   readonly camera: THREE.PerspectiveCamera
 
   private readonly gl: THREE.WebGLRenderer
-  private readonly arena: ArenaVisual
+  private readonly arena: EnvironmentVisual
   private readonly backgroundColor = new THREE.Color(BG_COLOR)
   private readonly fog: THREE.Fog
   private readonly hemisphere: THREE.HemisphereLight
+  private readonly sky: Sky
   private readonly lightRig: THREE.Group
   private readonly sun: THREE.DirectionalLight
   private readonly enemyRenderer: EnemyRenderer
@@ -285,7 +283,7 @@ export class Renderer {
 
     this.camera = new THREE.PerspectiveCamera(CAM_FOV, 1, 0.5, 240)
 
-    this.arena = createArena(arenaRadius)
+    this.arena = createEnvironment(arenaRadius, this.gl, import.meta.env.BASE_URL)
     this.scene.add(this.arena.group)
 
     this.charRig = createCharacterRig(this.charClass)
@@ -338,11 +336,22 @@ export class Renderer {
     this.scene.add(this.targetingGroup)
 
     // --- 조명 ---
-    this.hemisphere = new THREE.HemisphereLight(0x7093c8, 0x0a0e18, 0.85)
+    // 월식 하늘. 이 돔이 배경이자 IBL의 출처다. 조명보다 먼저 만들어야
+    // sun/hemisphere가 첫 프레임부터 하늘에서 뽑은 색을 쓴다.
+    this.sky = new Sky(this.gl, this.scene)
+
+    // 하늘이 환경광을 담당하게 되면서 반구광의 역할이 바뀌었다. 예전에는
+    // 이것이 유일한 환경광이라 0.85로 세게 넣어야 그늘이 검게 죽지 않았는데,
+    // 그 대가로 화면 전체가 균일하게 들려 명암 대비가 사라졌다. 이제는 IBL이
+    // 방향성 있는 환경광을 주므로, 반구광은 IBL이 놓치는 지면 반사만 얕게
+    // 보태는 보조 광원이다.
+    this.hemisphere = new THREE.HemisphereLight(0x7093c8, 0x0a0e18, 0.28)
     this.scene.add(this.hemisphere)
 
     this.sun = new THREE.DirectionalLight(0xffffff, 2.1)
-    this.sun.position.set(14, 26, 10)
+    // 달이 있는 방향에서 빛이 온다. 고도를 55°에서 33°로 낮춰 그림자를
+    // 길게 만들었다 — 판석 요철과 건축 실루엣이 살아나는 각도다.
+    this.sun.position.copy(MOON_DIRECTION).multiplyScalar(30)
     this.sun.castShadow = true
     this.sun.shadow.mapSize.set(this.shadowMapSize, this.shadowMapSize)
     this.sun.shadow.bias = -0.0006
@@ -368,6 +377,8 @@ export class Renderer {
     this.post = new PostFx(this.gl, this.scene, this.camera)
 
     this.resize()
+    // passive: false 여야 preventDefault로 페이지 스크롤을 막을 수 있다.
+    this.gl.domElement.addEventListener('wheel', this.onWheel, { passive: false })
     window.addEventListener('resize', this.resize)
     this.coarsePointer.addEventListener('change', this.resize)
     document.addEventListener('visibilitychange', this.handleVisibilityChange)
@@ -379,9 +390,25 @@ export class Renderer {
   }
 
   readonly resize = (): void => {
-    // 0을 절대 통과시키지 않는다 — aspect = 0/0 = NaN 이 투영 행렬을 망친다.
-    const w = Math.max(1, this.container.clientWidth || window.innerWidth)
-    const h = Math.max(1, this.container.clientHeight || window.innerHeight)
+    this.applySize(
+      // 0을 절대 통과시키지 않는다 — aspect = 0/0 = NaN 이 투영 행렬을 망친다.
+      Math.max(1, this.container.clientWidth || window.innerWidth),
+      Math.max(1, this.container.clientHeight || window.innerHeight),
+    )
+  }
+
+  /**
+   * 레이아웃과 무관하게 렌더 해상도를 강제한다.
+   *
+   * 자동화된 브라우저 탭은 화면에 합성되지 않아 `clientWidth`가 0이다. 그
+   * 상태에서 `resize()`는 1×1로 떨어지고 캡처가 빈 이미지가 된다.
+   * `env/devshot.ts`가 캡처 전에 이걸 부른다. 개발 경로 전용이다.
+   */
+  forceSize(width: number, height: number): void {
+    this.applySize(Math.max(16, Math.floor(width)), Math.max(16, Math.floor(height)))
+  }
+
+  private applySize(w: number, h: number): void {
     const sizeChanged = w !== this.width || h !== this.height
 
     this.width = w
@@ -625,7 +652,9 @@ export class Renderer {
     this.feedbackBloom +=
       (1 - this.feedbackBloom) * (1 - Math.exp(-7.5 * dt))
     this.post.setBloomBoost(this.feedbackBloom)
-    this.updateEnvironment(world, visualTime)
+    this.updateEnvironment(world, visualTime, dt)
+    // 산포 필드는 플레이어 주변 셀만 GPU에 올린다. 셀이 안 바뀌면 즉시 반환한다.
+    this.arena.update(dt, px, pz)
 
     this.lightRig.position.set(px, 0, pz)
 
@@ -633,6 +662,13 @@ export class Renderer {
     const k = 1 - Math.exp(-CAM_FOLLOW * dt)
     this.camTarget.x += (px - this.camTarget.x) * k
     this.camTarget.z += (pz - this.camTarget.z) * k
+    // 줌도 같은 방식으로 지연시킨다. 휠 한 칸에 즉시 튀면 화면이 끊겨 보이고,
+    // 무엇보다 screenToGround가 프레임마다 크게 달라져 조준이 흔들린다.
+    if (this.zoom !== this.zoomTarget) {
+      const zoomK = 1 - Math.exp(-11 * dt)
+      this.zoom += (this.zoomTarget - this.zoom) * zoomK
+      if (Math.abs(this.zoomTarget - this.zoom) < 0.0005) this.zoom = this.zoomTarget
+    }
 
     this.positionCamera()
     // 반드시 positionCamera() 뒤다. 앞에서 더하면 그 안의 lookAt()이 카메라를
@@ -942,7 +978,7 @@ export class Renderer {
    * 5분 진행과 보스 상태를 기존 아레나·조명·안개·grade 유니폼에 투영한다.
    * 렌더 전용 보간이라 시뮬 상태와 밸런스에는 손대지 않는다.
    */
-  private updateEnvironment(world: World, visualTime: number): void {
+  private updateEnvironment(world: World, visualTime: number, dt: number): void {
     const arc = sampleArenaArc(
       visualTime,
       world.boss.spawned,
@@ -952,6 +988,8 @@ export class Renderer {
       this.arenaArc,
     )
     this.arena.applyArc(arc)
+    // 하늘을 먼저 갱신해야 아래에서 주광·반사광 색을 하늘에서 가져올 수 있다.
+    this.sky.update(arc, dt)
 
     applyEnvironmentColor(
       this.backgroundColor,
@@ -959,33 +997,25 @@ export class Renderer {
       arc,
       0.14,
     )
-    this.fog.color.copy(this.backgroundColor)
+    // 안개 색은 하늘의 지평선 색을 따라가야 한다. 별도 팔레트로 두면 먼
+    // 지오메트리가 하늘에 녹아드는 대신 회색 벽처럼 떠 보인다.
+    this.fog.color.copy(this.backgroundColor).lerp(this.sky.bounceColor, 0.35)
     applyEnvironmentColor(
       this.hemisphere.color,
       ENVIRONMENT_PALETTE.sky,
       arc,
       0.18,
     )
-    applyEnvironmentColor(
-      this.hemisphere.groundColor,
-      ENVIRONMENT_PALETTE.ground,
-      arc,
-      0.12,
-    )
-    applyEnvironmentColor(
-      this.sun.color,
-      ENVIRONMENT_PALETTE.sun,
-      arc,
-      0.16,
-    )
+    this.hemisphere.groundColor.copy(this.sky.bounceColor)
+    this.sun.color.copy(this.sky.keyLightColor)
 
     this.hemisphere.intensity =
-      0.85 -
-      arc.dusk * 0.035 -
-      arc.eclipse * 0.035 +
-      arc.boss * 0.055 +
-      arc.phaseTwo * 0.04 +
-      arc.arrival * 0.035
+      0.28 -
+      arc.dusk * 0.012 -
+      arc.eclipse * 0.012 +
+      arc.boss * 0.02 +
+      arc.phaseTwo * 0.014 +
+      arc.arrival * 0.012
     this.sun.intensity =
       2.1 -
       arc.dusk * 0.06 -
@@ -1081,12 +1111,54 @@ export class Renderer {
   }
 
   private positionCamera(): void {
+    const distance = this.cameraDistanceScale * this.zoom
     this.camera.position.set(
-      this.camTarget.x + CAM_OFFSET.x * this.cameraDistanceScale,
-      CAM_OFFSET.y * this.cameraDistanceScale,
-      this.camTarget.z + CAM_OFFSET.z * this.cameraDistanceScale,
+      this.camTarget.x + CAM_OFFSET.x * distance,
+      CAM_OFFSET.y * distance,
+      this.camTarget.z + CAM_OFFSET.z * distance,
     )
     this.camera.lookAt(this.camTarget.x, 0, this.camTarget.z)
+  }
+
+  /**
+   * 휠 줌.
+   *
+   * 오프셋 벡터 전체에 배수를 걸므로 **부감 각도는 변하지 않는다.** 각도까지
+   * 바꾸면 지면 투영이 달라져 스킬 사거리 표시와 클릭 지점의 체감이 흔들린다.
+   * 거리만 움직이면 화면에 담기는 넓이만 달라지고 조작 감각은 그대로다.
+   *
+   * 범위를 좁게 잡은 것도 의도다. 멀리 빼면 캐릭터가 화면의 7%까지 작아져
+   * 파츠 구분이 사라지고, 당기면 전투 상황이 화면 밖에서 벌어진다. 둘 다
+   * 게임을 망가뜨리므로 "조금 더 보고 싶다" 정도만 허용한다.
+   */
+  private static readonly ZOOM_MIN = 0.82
+  private static readonly ZOOM_MAX = 1.34
+
+  private zoom = 1
+  private zoomTarget = 1
+
+  private readonly onWheel = (event: WheelEvent): void => {
+    // HUD 위 스크롤(강화 카드 목록 등)까지 가로채면 안 된다.
+    if (event.target !== this.gl.domElement) return
+    event.preventDefault()
+    // deltaMode 0=픽셀, 1=줄, 2=페이지. 브라우저·기기마다 다르므로 정규화한다.
+    const unit = event.deltaMode === 1 ? 16 : event.deltaMode === 2 ? 400 : 1
+    const steps = (event.deltaY * unit) / 120
+    // 지수 스케일. 선형이면 당길수록 체감 변화가 커져 손맛이 나쁘다.
+    this.zoomTarget = THREE.MathUtils.clamp(
+      this.zoomTarget * Math.pow(1.11, steps),
+      Renderer.ZOOM_MIN,
+      Renderer.ZOOM_MAX,
+    )
+  }
+
+  /** 현재 줌 배수. 1이 기본 프레이밍이다. */
+  get cameraZoom(): number {
+    return this.zoom
+  }
+
+  setCameraZoom(value: number): void {
+    this.zoomTarget = THREE.MathUtils.clamp(value, Renderer.ZOOM_MIN, Renderer.ZOOM_MAX)
   }
 
   /**
@@ -1186,6 +1258,7 @@ export class Renderer {
   }
 
   dispose(): void {
+    this.gl.domElement.removeEventListener('wheel', this.onWheel)
     window.removeEventListener('resize', this.resize)
     this.coarsePointer.removeEventListener('change', this.resize)
     document.removeEventListener('visibilitychange', this.handleVisibilityChange)
@@ -1210,6 +1283,7 @@ export class Renderer {
     this.impact.dispose()
     this.post.dispose()
     this.arena.dispose()
+    this.sky.dispose()
     this.sun.shadow.map?.dispose()
     this.gl.dispose()
     this.gl.domElement.remove()
@@ -1217,6 +1291,16 @@ export class Renderer {
 
   get drawCalls(): number {
     return this.gl.info.render.calls
+  }
+
+  /** 렌더 대상 캔버스. 개발용 오프라인 캡처(`env/devshot.ts`)가 읽는다. */
+  get domElement(): HTMLCanvasElement {
+    return this.gl.domElement
+  }
+
+  /** 삼각형 수. 환경 예산 감사에 쓴다. */
+  get triangles(): number {
+    return this.gl.info.render.triangles
   }
 
   /**
