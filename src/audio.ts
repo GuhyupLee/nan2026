@@ -13,10 +13,6 @@ import magicRiseUrl from './assets/audio/kenney/magic-rise.ogg?url'
 import uiBackUrl from './assets/audio/kenney/ui-back.ogg?url'
 import uiConfirmUrl from './assets/audio/kenney/ui-confirm.ogg?url'
 import uiSelectUrl from './assets/audio/kenney/ui-select.ogg?url'
-import {
-  summarizeDamageFeedback,
-  type HitFeedbackSummary,
-} from './sim/damage-feedback.ts'
 import type { AttackEvent, CastEvent, PlayerClass, World } from './sim/types.ts'
 
 export interface AudioSettings {
@@ -41,7 +37,6 @@ const GAME_MUSIC_URLS = [
   soundtrack3Url,
   soundtrack4Url,
 ] as const
-const MAX_ACTIVE_SOURCES = 40
 const SAMPLE_URLS = {
   'blade-draw': bladeDrawUrl,
   'blade-impact': bladeImpactUrl,
@@ -61,8 +56,6 @@ type SampleId = keyof typeof SAMPLE_URLS
 type SoundGroup =
   | 'attack'
   | 'cast'
-  | 'hit'
-  | 'hurt'
   | 'death'
   | 'level'
   | 'boss'
@@ -115,8 +108,6 @@ export class GameAudio {
   private readonly nextSoundAt: Record<SoundGroup, number> = {
     attack: 0,
     cast: 0,
-    hit: 0,
-    hurt: 0,
     death: 0,
     level: 0,
     boss: 0,
@@ -137,7 +128,6 @@ export class GameAudio {
   private lastSurgeWarningIndex = 0
   private lastSurgeBeatIndex = 0
   private lastOutcome: World['outcome'] = 'alive'
-  private lastPlayerHp = 0
 
   getSettings(): AudioSettings {
     return { ...this.settings }
@@ -288,9 +278,6 @@ export class GameAudio {
       !newWorld && world.surgeBeatIndex > this.lastSurgeBeatIndex
     const outcomeChanged =
       !newWorld && world.outcome !== this.lastOutcome && world.outcome !== 'alive'
-    const playerDamage = newWorld
-      ? 0
-      : Math.max(0, this.lastPlayerHp - world.player.hp)
 
     this.lastSeed = world.seed
     this.lastTick = world.tick
@@ -303,7 +290,6 @@ export class GameAudio {
     this.lastSurgeWarningIndex = world.surgeWarningIndex
     this.lastSurgeBeatIndex = world.surgeBeatIndex
     this.lastOutcome = world.outcome
-    this.lastPlayerHp = world.player.hp
 
 
     // update는 자동재생 잠금을 해제하지 않는다.
@@ -323,9 +309,6 @@ export class GameAudio {
     if (surgeWarned && this.allow('surge', 0.8)) this.surgeWarning()
     if (surgeStarted && this.allow('surge', 0.8)) this.surgeImpact()
     if (outcomeChanged && this.allow('outcome', 0.8)) this.outcome(world.outcome)
-    if (playerDamage > 0 && this.allow('hurt', 0.14)) {
-      this.playerHurt(playerDamage, world.stats.maxHp)
-    }
 
     // 동일한 시뮬레이션 틱을 여러 번 그려도 이벤트음을 중복 재생하지 않는다.
     if (!newTick) return
@@ -334,10 +317,6 @@ export class GameAudio {
     }
     if (world.attacks.length > 0 && this.allow('attack', 0.045)) {
       this.attack(this.strongestAttack(world.attacks), world.attacks.length, world.playerClass)
-    }
-    const confirmedHit = summarizeDamageFeedback(world.damageFeedback)
-    if (confirmedHit && this.allow('hit', 0.05)) {
-      this.enemyImpact(confirmedHit, world.playerClass)
     }
     if (world.deaths.length > 0 && this.allow('death', 0.07)) {
       this.enemyDeath(world.deaths.length)
@@ -387,7 +366,6 @@ export class GameAudio {
     this.lastSurgeWarningIndex = 0
     this.lastSurgeBeatIndex = 0
     this.lastOutcome = 'alive'
-    this.lastPlayerHp = 0
   }
 
   private ensureContext(): AudioContext | null {
@@ -676,17 +654,6 @@ export class GameAudio {
   }
 
   private track(source: AudioScheduledSourceNode): void {
-    if (this.activeSources.size >= MAX_ACTIVE_SOURCES) {
-      const oldest = this.activeSources.values().next().value
-      if (oldest) {
-        this.activeSources.delete(oldest)
-        try {
-          oldest.stop()
-        } catch {
-          // 이미 끝난 소스는 Set에서만 제거하면 된다.
-        }
-      }
-    }
     this.activeSources.add(source)
     source.addEventListener('ended', () => this.activeSources.delete(source), { once: true })
   }
@@ -743,96 +710,6 @@ export class GameAudio {
       this.tone(125, 0.15, 0.06 * lift, 'sawtooth', 45)
       this.tone(520, 0.12, 0.035 * lift, 'sine', 840, 0.025)
     }
-  }
-
-  /**
-   * Confirmed contact, deliberately louder and lower than launch/swing cues.
-   * A whole fixed-tick batch becomes one layered transient, so AoE remains a
-   * single weighty hit instead of dozens of overlapping samples.
-   */
-  private enemyImpact(
-    summary: HitFeedbackSummary,
-    playerClass: PlayerClass,
-  ): void {
-    const intensity = Math.max(0.18, summary.intensity)
-    const crowdLift = Math.min(
-      1.24,
-      1 + Math.log2(Math.max(1, summary.count)) * 0.055,
-    )
-    const salt =
-      (Math.round(summary.strongest.amount) * 31 + summary.count * 17) % 11
-    const pitchVariation = (salt - 5) * 0.006
-
-    if (playerClass === 'melee') {
-      this.sample(
-        'blade-impact',
-        (0.15 + intensity * 0.09) * crowdLift,
-        1.08 - intensity * 0.18 + pitchVariation,
-      )
-      this.noise(
-        0.035 + intensity * 0.03,
-        (0.012 + intensity * 0.018) * crowdLift,
-        1350 - intensity * 520,
-      )
-      this.tone(
-        150 - intensity * 28,
-        0.055 + intensity * 0.035,
-        (0.018 + intensity * 0.025) * crowdLift,
-        'triangle',
-        62 - intensity * 12,
-      )
-    } else {
-      this.sample(
-        'magic-impact',
-        (0.13 + intensity * 0.09) * crowdLift,
-        1.25 - intensity * 0.16 + pitchVariation,
-      )
-      this.noise(
-        0.028 + intensity * 0.025,
-        (0.008 + intensity * 0.013) * crowdLift,
-        2200 - intensity * 650,
-      )
-      this.tone(
-        720 - intensity * 90,
-        0.04 + intensity * 0.025,
-        (0.012 + intensity * 0.02) * crowdLift,
-        'triangle',
-        260 - intensity * 55,
-      )
-    }
-
-    if (
-      summary.tier === 'finisher' ||
-      summary.hasCapped ||
-      summary.intensity >= 0.68
-    ) {
-      this.tone(
-        78,
-        0.095,
-        (0.02 + intensity * 0.025) * crowdLift,
-        'sawtooth',
-        42,
-      )
-    }
-  }
-
-  private playerHurt(amount: number, maxHp: number): void {
-    const intensity = Math.min(
-      1,
-      Math.max(0.18, amount / Math.max(1, maxHp * 0.2)),
-    )
-    this.noise(
-      0.075 + intensity * 0.055,
-      0.02 + intensity * 0.032,
-      850 - intensity * 350,
-    )
-    this.tone(
-      165 - intensity * 25,
-      0.09 + intensity * 0.05,
-      0.025 + intensity * 0.035,
-      'sawtooth',
-      62,
-    )
   }
 
   private cast(

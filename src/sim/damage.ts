@@ -5,10 +5,6 @@ import {
   triggerBossPhaseThree,
   triggerBossPhaseTwo,
 } from './boss.ts'
-import {
-  damageFeedbackPriority,
-  isImportantDamageFeedback,
-} from './damage-feedback.ts'
 import { difficultyRules } from './difficulty.ts'
 import { ENEMY_TYPES, removeEnemy, TYPE_BOSS, TYPE_ELITE } from './enemies.ts'
 import { dropRelic } from './rewards.ts'
@@ -25,40 +21,27 @@ export const FULLMOON_BOSS_SINGLE_HIT_DAMAGE_CAP_RATIO = 0.28
 const MAX_COMMON_DAMAGE_FEEDBACK = 20
 const HP_BAR_REVEAL_DURATION = 0.75
 
+function isImportantEnemyType(type: number): boolean {
+  return type === TYPE_BOSS || type === TYPE_ELITE
+}
+
 function pushDamageFeedback(
   world: World,
   event: World['damageFeedback'][number],
 ): void {
-  const important = isImportantDamageFeedback(event)
+  const important = isImportantEnemyType(event.enemyType)
   if (!important) {
     let common = 0
     for (let i = 0; i < world.damageFeedback.length; i++) {
-      if (!isImportantDamageFeedback(world.damageFeedback[i]!)) common += 1
+      if (!isImportantEnemyType(world.damageFeedback[i]!.enemyType)) common += 1
     }
     if (
-      common < MAX_COMMON_DAMAGE_FEEDBACK &&
-      world.damageFeedback.length < MAX_DAMAGE_FEEDBACK
+      common >= MAX_COMMON_DAMAGE_FEEDBACK ||
+      world.damageFeedback.length >= MAX_DAMAGE_FEEDBACK
     ) {
-      world.damageFeedback.push(event)
       return
     }
-
-    // A common kill or a large hit may arrive after a field of damage-over-time
-    // chips. Preserve the stronger result without consuming the elite/boss reserve.
-    let replace = -1
-    let weakestPriority = Number.POSITIVE_INFINITY
-    for (let i = 0; i < world.damageFeedback.length; i++) {
-      const queued = world.damageFeedback[i]!
-      if (isImportantDamageFeedback(queued)) continue
-      const priority = damageFeedbackPriority(queued)
-      if (priority < weakestPriority) {
-        replace = i
-        weakestPriority = priority
-      }
-    }
-    if (replace >= 0 && damageFeedbackPriority(event) > weakestPriority) {
-      world.damageFeedback[replace] = event
-    }
+    world.damageFeedback.push(event)
     return
   }
 
@@ -67,20 +50,16 @@ function pushDamageFeedback(
     return
   }
 
-  // 중요 타격이 광역 잡몹 숫자에 밀리지 않게 가장 약한 이벤트를 교체한다.
-  // 큐가 전부 중요 타격이어도 보스 처치가 가벼운 정예 틱에 밀리지 않는다.
+  // 중요 타격이 광역 잡몹 숫자에 밀리지 않게 가장 오래된 일반 타격을 교체한다.
+  // 큐가 전부 중요 타격이면 가장 오래된 하나를 교체해 절대 상한을 지킨다.
   let replace = 0
-  let weakestPriority = damageFeedbackPriority(world.damageFeedback[0]!)
-  for (let i = 1; i < world.damageFeedback.length; i++) {
-    const priority = damageFeedbackPriority(world.damageFeedback[i]!)
-    if (priority < weakestPriority) {
+  for (let i = 0; i < world.damageFeedback.length; i++) {
+    if (!isImportantEnemyType(world.damageFeedback[i]!.enemyType)) {
       replace = i
-      weakestPriority = priority
+      break
     }
   }
-  if (damageFeedbackPriority(event) >= weakestPriority) {
-    world.damageFeedback[replace] = event
-  }
+  world.damageFeedback[replace] = event
 }
 
 /**

@@ -7,11 +7,6 @@ import {
   PICKUP_MAGNET,
 } from '../sim/battlefield-pickups.ts'
 import { DT } from '../sim/constants.ts'
-import {
-  isImportantDamageFeedback,
-  summarizeDamageFeedback,
-  type HitFeedbackTier,
-} from '../sim/damage-feedback.ts'
 import { TYPE_BOSS, TYPE_ELITE } from '../sim/enemies.ts'
 import type { SkillId } from '../sim/skills.ts'
 import { SURGE_BEATS } from '../sim/surges.ts'
@@ -137,12 +132,6 @@ const targetingSolution: TargetingSolution = {
 const PLAYER_HIT_REACTION_DURATION = 0.22
 const OUTCOME_POSE_DURATION = 0.78
 const REDUCED_MOTION_OUTCOME_POSE_DURATION = 0.24
-const HIT_FEEDBACK_RANK: Readonly<Record<HitFeedbackTier, number>> = {
-  light: 0,
-  solid: 1,
-  heavy: 2,
-  finisher: 3,
-}
 
 function clamp01(value: number): number {
   return value < 0 ? 0 : value > 1 ? 1 : value
@@ -156,17 +145,6 @@ function smoothstep01(value: number): number {
 function easeOutCubic(value: number): number {
   const t = 1 - clamp01(value)
   return 1 - t * t * t
-}
-
-function hitFeedbackRank(tier: HitFeedbackTier): number {
-  return HIT_FEEDBACK_RANK[tier]
-}
-
-function hitFeedbackCooldown(tier: HitFeedbackTier): number {
-  if (tier === 'finisher') return 0.035
-  if (tier === 'heavy') return 0.04
-  if (tier === 'solid') return 0.05
-  return 0.06
 }
 
 /**
@@ -245,9 +223,6 @@ export class Renderer {
   private playerHitReactionAt = -Infinity
   private playerHitReactionStrength = 0
   private playerHitReactionSide = 1
-  /** 연속 장판·광역기가 카메라와 파편을 매 틱 새로 만들지 않게 하는 벽시계 게이트. */
-  private nextConfirmedHitAt = -Infinity
-  private lastConfirmedHitRank = -1
   /** 결말 유예 구간에서 VRM·절차식 리그 모두에 적용하는 공통 루트 포즈. */
   private presentedOutcome: World['outcome'] = 'alive'
   private outcomePresentationAt = -Infinity
@@ -652,8 +627,6 @@ export class Renderer {
       this.playerHitReactionAt = -Infinity
       this.playerHitReactionStrength = 0
       this.playerHitReactionSide = 1
-      this.nextConfirmedHitAt = -Infinity
-      this.lastConfirmedHitRank = -1
       this.presentedOutcome = 'alive'
       this.outcomePresentationAt = now
     }
@@ -713,7 +686,6 @@ export class Renderer {
     // 숫자까지 멈춰서 타격감이 아니라 프레임 드랍으로 읽힌다.
     this.impact.update(now, dt)
     this.consumeFeedback(world, px, pz, now)
-    this.consumeConfirmedHits(world, px, pz, now)
     this.feedbackBloom +=
       (1 - this.feedbackBloom) * (1 - Math.exp(-7.5 * dt))
     this.post.setBloomBoost(this.feedbackBloom)
@@ -983,88 +955,6 @@ export class Renderer {
     // 경험치 숫자는 뺐다. 한 판에 수백 마리가 죽는데 킬마다 숫자가 뜨면
     // 화면이 숫자로 덮이고, 어차피 HUD의 경험치 바가 같은 정보를 이미 준다.
     // 데미지 숫자만 남겨야 그게 신호로 읽힌다.
-  }
-
-  /**
-   * 실제 적용된 피해만 접촉 피드백으로 바꾼다.
-   *
-   * SkillFx의 착탄 좌표는 빗나가도 존재하지만 damageFeedback은 damageEnemy를
-   * 통과한 적중만 들어온다. 한 렌더 묶음의 최강 타격 하나만 카메라·시간에
-   * 연결하고, 로컬 파편은 중요한 대상을 먼저 최대 6곳까지만 보낸다.
-   */
-  private consumeConfirmedHits(
-    world: World,
-    px: number,
-    pz: number,
-    now: number,
-  ): void {
-    const summary = summarizeDamageFeedback(world.damageFeedback)
-    if (!summary) return
-
-    const rank = hitFeedbackRank(summary.tier)
-    if (now < this.nextConfirmedHitAt && rank <= this.lastConfirmedHitRank) {
-      return
-    }
-    this.nextConfirmedHitAt = now + hitFeedbackCooldown(summary.tier)
-    this.lastConfirmedHitRank = rank
-
-    const color = CLASS_COLORS[world.playerClass]
-    const sparkLimit = this.constrained ? 3 : 6
-    let sparks = 0
-    for (let i = 0; i < world.damageFeedback.length && sparks < 3; i++) {
-      const hit = world.damageFeedback[i]!
-      if (!isImportantDamageFeedback(hit)) continue
-      this.impactParticles.burst(
-        hit.x,
-        hit.y,
-        Math.atan2(hit.y - pz, hit.x - px),
-        color,
-      )
-      sparks += 1
-    }
-    for (
-      let i = 0;
-      i < world.damageFeedback.length && sparks < sparkLimit;
-      i++
-    ) {
-      const hit = world.damageFeedback[i]!
-      if (isImportantDamageFeedback(hit)) continue
-      this.impactParticles.burst(
-        hit.x,
-        hit.y,
-        Math.atan2(hit.y - pz, hit.x - px),
-        color,
-      )
-      sparks += 1
-    }
-
-    // 정예·보스 처치는 consumeFeedback의 전용 클라이맥스가 이미 더 강하게
-    // 처리한다. 여기서 카메라를 다시 더하면 흔들림만 포화된다.
-    if (
-      summary.strongest.lethal &&
-      isImportantDamageFeedback(summary.strongest)
-    ) {
-      return
-    }
-
-    if (summary.tier === 'light') {
-      this.impact.shake(0.028, 0.07, 28)
-      return
-    }
-    if (summary.tier === 'solid') {
-      this.impact.shake(0.065, 0.1, 24)
-      return
-    }
-    if (summary.tier === 'heavy') {
-      this.impact.shake(0.14, 0.16, 20)
-      this.impact.requestHitstop(0.24, 0.02)
-      this.pulseBloom(1.1)
-      return
-    }
-
-    this.impact.shake(0.23, 0.23, 16)
-    this.impact.requestHitstop(0.38, 0.035)
-    this.pulseBloom(1.2)
   }
 
   /**
@@ -1384,7 +1274,7 @@ export class Renderer {
     }
 
     // 광역기는 한 틱에 수십 체를 때릴 수 있다. 기존 32개 숫자 풀을 지키면서
-    // 정예·보스, 일반 처치, 나머지 순으로 한 프레임 최대 8개만 넘긴다.
+    // 정예·보스 피드백을 먼저 보여주고 한 프레임 최대 8개만 넘긴다.
     let damageNumbers = 0
     for (let i = 0; i < world.damageFeedback.length && damageNumbers < 4; i++) {
       const hit = world.damageFeedback[i]!
@@ -1393,31 +1283,13 @@ export class Renderer {
         hit.x,
         hit.y,
         hit.amount,
-        hit.capped ? 'capped' : hit.lethal ? 'lethal' : 'normal',
+        hit.capped ? 'capped' : 'normal',
       )
-      damageNumbers += 1
-    }
-    for (let i = 0; i < world.damageFeedback.length && damageNumbers < 6; i++) {
-      const hit = world.damageFeedback[i]!
-      if (
-        hit.enemyType === TYPE_ELITE ||
-        hit.enemyType === TYPE_BOSS ||
-        !hit.lethal
-      ) {
-        continue
-      }
-      this.impact.popNumber(hit.x, hit.y, hit.amount, 'lethal')
       damageNumbers += 1
     }
     for (let i = 0; i < world.damageFeedback.length && damageNumbers < 8; i++) {
       const hit = world.damageFeedback[i]!
-      if (
-        hit.enemyType === TYPE_ELITE ||
-        hit.enemyType === TYPE_BOSS ||
-        hit.lethal
-      ) {
-        continue
-      }
+      if (hit.enemyType === TYPE_ELITE || hit.enemyType === TYPE_BOSS) continue
       this.impact.popNumber(hit.x, hit.y, hit.amount, 'normal')
       damageNumbers += 1
     }

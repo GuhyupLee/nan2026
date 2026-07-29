@@ -286,9 +286,6 @@ export class EnemyRenderer {
   private readonly white = new THREE.Color(0xffffff)
   private readonly phaseTwoColor = new THREE.Color(0xff4f86)
   private readonly phaseThreeColor = new THREE.Color(0xe8d7ff)
-  private readonly reducedMotion = window.matchMedia(
-    '(prefers-reduced-motion: reduce)',
-  )
 
   constructor(scene: THREE.Scene) {
     for (let t = 0; t < ENEMY_TYPES.length; t++) {
@@ -380,7 +377,6 @@ export class EnemyRenderer {
       const def = ENEMY_TYPES[t]!
       const isBoss = t === TYPE_BOSS
       const ang = Math.atan2(pool.vy[i]!, pool.vx[i]!)
-      const f = pool.flash[i]!
 
       if (isBoss) {
         // 일정한 자전 위에 돌진 직전의 빠른 떨림을 더한다. 월드 시간을 써서
@@ -439,33 +435,11 @@ export class EnemyRenderer {
           this.scl.set(1 - gait * 0.018, 1 + gait * 0.035, 1)
         }
       }
-
-      // 색 점멸만으로는 접촉이 아니라 밝기 변화처럼 읽힌다. 같은 짧은 flash
-      // 값을 실루엣의 압축·반동에도 재사용해 드로우콜이나 시뮬 상태를 늘리지
-      // 않고 타격 방향을 만든다. 감소 모션에서는 색은 유지하고 변형만 줄인다.
-      if (f > 0) {
-        const hit = Math.min(1, f / 0.08)
-        const motionScale = this.reducedMotion.matches ? 0.25 : 1
-        const squash =
-          hit * motionScale * (isBoss ? 0.055 : t === TYPE_ELITE ? 0.075 : 0.1)
-        this.scl.x *= 1 + squash * 0.62
-        this.scl.y *= 1 - squash
-        this.scl.z *= 1 + squash * 0.62
-
-        const vx = pool.vx[i]!
-        const vz = pool.vy[i]!
-        const speed = Math.hypot(vx, vz)
-        if (speed > 0.01) {
-          const recoil =
-            def.radius * hit * motionScale * (isBoss ? 0.045 : 0.095)
-          this.pos.x -= (vx / speed) * recoil
-          this.pos.z -= (vz / speed) * recoil
-        }
-      }
       this.m.compose(this.pos, this.q, this.scl)
       batch.mesh.setMatrixAt(slot, this.m)
 
       // 피격 점멸: 흰색으로 튀었다가 원색으로 돌아온다
+      const f = pool.flash[i]!
       this.color.copy(batch.baseColor)
       if (isBoss) {
         if (world.boss.phaseThreeAt >= 0) {
