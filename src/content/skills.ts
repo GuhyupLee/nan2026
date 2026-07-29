@@ -80,7 +80,8 @@ const RANGED: Record<string, SkillDef> = {
     name: '삼중 굴절',
     tag: '평타 강화',
     oneLiner: '5초간 기본 공격이 세 갈래로 갈라지고, 맞힌 적을 점등한다',
-    detail: '지속 5초 · 중심 100% + 보조 광선 2개(각 30%) · 적중 시 점등 4초',
+    detail:
+      '지속 5초 · 중심 100% + 보조 30%×2 · 점등 4초 · 종료 후 재사용 대기 시작',
     damage: [],
     icon: 'art/skills/ranged-q-trifold.webp',
     glyph: '⋔',

@@ -189,6 +189,9 @@ function rangedQ(world: World, context?: SkillCastContext): void {
   const now = world.time
   const duration = hasSkillTrait(world, 'q', 'orbital-prism') ? 7 : 5
   p.rangedVolleyUntil = Math.max(p.rangedVolleyUntil, now + duration)
+  // 시전 선딜 동안 먼저 흐른 일부 쿨다운도 되돌린다. 강화가 끝난 다음 틱부터
+  // 항상 온전한 재사용 대기시간이 시작되어 HUD와 실제 사용 가능 시점이 같다.
+  world.skills.q.cooldown = world.skills.q.maxCooldown
   emitRing(world, p.pos.x, p.pos.y, Math.min(world.stats.atkRange, 5.5), 2)
   emitCast(
     world,

@@ -378,6 +378,23 @@ function stepUntil(
   world.lastAim.x = 10
   assert.equal(castSkill(world, 'q'), true)
   stepUntil(world, () => world.player.rangedVolleyUntil > world.time)
+  const volleyEndsAt = world.player.rangedVolleyUntil
+  const deferredCooldown = world.skills.q.maxCooldown
+  approx(
+    world.skills.q.cooldown,
+    deferredCooldown,
+    'Q resets a full cooldown when the buff becomes active',
+  )
+
+  for (let tick = 0; tick < 90; tick += 1) {
+    stepWorld(world, idleAt(10, 0))
+  }
+  assert.ok(world.time < volleyEndsAt, 'Q remains active during pause probe')
+  approx(
+    world.skills.q.cooldown,
+    deferredCooldown,
+    'Q cooldown does not tick while the volley is active',
+  )
 
   world.player.attackCooldown = 0
   stepWorld(world, idleAt(10, 0))
@@ -388,8 +405,22 @@ function stepUntil(
     world.tracers.filter((tracer) => tracer.kind === 0).length >= 3,
     'Q empowered basic attack emits three rays',
   )
+
+  world.player.attackCooldown = Number.POSITIVE_INFINITY
+  stepUntil(world, () => world.time >= volleyEndsAt, idleAt(10, 0), 480)
+  approx(
+    world.skills.q.cooldown,
+    deferredCooldown,
+    'Q keeps its full cooldown through the final active tick',
+  )
+  stepWorld(world, idleAt(10, 0))
+  approx(
+    world.skills.q.cooldown,
+    deferredCooldown - DT,
+    'Q cooldown starts on the first tick after the buff ends',
+  )
 }
 
 console.log(
-  'control-check: targeting, assist, arrival, FIFO, buffer, flash guards, ranged dash, W→F origin, and Q volley ok',
+  'control-check: targeting, assist, arrival, FIFO, buffer, flash guards, ranged dash, W→F origin, Q volley, and deferred Q cooldown ok',
 )

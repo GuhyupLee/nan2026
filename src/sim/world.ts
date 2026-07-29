@@ -233,7 +233,15 @@ export function stepWorld(world: World, input: Input): void {
   rebuildEnemyHash(world.enemies, world.enemyHash)
   trackPlayerActionAim(world)
 
-  tickSkills(world.skills, DT)
+  const deferredRangedQCooldown =
+    world.playerClass === 'ranged' &&
+    world.time < world.player.rangedVolleyUntil
+  if (deferredRangedQCooldown) {
+    // 활성 중 랭크·전승으로 최대 쿨다운이 바뀌어도, 종료 뒤에는 그 시점의
+    // 최신 최대값부터 시작한다. 진행률이 100%를 넘는 UI 오류도 함께 막는다.
+    world.skills.q.cooldown = world.skills.q.maxCooldown
+  }
+  tickSkills(world.skills, DT, deferredRangedQCooldown ? 'q' : null)
   // 스킬은 이동보다 먼저 처리한다. 점멸이 위치를 바꾸므로
   // 같은 틱의 이동이 그 새 위치에서 이어져야 순간이동이 매끄럽다.
   stepAbilities(world, input)

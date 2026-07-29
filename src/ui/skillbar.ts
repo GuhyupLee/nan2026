@@ -587,10 +587,17 @@ export class SkillBar {
         if (!view.wasReady) this.flash(view)
       } else {
         view.root.dataset.state = 'cooling'
-        view.cd.style.setProperty('--p', String(cooldownProgress(book, view.meta.id)))
-        // 롤과 같은 관습: 1초 미만은 소수점 한 자리.
-        view.cdText.textContent =
-          s.cooldown >= 1 ? String(Math.ceil(s.cooldown)) : s.cooldown.toFixed(1)
+        if (qRemaining > 0) {
+          // 강화 중에는 재사용 시계가 정지한다. 꽉 찬 쿨다운 마스크와 숫자를
+          // 보여 주면 이미 시간이 흐르는 것처럼 읽히므로 활성 상태만 남긴다.
+          view.cd.style.setProperty('--p', '0')
+          view.cdText.textContent = ''
+        } else {
+          view.cd.style.setProperty('--p', String(cooldownProgress(book, view.meta.id)))
+          // 롤과 같은 관습: 1초 미만은 소수점 한 자리.
+          view.cdText.textContent =
+            s.cooldown >= 1 ? String(Math.ceil(s.cooldown)) : s.cooldown.toFixed(1)
+        }
       }
 
       view.wasReady = ready
@@ -772,7 +779,7 @@ export class SkillBar {
     const status = !runtime?.unlocked
       ? '미해금'
       : qActiveRemaining > 0
-        ? `3갈래 강화 ${formatSeconds(qActiveRemaining)} · 재사용 ${formatSeconds(cooldownLeft)}`
+        ? `3갈래 강화 ${formatSeconds(qActiveRemaining)} · 종료 후 재사용 ${formatSeconds(cooldownLeft)}`
       : wDashing
         ? '도약 중 · 무적'
       : wGuardRemaining > 0

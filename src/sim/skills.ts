@@ -65,9 +65,19 @@ export function createSkillBook(): SkillBook {
   }
 }
 
-/** 쿨다운을 한 틱 진행시킨다. */
-export function tickSkills(book: SkillBook, dt: number): void {
+/**
+ * 쿨다운을 한 틱 진행시킨다.
+ *
+ * 지속형 강화는 효과가 끝날 때까지 해당 슬롯의 시계를 멈출 수 있다.
+ * 쿨다운 값 자체는 그대로 보존해 같은 스킬을 중복 시전하지 못하게 한다.
+ */
+export function tickSkills(
+  book: SkillBook,
+  dt: number,
+  pausedSkill: SkillId | null = null,
+): void {
   for (const id of SKILL_IDS) {
+    if (id === pausedSkill) continue
     const s = book[id]
     if (s.cooldown > 0) {
       s.cooldown -= dt
