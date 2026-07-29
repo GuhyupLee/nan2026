@@ -131,22 +131,6 @@ const targetingSolution: TargetingSolution = {
 }
 
 const PLAYER_HIT_REACTION_DURATION = 0.22
-const OUTCOME_POSE_DURATION = 0.78
-const REDUCED_MOTION_OUTCOME_POSE_DURATION = 0.24
-
-function clamp01(value: number): number {
-  return value < 0 ? 0 : value > 1 ? 1 : value
-}
-
-function smoothstep01(value: number): number {
-  const t = clamp01(value)
-  return t * t * (3 - 2 * t)
-}
-
-function easeOutCubic(value: number): number {
-  const t = 1 - clamp01(value)
-  return 1 - t * t * t
-}
 
 /**
  * 렌더러.
@@ -226,7 +210,7 @@ export class Renderer {
   private playerHitReactionAt = -Infinity
   private playerHitReactionStrength = 0
   private playerHitReactionSide = 1
-  /** 결말 유예 구간에서 VRM·절차식 리그 모두에 적용하는 공통 루트 포즈. */
+  /** 결과 전신 루프가 시작된 벽시각. 결과 확정 뒤 시뮬레이션 시계는 멈춘다. */
   private presentedOutcome: World['outcome'] = 'alive'
   private outcomePresentationAt = -Infinity
   /** Renderer는 판 사이에 살아남으므로 새 World를 만나면 잔상 풀을 먼저 비운다. */
@@ -663,13 +647,17 @@ export class Renderer {
     // sim의 facing(+X 기준, XZ 평면)을 three의 Y축 회전으로 옮기면 부호가 뒤집힌다.
     const displayFacing =
       visualTime < this.actionFacingUntil ? this.actionFacing : facing
-    // 지난 프레임의 피격·결말 루트 포즈를 먼저 지운다. CharacterRig 구현은
-    // 이 공통 Group 아래에서만 움직여 VRM과 절차식 모델에 같은 방식으로 먹힌다.
+    // 지난 프레임의 피격 루트 반응을 먼저 지운다. 결과 전신 포즈는 리그 내부 본만 쓴다.
     this.charRig.group.rotation.set(0, -displayFacing, 0)
     this.charRig.group.scale.setScalar(1)
-    // VRMA와 판정은 같은 시뮬레이션 시계를 쓴다. 히트스톱·저프레임에서도
-    // 타격 자세와 실제 impactAt이 서로 앞서거나 뒤처지지 않는다.
-    this.charRig.update(visualTime, length(p.vel))
+    this.updateCharacterResult(world, now)
+    // 전투 VRMA는 판정과 같은 시뮬레이션 시계를 쓰지만, 결과 확정 뒤에는
+    // 시뮬레이션이 멈춘다. 결과 루프만 벽시계로 진행해야 오래 열린 화면에서도
+    // 호흡과 미세 흔들림이 계속 살아 있다.
+    this.charRig.update(
+      world.outcome === 'alive' ? visualTime : now,
+      world.outcome === 'alive' ? length(p.vel) : 0,
+    )
     this.applyCharacterPresentation(world, now)
     this.consumeWeaponTrailBursts(world)
     // 리그가 본을 갱신한 **뒤**에 샘플해야 한 프레임 늦지 않는다.
@@ -738,95 +726,51 @@ export class Renderer {
     this.post.render(dt)
   }
 
-  /**
-   * VRMA 클립 수를 늘리지 않고 공통 리그 루트에 얹는 짧은 상태 피드백.
-   *
-   * 전투 클립은 시뮬레이션 시계에 고정돼 있지만 결과가 확정되면 시뮬이
-   * 멈춘다. 이 루트 포즈만 벽시계를 써야 0.9초 결과 유예 동안 사망·승리
-   * 동작이 실제로 진행된다. 매 프레임 기본 transform에서 다시 계산하므로
-   * 누적 오차가 없고 무한 모드로 돌아가도 즉시 중립 자세가 복구된다.
-   */
-  private applyCharacterPresentation(world: World, now: number): void {
+  /** 결과 상태를 두 리그에 같은 시점으로 전달한다. 같은 상태 호출은 리그가 무시한다. */
+  private updateCharacterResult(world: World, now: number): void {
     if (world.outcome !== this.presentedOutcome) {
       this.presentedOutcome = world.outcome
       this.outcomePresentationAt = now
     }
 
+    this.charRig.setResult(
+      world.outcome === 'alive'
+        ? null
+        : world.outcome === 'victory'
+          ? 'victory'
+          : 'defeat',
+      this.outcomePresentationAt,
+    )
+  }
+
+  /**
+   * 살아 있는 동안의 짧은 피격 반응만 공통 루트에 더한다.
+   *
+   * 승패 전신 클립이 골반과 척추를 직접 움직이므로 예전 결과 루트 기울임을
+   * 함께 적용하면 손과 무기 접점이 어긋난다. 결과 상태에서는 루트를 건드리지 않는다.
+   */
+  private applyCharacterPresentation(world: World, now: number): void {
+    if (world.outcome !== 'alive') return
+
     const group = this.charRig.group
-    if (world.outcome === 'alive') {
-      const elapsed = now - this.playerHitReactionAt
-      if (elapsed < 0 || elapsed >= PLAYER_HIT_REACTION_DURATION) return
+    const elapsed = now - this.playerHitReactionAt
+    if (elapsed < 0 || elapsed >= PLAYER_HIT_REACTION_DURATION) return
 
-      const progress = elapsed / PLAYER_HIT_REACTION_DURATION
-      const pulse =
-        Math.sin(progress * Math.PI) *
-        (1 - progress * 0.28) *
-        this.playerHitReactionStrength
-      const motionScale = this.reducedMotion.matches ? 0.42 : 1
-      group.rotation.x -= pulse * 0.09 * motionScale
-      group.rotation.z +=
-        pulse * 0.065 * this.playerHitReactionSide * motionScale
-      group.position.y -= pulse * 0.025 * motionScale
-      group.scale.set(
-        1 + pulse * 0.025 * motionScale,
-        1 - pulse * 0.045 * motionScale,
-        1 + pulse * 0.025 * motionScale,
-      )
-      return
-    }
-
-    const reducedMotion = this.reducedMotion.matches
-    const duration = reducedMotion
-      ? REDUCED_MOTION_OUTCOME_POSE_DURATION
-      : OUTCOME_POSE_DURATION
-    const progress = clamp01((now - this.outcomePresentationAt) / duration)
-    const motionScale = reducedMotion ? 0.55 : 1
-    const side = world.playerClass === 'melee' ? -1 : 1
-
-    if (world.outcome === 'victory') {
-      // 짧게 몸을 낮춘 뒤 위로 열고, 결과창이 뜰 때는 작은 영웅 포즈를
-      // 유지한다. 루트만 건드려도 무기와 머리카락이 함께 따라와 두 리그에서
-      // 같은 실루엣으로 읽힌다.
-      const anticipation =
-        Math.sin(clamp01(progress / 0.28) * Math.PI) *
-        (1 - smoothstep01((progress - 0.2) / 0.2))
-      const burst = Math.sin(clamp01((progress - 0.12) / 0.78) * Math.PI)
-      const hold = smoothstep01((progress - 0.42) / 0.42)
-      group.position.y +=
-        (-anticipation * 0.045 + burst * 0.15 + hold * 0.055) *
-        motionScale
-      group.rotation.x -= hold * 0.055 * motionScale
-      group.rotation.z +=
-        side * (burst * 0.09 + hold * 0.035) * motionScale
-      group.scale.set(
-        1 + burst * 0.025 * motionScale,
-        1 + (burst * 0.055 + hold * 0.02) * motionScale,
-        1 + burst * 0.025 * motionScale,
-      )
-      return
-    }
-
-    const fall = easeOutCubic(progress)
-    if (world.outcome === 'dead') {
-      // 발밑 원점을 축으로 옆으로 무너뜨려 단순 축소보다 즉시 "사망"으로
-      // 읽힌다. 결과 오버레이 전 0.9초 안에 끝나도록 한 번만 진행한다.
-      group.rotation.x += fall * 0.16 * motionScale
-      group.rotation.z += side * fall * 1.02 * motionScale
-      group.position.y -= fall * 0.34 * motionScale
-      group.scale.set(
-        1 + fall * 0.045 * motionScale,
-        1 - fall * 0.11 * motionScale,
-        1 + fall * 0.045 * motionScale,
-      )
-      return
-    }
-
-    // 제한 시간 종료는 피격 사망과 구분해 완전히 쓰러뜨리지 않고 지친
-    // 자세로 남긴다. 결과 종류를 텍스트보다 먼저 실루엣으로 전달한다.
-    group.rotation.x += fall * 0.34 * motionScale
-    group.rotation.z += side * fall * 0.14 * motionScale
-    group.position.y -= fall * 0.1 * motionScale
-    group.scale.set(1.02, 1 - fall * 0.055 * motionScale, 1.02)
+    const progress = elapsed / PLAYER_HIT_REACTION_DURATION
+    const pulse =
+      Math.sin(progress * Math.PI) *
+      (1 - progress * 0.28) *
+      this.playerHitReactionStrength
+    const motionScale = this.reducedMotion.matches ? 0.42 : 1
+    group.rotation.x -= pulse * 0.09 * motionScale
+    group.rotation.z +=
+      pulse * 0.065 * this.playerHitReactionSide * motionScale
+    group.position.y -= pulse * 0.025 * motionScale
+    group.scale.set(
+      1 + pulse * 0.025 * motionScale,
+      1 - pulse * 0.045 * motionScale,
+      1 + pulse * 0.025 * motionScale,
+    )
   }
 
   /**

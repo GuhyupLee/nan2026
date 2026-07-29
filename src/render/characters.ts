@@ -18,9 +18,21 @@ import {
 import { CLASS_COLORS } from './palette.ts'
 import { createVrmRig } from './vrm-rig.ts'
 import { canStartVrmAction } from './vrm-animation.ts'
+import {
+  VRM_RESULT_MOTIONS,
+  type VrmResultState,
+} from './animation-data.ts'
 
-export type { CharacterAction, CharacterRig } from './rig.ts'
-import type { CharacterAction, CharacterRig } from './rig.ts'
+export type {
+  CharacterAction,
+  CharacterResultState,
+  CharacterRig,
+} from './rig.ts'
+import type {
+  CharacterAction,
+  CharacterResultState,
+  CharacterRig,
+} from './rig.ts'
 
 /**
  * 플레이어 캐릭터 — 코드로 만든 애니메풍 모델. 에셋 파일 0개.
@@ -441,6 +453,295 @@ const POSES: Record<CharacterAction, Pose> = {
   },
 }
 
+interface ProceduralResultPose {
+  rootY: number
+  hips: [number, number, number]
+  torso: [number, number, number]
+  head: [number, number, number]
+  armA: [number, number, number, number]
+  armB: [number, number, number, number]
+  legA: [number, number, number, number, number]
+  legB: [number, number, number, number, number]
+  weapon: [number, number, number]
+  weaponPosition: [number, number, number]
+}
+
+interface ProceduralResultKeyframe extends ProceduralResultPose {
+  time: number
+}
+
+const RESULT_NEUTRAL: ProceduralResultPose = {
+  rootY: 0,
+  hips: [0, 0, 0],
+  torso: [0, 0, 0],
+  head: [0, 0, 0],
+  armA: [0.13, 0, 0, -0.12],
+  armB: [-0.13, 0, 0, -0.12],
+  legA: [0, 0, 0, 0, 0],
+  legB: [0, 0, 0, 0, 0],
+  weapon: [0, 0, 0],
+  weaponPosition: [0, 0, 0],
+}
+
+const RANGED_VICTORY_FINAL: ProceduralResultPose = {
+  rootY: -0.015,
+  hips: [0.015, -0.07, -0.02],
+  torso: [-0.025, 0.035, 0.01],
+  head: [-0.025, 0.015, 0],
+  // 왼손은 가슴, 오른손은 세운 지팡이 쪽으로 내려 정적인 삼각형을 만든다.
+  armA: [0.48, -0.24, -0.82, -0.88],
+  armB: [-0.1, 0.08, 0.08, -0.18],
+  legA: [-0.06, 0.03, -0.04, 0.16, -0.06],
+  legB: [0.04, -0.03, 0.035, 0.1, -0.04],
+  weapon: [0, 0, -0.1],
+  weaponPosition: [0.05, -0.32, -0.08],
+}
+
+const RANGED_DEFEAT_FINAL: ProceduralResultPose = {
+  rootY: -0.36,
+  hips: [0.42, -0.12, -0.2],
+  torso: [0.7, 0.08, -0.16],
+  head: [0.62, -0.08, -0.08],
+  armA: [0.16, -0.12, -0.5, -0.5],
+  armB: [-0.72, 0.1, -0.25, -0.28],
+  legA: [-0.92, 0.12, -0.16, 1.5, -0.58],
+  legB: [-0.24, -0.08, 0.12, 0.62, -0.26],
+  weapon: [0.18, -0.2, 0.38],
+  weaponPosition: [0.34, -0.48, -0.14],
+}
+
+const MELEE_VICTORY_FINAL: ProceduralResultPose = {
+  rootY: -0.01,
+  hips: [0.02, 0.02, -0.03],
+  torso: [-0.05, -0.02, 0.015],
+  head: [-0.035, 0, -0.008],
+  // 양손을 왼허리에 모으고 검을 칼집 축으로 옮겨 납도 실루엣을 고정한다.
+  armA: [0.18, 0.5, -0.68, -0.82],
+  armB: [-0.04, -0.56, -0.62, -0.9],
+  legA: [-0.08, 0.03, -0.05, 0.2, -0.08],
+  legB: [0.05, -0.03, 0.05, 0.14, -0.055],
+  weapon: [0.08, 0.18, 0.22],
+  weaponPosition: [0.1, -0.12, 0.38],
+}
+
+const MELEE_DEFEAT_FINAL: ProceduralResultPose = {
+  rootY: -0.28,
+  hips: [0.3, -0.14, 0.28],
+  torso: [0.54, 0.06, 0.34],
+  head: [0.48, -0.08, 0.2],
+  armA: [0.2, -0.1, -0.38, -0.42],
+  armB: [-0.28, 0.12, -0.08, -0.24],
+  legA: [-0.42, 0.1, -0.16, 0.86, -0.34],
+  legB: [-0.68, -0.14, 0.22, 1.2, -0.46],
+  // 검끝이 발 앞 바닥을 향하도록 회전·위치를 함께 내려 지지대로 읽히게 한다.
+  weapon: [0.28, -0.22, 1.08],
+  weaponPosition: [0.26, -0.52, 0.02],
+}
+
+function resultKey(
+  time: number,
+  pose: ProceduralResultPose,
+): ProceduralResultKeyframe {
+  return { time, ...pose }
+}
+
+const PROCEDURAL_RESULT_KEYS: Readonly<
+  Record<
+    PlayerClass,
+    Readonly<Record<VrmResultState, readonly ProceduralResultKeyframe[]>>
+  >
+> = {
+  ranged: {
+    victory: [
+      resultKey(0, RANGED_VICTORY_FINAL),
+      resultKey(0.72, RESULT_NEUTRAL),
+      resultKey(0.98, {
+        ...RESULT_NEUTRAL,
+        rootY: -0.035,
+        hips: [0.08, 0.12, -0.05],
+        torso: [0.04, -0.04, 0.035],
+        legA: [-0.14, 0.06, -0.08, 0.28, -0.11],
+        legB: [0.1, -0.05, 0.07, 0.2, -0.08],
+      }),
+      resultKey(1.36, {
+        ...RANGED_VICTORY_FINAL,
+        armA: [0.34, -0.2, -0.68, -0.7],
+        armB: [-0.08, 0.06, 0.04, -0.16],
+        weaponPosition: [0.04, -0.22, -0.06],
+      }),
+      resultKey(1.82, RANGED_VICTORY_FINAL),
+      resultKey(4.1, {
+        ...RANGED_VICTORY_FINAL,
+        rootY: -0.006,
+        torso: [-0.038, 0.033, 0.008],
+        armA: [0.49, -0.24, -0.81, -0.87],
+        armB: [-0.11, 0.08, 0.075, -0.18],
+      }),
+      resultKey(6.4, RANGED_VICTORY_FINAL),
+    ],
+    defeat: [
+      resultKey(0, RANGED_DEFEAT_FINAL),
+      resultKey(0.76, RESULT_NEUTRAL),
+      resultKey(1.03, {
+        ...RESULT_NEUTRAL,
+        rootY: -0.04,
+        hips: [0.16, 0.1, -0.08],
+        torso: [0.08, -0.04, 0.04],
+        armB: [-0.44, 0.12, -0.16, -0.24],
+        weaponPosition: [0.18, -0.18, -0.08],
+      }),
+      resultKey(1.3, {
+        ...RANGED_DEFEAT_FINAL,
+        rootY: -0.15,
+        hips: [0.34, -0.06, -0.14],
+        torso: [0.28, 0.02, -0.06],
+        head: [0.12, -0.03, -0.02],
+        legA: [-0.48, 0.1, -0.12, 0.84, -0.3],
+        legB: [-0.16, -0.06, 0.09, 0.38, -0.15],
+      }),
+      resultKey(1.66, {
+        ...RANGED_DEFEAT_FINAL,
+        head: [0.2, -0.04, -0.035],
+      }),
+      resultKey(2.22, RANGED_DEFEAT_FINAL),
+      resultKey(4.12, {
+        ...RANGED_DEFEAT_FINAL,
+        rootY: -0.352,
+        torso: [0.68, 0.078, -0.155],
+        head: [0.635, -0.076, -0.077],
+      }),
+      resultKey(6.2, RANGED_DEFEAT_FINAL),
+    ],
+  },
+  melee: {
+    victory: [
+      resultKey(0, MELEE_VICTORY_FINAL),
+      resultKey(0.74, RESULT_NEUTRAL),
+      resultKey(1.02, {
+        ...RESULT_NEUTRAL,
+        rootY: -0.06,
+        hips: [0.18, 0.58, -0.2],
+        torso: [0.12, -0.3, 0.12],
+        armB: [0.32, 0.72, 0.3, -0.56],
+        legA: [-0.28, 0.1, -0.13, 0.5, -0.2],
+        legB: [0.24, -0.09, 0.12, 0.4, -0.16],
+      }),
+      resultKey(1.48, {
+        ...RESULT_NEUTRAL,
+        rootY: -0.035,
+        hips: [-0.14, -0.78, 0.24],
+        torso: [0.18, 1.02, -0.26],
+        head: [0.1, -0.62, 0.13],
+        armA: [-0.26, 0.34, -0.72, -0.46],
+        armB: [-0.92, -0.64, -0.2, -0.3],
+        weapon: [0.12, -1.1, 0.72],
+        legA: [-0.42, 0.12, -0.18, 0.66, -0.26],
+        legB: [0.34, -0.1, 0.17, 0.54, -0.21],
+      }),
+      resultKey(1.82, {
+        ...MELEE_VICTORY_FINAL,
+        hips: [0.08, -0.34, 0.1],
+        torso: [-0.04, 0.52, -0.12],
+        armA: [-0.18, 0.16, -0.78, -0.54],
+        armB: [-0.62, -0.3, -0.36, -0.42],
+        weapon: [0.08, -0.48, 0.42],
+        weaponPosition: [0.04, -0.04, 0.18],
+      }),
+      resultKey(2.7, MELEE_VICTORY_FINAL),
+      resultKey(4.35, {
+        ...MELEE_VICTORY_FINAL,
+        rootY: -0.001,
+        torso: [-0.065, -0.022, 0.012],
+        head: [-0.043, 0.004, -0.006],
+      }),
+      resultKey(6.6, MELEE_VICTORY_FINAL),
+    ],
+    defeat: [
+      resultKey(0, MELEE_DEFEAT_FINAL),
+      resultKey(0.78, RESULT_NEUTRAL),
+      resultKey(1.06, {
+        ...RESULT_NEUTRAL,
+        rootY: -0.045,
+        hips: [0.16, 0.12, 0.08],
+        torso: [0.1, -0.05, 0.06],
+        armB: [-0.18, 0.12, -0.05, -0.2],
+        weapon: [0.18, -0.14, 0.82],
+        weaponPosition: [0.14, -0.32, 0.02],
+      }),
+      resultKey(1.34, {
+        ...MELEE_DEFEAT_FINAL,
+        rootY: -0.16,
+        hips: [0.32, -0.04, 0.2],
+        torso: [0.26, 0.02, 0.15],
+        head: [0.12, -0.03, 0.06],
+        legA: [-0.24, 0.08, -0.12, 0.5, -0.18],
+        legB: [-0.42, -0.1, 0.16, 0.8, -0.28],
+      }),
+      resultKey(1.68, {
+        ...MELEE_DEFEAT_FINAL,
+        head: [0.18, -0.04, 0.1],
+      }),
+      resultKey(2.2, MELEE_DEFEAT_FINAL),
+      resultKey(4.24, {
+        ...MELEE_DEFEAT_FINAL,
+        rootY: -0.272,
+        torso: [0.525, 0.058, 0.335],
+        head: [0.493, -0.076, 0.195],
+      }),
+      resultKey(6.4, MELEE_DEFEAT_FINAL),
+    ],
+  },
+}
+
+function lerpResultPose(
+  before: ProceduralResultPose,
+  after: ProceduralResultPose,
+  amount: number,
+): ProceduralResultPose {
+  const mix = (a: readonly number[], b: readonly number[]): number[] =>
+    a.map((value, index) => value + (b[index]! - value) * amount)
+  return {
+    rootY: before.rootY + (after.rootY - before.rootY) * amount,
+    hips: mix(before.hips, after.hips) as ProceduralResultPose['hips'],
+    torso: mix(before.torso, after.torso) as ProceduralResultPose['torso'],
+    head: mix(before.head, after.head) as ProceduralResultPose['head'],
+    armA: mix(before.armA, after.armA) as ProceduralResultPose['armA'],
+    armB: mix(before.armB, after.armB) as ProceduralResultPose['armB'],
+    legA: mix(before.legA, after.legA) as ProceduralResultPose['legA'],
+    legB: mix(before.legB, after.legB) as ProceduralResultPose['legB'],
+    weapon: mix(before.weapon, after.weapon) as ProceduralResultPose['weapon'],
+    weaponPosition: mix(
+      before.weaponPosition,
+      after.weaponPosition,
+    ) as ProceduralResultPose['weaponPosition'],
+  }
+}
+
+function sampleProceduralResult(
+  cls: PlayerClass,
+  state: VrmResultState,
+  time: number,
+): ProceduralResultPose {
+  const motion = VRM_RESULT_MOTIONS[cls][state]
+  const keys = PROCEDURAL_RESULT_KEYS[cls][state]
+  const localTime = ((time % motion.duration) + motion.duration) % motion.duration
+  let before = keys[0]!
+  let after = keys.at(-1)!
+  for (let index = 1; index < keys.length; index += 1) {
+    const candidate = keys[index]!
+    if (localTime <= candidate.time) {
+      before = keys[index - 1]!
+      after = candidate
+      break
+    }
+  }
+  const raw = clamp01(
+    (localTime - before.time) / Math.max(1e-6, after.time - before.time),
+  )
+  const amount = raw * raw * (3 - 2 * raw)
+  return lerpResultPose(before, after, amount)
+}
+
 function makeRig(
   cls: PlayerClass,
   body: BodyRig,
@@ -449,14 +750,20 @@ function makeRig(
   baseWeaponRot: THREE.Euler | null,
 ): CharacterRig {
   const action: ActionState = { kind: null, start: -99 }
+  const result: { kind: CharacterResultState | null; start: number } = {
+    kind: null,
+    start: 0,
+  }
   const [armA, armB] = body.arms
   const [legA, legB] = body.legs
+  const baseWeaponPos = weapon?.position.clone() ?? null
 
   const rig: CharacterRig = {
     group: body.root,
     source: 'procedural',
 
     playAction(kind, time, startedAt = time) {
+      if (result.kind) return false
       const progress = action.kind
         ? (time - action.start) / playerActionDuration(cls, action.kind)
         : 1
@@ -474,7 +781,69 @@ function makeRig(
       return true
     },
 
+    setResult(kind, startedAt) {
+      if (kind === result.kind) return
+      result.kind = kind
+      action.kind = null
+      result.start =
+        kind === null
+          ? startedAt
+          : startedAt - VRM_RESULT_MOTIONS[cls][kind].entryTime
+    },
+
     update(time, speed) {
+      if (result.kind) {
+        const pose = sampleProceduralResult(cls, result.kind, time - result.start)
+        body.root.position.y = pose.rootY
+        body.hips.rotation.set(...pose.hips)
+        body.torso.rotation.set(...pose.torso)
+        body.head.rotation.set(...pose.head)
+        body.chest.scale.setScalar(1 + Math.sin((time - result.start) * 1.25) * 0.004)
+
+        for (const [index, values] of [pose.armA, pose.armB].entries()) {
+          const arm = index === 0 ? armA : armB
+          arm.pivot.rotation.set(values[0], values[1], values[2])
+          arm.lower.rotation.set(0, 0, values[3])
+        }
+        for (const [index, values] of [pose.legA, pose.legB].entries()) {
+          const leg = index === 0 ? legA : legB
+          leg.pivot.rotation.set(values[0], values[1], values[2])
+          leg.lower.rotation.set(0, 0, values[3])
+          leg.tip.rotation.set(0, 0, values[4])
+        }
+
+        // 패배 머리카락은 앞으로, 승리 머리카락은 뒤로 조금만 남겨 상체 윤곽을 가리지 않는다.
+        const hairLean = result.kind === 'defeat' ? -0.22 : 0.05
+        for (let index = 0; index < body.hairChain.length; index += 1) {
+          const strand = body.hairChain[index]!
+          strand.rotation.z =
+            hairLean * (0.45 + index * 0.1) +
+            Math.sin(time * 1.2 - index * 0.35) * 0.018
+          strand.rotation.x = Math.sin(time * 0.8 + index) * 0.015
+        }
+        if (body.skirt) {
+          body.skirt.rotation.set(
+            result.kind === 'defeat' ? 0.1 : 0,
+            pose.hips[1] * 0.35,
+            pose.torso[2] * 0.28,
+          )
+        }
+        if (weapon && baseWeaponRot && baseWeaponPos) {
+          weapon.rotation.set(
+            baseWeaponRot.x + pose.weapon[0],
+            baseWeaponRot.y + pose.weapon[1],
+            baseWeaponRot.z + pose.weapon[2],
+          )
+          weapon.position.set(
+            baseWeaponPos.x + pose.weaponPosition[0],
+            baseWeaponPos.y + pose.weaponPosition[1],
+            baseWeaponPos.z + pose.weaponPosition[2],
+          )
+        }
+        onUpdate?.(time, 0, 0)
+        return
+      }
+
       const mv = Math.min(speed / 10, 1)
       // 걸음 위상. 속도가 오르면 보폭이 빨라진다.
       const gait = time * (3.1 + mv * 7.5)
@@ -565,7 +934,11 @@ function makeRig(
           baseWeaponRot.y + pose.weapon[1]! * env,
           baseWeaponRot.z + pose.weapon[2]! * env,
         )
-        weapon.position.y = weapon.userData.baseY + bounce
+        weapon.position.set(
+          baseWeaponPos?.x ?? weapon.position.x,
+          weapon.userData.baseY + bounce,
+          baseWeaponPos?.z ?? weapon.position.z,
+        )
       }
 
       onUpdate?.(time, mv, gait)

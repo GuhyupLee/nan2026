@@ -10,6 +10,7 @@ import { dirname, resolve } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import {
   VRM_ACTION_MOTIONS,
+  VRM_RESULT_MOTIONS,
   VRMA_CLIP_ORDER,
   type VrmaClipName,
   type VrmActionStage,
@@ -145,8 +146,14 @@ function validateClip(
   }
 
   const [, state] = expectedName.split('.')
-  const isLoop = state === 'idle' || state === 'walk'
-  if (raw.loop !== isLoop) fail(`${expectedName} loop flag does not match its state`)
+  const isLoop =
+    state === 'idle' ||
+    state === 'walk' ||
+    state === 'victory' ||
+    state === 'defeat'
+  if (raw.loop !== isLoop) {
+    fail(`${expectedName} loop flag does not match its state`)
+  }
 
   for (let frameIndex = 0; frameIndex < raw.frames.length; frameIndex += 1) {
     const frame = raw.frames[frameIndex]!
@@ -184,6 +191,13 @@ function validateClip(
       fail(`${expectedName} first and last frames must match exactly`)
     }
     if (raw.phases !== undefined) fail(`${expectedName} loop must not declare phases`)
+    if (state === 'victory' || state === 'defeat') {
+      const [cls] = expectedName.split('.') as ['ranged' | 'melee', string]
+      const expectedDuration = VRM_RESULT_MOTIONS[cls][state].duration
+      if (Math.abs(raw.times.at(-1)! - expectedDuration) > 1e-8) {
+        fail(`${expectedName} duration differs from animation-data.ts`)
+      }
+    }
   } else {
     const [cls, action] = expectedName.split('.') as [
       'ranged' | 'melee',

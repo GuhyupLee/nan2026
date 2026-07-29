@@ -863,6 +863,11 @@ export function createVrmRig(cls: PlayerClass): CharacterRig | null {
       return true
     },
 
+    setResult(kind, _startedAt) {
+      animation?.setResult(kind)
+      if (kind) actionKind = null
+    },
+
     update(time, speed) {
       const dt = lastTime < 0 ? 1 / 60 : Math.min(0.1, Math.max(0, time - lastTime))
       lastTime = time

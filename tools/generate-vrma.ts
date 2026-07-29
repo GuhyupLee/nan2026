@@ -7,10 +7,13 @@ import type { CharacterAction } from '../src/render/rig.ts'
 import {
   VRM_ACTION_MOTIONS,
   VRM_CLASS_STANCE,
+  VRM_RESULT_MOTIONS,
   VRMA_CLIP_ORDER,
   type VrmaClipName,
   type VrmActionStage,
+  type VrmAnimationState,
   type VrmBoneName,
+  type VrmResultState,
   type VrmVec3,
 } from '../src/render/animation-data.ts'
 
@@ -336,6 +339,45 @@ function actionFrame(
   }
 }
 
+function resultPoseFrame(
+  cls: PlayerClass,
+  state: VrmResultState,
+  time: number,
+): PoseFrame {
+  const motion = VRM_RESULT_MOTIONS[cls][state]
+  let previous = motion.keyframes[0]!
+  let next = motion.keyframes.at(-1)!
+
+  for (let index = 1; index < motion.keyframes.length; index += 1) {
+    const candidate = motion.keyframes[index]!
+    if (time <= candidate.time) {
+      next = candidate
+      previous = motion.keyframes[index - 1]!
+      break
+    }
+  }
+
+  const span = Math.max(1e-6, next.time - previous.time)
+  const raw = Math.max(0, Math.min(1, (time - previous.time) / span))
+  // 결과 루프는 급한 타격 판정이 없으므로 모든 구간을 부드러운 S자 곡선으로 잇는다.
+  const amount = raw * raw * (3 - 2 * raw)
+  const rotations = Object.fromEntries(
+    TRACKED_BONES.map((bone) => [
+      bone,
+      [
+        lerp(previous.rotations[bone][0], next.rotations[bone][0], amount),
+        lerp(previous.rotations[bone][1], next.rotations[bone][1], amount),
+        lerp(previous.rotations[bone][2], next.rotations[bone][2], amount),
+      ] satisfies VrmVec3,
+    ]),
+  ) as Record<VrmBoneName, VrmVec3>
+
+  return {
+    hipsPosition: [0, lerp(previous.hipsY, next.hipsY, amount), 0],
+    rotations,
+  }
+}
+
 function frameTimes(duration: number, extra: readonly number[] = []): number[] {
   const frames = Array.from(
     { length: Math.floor(duration * 30) + 1 },
@@ -349,9 +391,9 @@ function frameTimes(duration: number, extra: readonly number[] = []): number[] {
 
 function splitClipName(
   name: VrmaClipName,
-): [PlayerClass, 'idle' | 'walk' | CharacterAction] {
+): [PlayerClass, VrmAnimationState] {
   const [cls, state] = name.split('.')
-  return [cls as PlayerClass, state as 'idle' | 'walk' | CharacterAction]
+  return [cls as PlayerClass, state as VrmAnimationState]
 }
 
 function createFrames(name: VrmaClipName): {
@@ -375,6 +417,18 @@ function createFrames(name: VrmaClipName): {
     return {
       times,
       frames: times.map((time) => walkFrame(cls, time, duration)),
+      extras: { sampleRate: 30, inPlace: true, loop: true },
+    }
+  }
+  if (state === 'victory' || state === 'defeat') {
+    const motion = VRM_RESULT_MOTIONS[cls][state]
+    const times = frameTimes(
+      motion.duration,
+      motion.keyframes.map((keyframe) => keyframe.time),
+    )
+    return {
+      times,
+      frames: times.map((time) => resultPoseFrame(cls, state, time)),
       extras: { sampleRate: 30, inPlace: true, loop: true },
     }
   }

@@ -137,6 +137,8 @@ export class OutcomeCinematic {
    * 궤도가 요동친다. 시작 순간에 한 번 고정한다.
    */
   private baseYaw = 0
+  /** 마지막으로 반영한 결과. 값이 바뀔 때만 구도를 다시 고른다. */
+  private lastOutcome: World['outcome'] = 'alive'
   /** 현재 결과에 맞는 구도. `setOutcome`에서 고른다. */
   private shot: HeroShot = VICTORY_SHOT
 
@@ -176,8 +178,16 @@ export class OutcomeCinematic {
    *   승리 화면이 뒤통수만 보여 줬다.
    */
   setOutcome(outcome: World['outcome'], facing: number): void {
+    // **불린이 아니라 값으로 비교한다.**
+    //
+    // 처음에는 `outcome !== 'alive'`만 보고 전환했는데, 그러면 결과가 확정된
+    // 뒤에 값이 바뀌어도(승리 → 패배) 구도가 갱신되지 않는다. 실제 플레이는
+    // alive에서 한 번만 넘어가므로 드러나지 않지만, QA 훅으로 결과를 바꿔
+    // 확인할 때 승리 화면에 패배 조명이 그대로 남는 것을 실제로 봤다.
+    // 상태 기계가 한 방향이라고 가정하면 진단이 어려운 버그가 남는다.
+    if (outcome === this.lastOutcome) return
+    this.lastOutcome = outcome
     const next = outcome !== 'alive'
-    if (next === this.active) return
     this.active = next
     if (next) {
       this.shot = outcome === 'victory' ? VICTORY_SHOT : DEFEAT_SHOT

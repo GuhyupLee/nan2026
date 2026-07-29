@@ -9,8 +9,10 @@ import { playerActionDuration } from '../sim/action-timing.ts'
 import type { PlayerClass } from '../sim/types.ts'
 import type { CharacterAction } from './rig.ts'
 import {
+  VRM_RESULT_MOTIONS,
   VRMA_CLIP_ORDER,
   type VrmAnimationState,
+  type VrmResultState,
 } from './animation-data.ts'
 
 const ACTION_PRIORITY: Record<CharacterAction, number> = {
@@ -54,6 +56,8 @@ const ACTION_FADE_IN = 0.018
 /** 이전 one-shot만 빠르게 걷어내는 교차 페이드. */
 const ACTION_CROSS_FADE = 0.035
 const ACTION_TIME_EPSILON = 1e-6
+/** 결과 전신 포즈가 마지막 전투 프레임을 갑자기 덮지 않게 하는 짧은 진입 블렌드. */
+const RESULT_FADE_IN = 0.16
 
 export interface ActiveVrmAction {
   kind: CharacterAction
@@ -125,9 +129,10 @@ interface Outgoing {
 }
 
 /**
- * 한 VRM 인스턴스의 idle/walk/전투 클립을 관리한다.
+ * 한 VRM 인스턴스의 idle/walk/전투/결과 클립을 관리한다.
  *
- * 동시에 활성화되는 것은 idle, walk, one-shot 세 개뿐이다. 클립과 액션은
+ * 전투 중 동시에 활성화되는 것은 idle, walk, one-shot 세 개뿐이고, 결과가
+ * 정해지면 이 층을 결과 루프 하나로 넘긴다. 클립과 액션은
  * 생성할 때 캐시하고 update에서는 객체를 만들지 않는다.
  */
 export class VrmAnimationController {
@@ -138,6 +143,9 @@ export class VrmAnimationController {
   private readonly walk: THREE.AnimationAction
   private activePlayback: Playback | null = null
   private outgoing: Outgoing | null = null
+  private resultState: VrmResultState | null = null
+  private resultAction: THREE.AnimationAction | null = null
+  private resultBlend = 0
   private walkBlend = 0
 
   private constructor(
@@ -180,7 +188,9 @@ export class VrmAnimationController {
 
     const idle = this.actions.get('idle')
     const walk = this.actions.get('walk')
-    if (!idle || !walk || this.actions.size !== 9) {
+    const victory = this.actions.get('victory')
+    const defeat = this.actions.get('defeat')
+    if (!idle || !walk || !victory || !defeat || this.actions.size !== 11) {
       throw new Error(`[vrma] incomplete ${cls} clip set`)
     }
     this.idle = idle
@@ -209,6 +219,8 @@ export class VrmAnimationController {
     time: number,
     startedAt = time,
   ): boolean {
+    if (this.resultState) return false
+
     const eventStartedAt = Number.isFinite(startedAt) ? startedAt : time
     const previous = this.activePlayback
     const current = this.active(time)
@@ -281,6 +293,49 @@ export class VrmAnimationController {
     return true
   }
 
+  /**
+   * 결과 루프를 켜거나 해제한다.
+   *
+   * 0초/마지막 프레임은 같은 정착 자세이고, 첫 진입만 entryTime에서 시작해
+   * 승리의 준비 동작이나 패배의 무너짐을 먼저 보여 준다.
+   */
+  setResult(state: VrmResultState | null): void {
+    if (state === this.resultState) return
+
+    this.resultAction?.stop()
+    this.resultAction = null
+    this.resultState = state
+    this.resultBlend = 0
+
+    if (this.activePlayback) {
+      this.activePlayback.action.stop()
+      this.activePlayback = null
+    }
+    if (this.outgoing) {
+      this.outgoing.action.stop()
+      this.outgoing = null
+    }
+
+    if (!state) {
+      this.idle.setEffectiveWeight(1)
+      this.walk.setEffectiveWeight(0)
+      return
+    }
+
+    const action = this.actions.get(state)
+    if (!action) return
+    action
+      .reset()
+      .setLoop(THREE.LoopRepeat, Infinity)
+      .setEffectiveTimeScale(1)
+      .setEffectiveWeight(0)
+      .play()
+    action.paused = false
+    action.time = VRM_RESULT_MOTIONS[this.cls][state].entryTime
+    this.resultAction = action
+    this.walkBlend = 0
+  }
+
   active(time: number): ActiveVrmAction | null {
     const playback = this.activePlayback
     if (!playback) return null
@@ -292,6 +347,18 @@ export class VrmAnimationController {
 
   update(dt: number, time: number, speed: number): void {
     const delta = Math.min(0.1, Math.max(0, dt))
+    if (this.resultState && this.resultAction) {
+      this.resultBlend +=
+        (1 - this.resultBlend) *
+        (1 - Math.exp(-delta * (4.6 / RESULT_FADE_IN)))
+      if (this.resultBlend > 0.999) this.resultBlend = 1
+      this.resultAction.setEffectiveWeight(this.resultBlend)
+      this.idle.setEffectiveWeight(1 - this.resultBlend)
+      this.walk.setEffectiveWeight(0)
+      this.mixer.update(delta)
+      return
+    }
+
     const targetWalk = smoothstep(0.02, 0.62, clamp01(speed / 8))
     this.walkBlend +=
       (targetWalk - this.walkBlend) * (1 - Math.exp(-delta * 11))
@@ -368,6 +435,8 @@ export class VrmAnimationController {
     this.actions.clear()
     this.activePlayback = null
     this.outgoing = null
+    this.resultState = null
+    this.resultAction = null
   }
 
   private progress(playback: Playback, time: number): number {

@@ -594,7 +594,8 @@ function beginRun(
   fps = 0
   let revealQaOutcome = false
   if (import.meta.env.DEV) {
-    const qa = new URLSearchParams(window.location.search).get('qa')
+    const qaParams = new URLSearchParams(window.location.search)
+    const qa = qaParams.get('qa')
     if (qa === 'relic') {
       world.pendingRelicChoices = 1
       world.relicsClaimed = 1
@@ -663,7 +664,14 @@ function beginRun(
       world.kills = 318
       world.progression.level = 26
       world.relicsClaimed = 3
-      world.outcome = 'victory'
+      // 같은 완성 빌드에서 승리·패배 전신 루프를 번갈아 검수한다.
+      // `result`를 생략하면 기존 QA 링크와 동일하게 승리를 유지한다.
+      if (qaParams.get('result') === 'defeat') {
+        world.player.hp = 0
+        world.outcome = 'dead'
+      } else {
+        world.outcome = 'victory'
+      }
       revealQaOutcome = true
     } else if (qa === 'pickups') {
       // 세 픽업의 월드 실루엣과 자석 지속 HUD를 한 화면에서 검수한다.

@@ -13,8 +13,10 @@ import { createWorld } from '../src/sim/world.ts'
 import type { CharacterAction } from '../src/render/rig.ts'
 import {
   VRM_ACTION_MOTIONS,
+  VRM_RESULT_MOTIONS,
   VRMA_CLIP_ORDER,
   type VrmActionStage,
+  type VrmAnimationState,
   type VrmBoneName,
   type VrmaClipName,
 } from '../src/render/animation-data.ts'
@@ -162,12 +164,12 @@ function accessorValues(index: number): Float32Array {
 
 function parseClipName(name: VrmaClipName): {
   cls: PlayerClass
-  state: 'idle' | 'walk' | CharacterAction
+  state: VrmAnimationState
 } {
   const [cls, state] = name.split('.')
   return {
     cls: cls as PlayerClass,
-    state: state as 'idle' | 'walk' | CharacterAction,
+    state: state as VrmAnimationState,
   }
 }
 
@@ -295,6 +297,60 @@ for (const animation of json.animations) {
       assert.ok(
         quaternionDistance(first, last) < 1e-5,
         `${animation.name} loops ${bone} without a seam`,
+      )
+    }
+    if (state === 'victory' || state === 'defeat') {
+      const motion = VRM_RESULT_MOTIONS[cls][state]
+      assert.ok(
+        Math.abs(times.at(-1)! - motion.duration) < 1e-6,
+        `${animation.name} uses its authored result duration`,
+      )
+      assert.ok(
+        motion.entryTime > 0 && motion.entryTime < motion.duration,
+        `${animation.name} has a valid first-entry offset`,
+      )
+      for (const keyframe of motion.keyframes) {
+        assert.ok(
+          Array.from(times).some((time) => Math.abs(time - keyframe.time) < 1e-5),
+          `${animation.name} samples authored result key ${keyframe.time.toFixed(3)} s`,
+        )
+        for (const bone of Object.keys(keyframe.rotations) as VrmBoneName[]) {
+          const expected = new Quaternion().setFromEuler(
+            new Euler(...keyframe.rotations[bone], 'XYZ'),
+          )
+          assert.ok(
+            quaternionDistance(
+              quaternionAt(animation, bone, keyframe.time),
+              expected,
+            ) < 1e-5,
+            `${animation.name} ${keyframe.time.toFixed(3)} s ${bone} matches animation-data`,
+          )
+        }
+      }
+
+      let resultSilhouetteDistance = 0
+      for (const bone of [
+        'hips',
+        'spine',
+        'chest',
+        'head',
+        'leftShoulder',
+        'leftUpperArm',
+        'leftLowerArm',
+        'rightShoulder',
+        'rightUpperArm',
+        'rightLowerArm',
+        'leftUpperLeg',
+        'rightUpperLeg',
+      ] as const) {
+        resultSilhouetteDistance += quaternionDistance(
+          quaternionAt(animation, bone, 0),
+          quaternionAt(animation, bone, motion.entryTime),
+        )
+      }
+      assert.ok(
+        resultSilhouetteDistance > 2,
+        `${animation.name} entry and settled full-body silhouettes are distinct`,
       )
     }
     continue
@@ -470,8 +526,13 @@ assert.equal(animations?.length, VRMA_CLIP_ORDER.length, 'official loader clip c
 assert.ok(animations?.every((animation) => animation.duration > 0), 'all clips have duration')
 for (let index = 0; index < VRMA_CLIP_ORDER.length; index += 1) {
   const { cls, state } = parseClipName(VRMA_CLIP_ORDER[index]!)
-  if (!actionNames.has(state)) continue
-  const expected = VRM_ACTION_MOTIONS[cls][state as CharacterAction].duration
+  const expected =
+    state === 'victory' || state === 'defeat'
+      ? VRM_RESULT_MOTIONS[cls][state].duration
+      : actionNames.has(state)
+        ? VRM_ACTION_MOTIONS[cls][state as CharacterAction].duration
+        : null
+  if (expected === null) continue
   assert.ok(
     Math.abs(animations![index]!.duration - expected) < 1e-5,
     `${VRMA_CLIP_ORDER[index]} official-loader duration`,

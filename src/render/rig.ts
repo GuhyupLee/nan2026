@@ -11,6 +11,7 @@ import type { PlayerActionKind } from '../sim/types.ts'
  */
 
 export type CharacterAction = PlayerActionKind
+export type CharacterResultState = 'victory' | 'defeat'
 
 export interface CharacterRig {
   group: THREE.Group
@@ -22,6 +23,11 @@ export interface CharacterRig {
    */
   source: 'vrm' | 'procedural'
   update(time: number, speed: number): void
+  /**
+   * 결과 전신 루프를 전환한다. 결과 중 시뮬레이션 시계가 멈추므로 `startedAt`은
+   * 렌더러의 벽시계를 받는다. 같은 상태를 반복 전달해도 재시작하지 않아야 한다.
+   */
+  setResult(state: CharacterResultState | null, startedAt: number): void
   /** 재생이 수락됐으면 true. 더 높은 우선순위 모션이 잠갔으면 false. */
   /**
    * 시뮬레이션이 승인한 전투 동작을 재생한다.

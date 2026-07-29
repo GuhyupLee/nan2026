@@ -51,6 +51,27 @@ export interface VrmActionMotion {
   keyframes: readonly VrmActionKeyframe[]
 }
 
+export type VrmResultState = 'victory' | 'defeat'
+
+export interface VrmResultKeyframe {
+  /** Seconds from the beginning of the seamless result loop. */
+  time: number
+  /** Absolute humanoid Hips height. Root X/Z are intentionally not authored. */
+  hipsY: number
+  /** Absolute normalized-humanoid local rotations, in XYZ Euler radians. */
+  rotations: Readonly<Record<VrmBoneName, VrmVec3>>
+}
+
+export interface VrmResultMotion {
+  duration: number
+  /**
+   * 첫 재생은 완성 자세인 0초 프레임 대신 이 지점에서 시작한다.
+   * 루프 경계는 완성 자세끼리 맞추고, 첫 진입에서는 준비 동작부터 보이게 한다.
+   */
+  entryTime: number
+  keyframes: readonly VrmResultKeyframe[]
+}
+
 type PosePatch = Partial<Record<VrmBoneName, VrmVec3>>
 
 interface StagePose {
@@ -206,6 +227,32 @@ function motion(
       frame('followThrough', phase.followThrough, base, followThrough),
       frame('recovery', phase.recovery, base),
     ],
+  }
+}
+
+function resultFrame(
+  time: number,
+  base: Readonly<Record<VrmBoneName, VrmVec3>>,
+  pose?: StagePose,
+): VrmResultKeyframe {
+  return {
+    time,
+    hipsY: pose?.hipsY ?? 1,
+    rotations: mergePose(base, pose?.rotations ?? {}),
+  }
+}
+
+function resultMotion(
+  cls: PlayerClass,
+  duration: number,
+  entryTime: number,
+  poses: readonly (readonly [time: number, pose: StagePose])[],
+): VrmResultMotion {
+  const base = VRM_CLASS_STANCE[cls]
+  return {
+    duration,
+    entryTime,
+    keyframes: poses.map(([time, pose]) => resultFrame(time, base, pose)),
   }
 }
 
@@ -1191,7 +1238,614 @@ export const VRM_ACTION_MOTIONS: Readonly<
   },
 }
 
-export type VrmAnimationState = 'idle' | 'walk' | CharacterAction
+/**
+ * 결과 루프는 0초와 마지막을 이미 정착한 같은 자세로 둔다.
+ *
+ * 런타임은 `entryTime`부터 첫 재생해 준비→동작→정착을 보여 주고, 이후 루프에서는
+ * 정착 자세에서 천천히 다시 힘을 모으므로 경계가 튀지 않는다. 3/4 눈높이 카메라에서
+ * 손·무기·얼굴이 읽히도록 상체 키를 촘촘히 두되, 골반→척추→가슴→어깨 순서의
+ * 지연을 각기 다른 키 시각으로 만들었다.
+ */
+export const VRM_RESULT_MOTIONS: Readonly<
+  Record<PlayerClass, Readonly<Record<VrmResultState, VrmResultMotion>>>
+> = {
+  ranged: {
+    // 루멘 승리: 지팡이를 수직으로 세우고 왼손을 가슴에 얹은 조용한 예.
+    victory: resultMotion('ranged', 6.4, 0.72, [
+      [0, {
+        hipsY: 0.985,
+        rotations: {
+          hips: [0.02, -0.08, -0.025],
+          spine: [0.015, 0.06, 0.02],
+          chest: [-0.03, 0.04, -0.015],
+          neck: [0.01, -0.015, 0.005],
+          head: [-0.035, 0, 0.008],
+          leftShoulder: [0.05, 0.1, -0.08],
+          leftUpperArm: [-0.5, -0.35, -0.58],
+          leftLowerArm: [-0.42, -1.05, -0.38],
+          leftHand: [0.2, -0.35, 0.18],
+          rightShoulder: [0.012, -0.015, 0.018],
+          rightUpperArm: [-0.12, 0.08, 1.18],
+          rightLowerArm: [-0.06, 0.25, 0.06],
+          rightHand: [0.02, -0.02, -0.04],
+          leftUpperLeg: [-0.09, 0.07, -0.07],
+          leftLowerLeg: [0.18, -0.025, 0.035],
+          leftFoot: [-0.09, -0.04, 0.025],
+          rightUpperLeg: [0.055, -0.06, 0.06],
+          rightLowerLeg: [0.12, 0.03, -0.025],
+          rightFoot: [-0.065, 0.035, -0.02],
+        },
+      }],
+      [0.72, { hipsY: 1, rotations: {} }],
+      [0.98, {
+        hipsY: 0.972,
+        rotations: {
+          hips: [0.07, 0.12, -0.045],
+          spine: [0.08, -0.05, 0.045],
+          leftUpperLeg: [-0.16, 0.11, -0.1],
+          rightUpperLeg: [0.1, -0.09, 0.08],
+        },
+      }],
+      [1.18, {
+        hipsY: 0.976,
+        rotations: {
+          hips: [0.035, 0.03, -0.035],
+          spine: [0.055, 0.015, 0.035],
+          chest: [-0.015, -0.02, 0.018],
+          rightShoulder: [0.035, -0.02, 0.025],
+          rightUpperArm: [-0.08, 0.12, 1.12],
+          rightLowerArm: [-0.08, 0.34, 0.08],
+          rightHand: [0.04, -0.04, -0.08],
+        },
+      }],
+      [1.42, {
+        hipsY: 0.98,
+        rotations: {
+          hips: [0.025, -0.04, -0.03],
+          spine: [0.035, 0.045, 0.028],
+          chest: [-0.025, 0.025, -0.008],
+          leftShoulder: [0.065, 0.08, -0.07],
+          leftUpperArm: [-0.36, -0.28, -0.72],
+          leftLowerArm: [-0.3, -0.88, -0.3],
+          rightUpperArm: [-0.1, 0.1, 1.17],
+          rightLowerArm: [-0.07, 0.29, 0.07],
+        },
+      }],
+      [1.82, {
+        hipsY: 0.985,
+        rotations: {
+          hips: [0.02, -0.08, -0.025],
+          spine: [0.015, 0.06, 0.02],
+          chest: [-0.03, 0.04, -0.015],
+          neck: [0.01, -0.015, 0.005],
+          head: [-0.035, 0, 0.008],
+          leftShoulder: [0.05, 0.1, -0.08],
+          leftUpperArm: [-0.5, -0.35, -0.58],
+          leftLowerArm: [-0.42, -1.05, -0.38],
+          leftHand: [0.2, -0.35, 0.18],
+          rightShoulder: [0.012, -0.015, 0.018],
+          rightUpperArm: [-0.12, 0.08, 1.18],
+          rightLowerArm: [-0.06, 0.25, 0.06],
+          rightHand: [0.02, -0.02, -0.04],
+          leftUpperLeg: [-0.09, 0.07, -0.07],
+          leftLowerLeg: [0.18, -0.025, 0.035],
+          leftFoot: [-0.09, -0.04, 0.025],
+          rightUpperLeg: [0.055, -0.06, 0.06],
+          rightLowerLeg: [0.12, 0.03, -0.025],
+          rightFoot: [-0.065, 0.035, -0.02],
+        },
+      }],
+      [4.1, {
+        hipsY: 0.993,
+        rotations: {
+          hips: [0.026, -0.076, -0.021],
+          spine: [0.004, 0.057, 0.017],
+          chest: [-0.012, 0.038, -0.011],
+          neck: [0.004, -0.012, 0.003],
+          head: [-0.041, 0.003, 0.006],
+          leftShoulder: [0.061, 0.098, -0.075],
+          rightShoulder: [0.022, -0.012, 0.014],
+          leftUpperArm: [-0.508, -0.346, -0.574],
+          rightUpperArm: [-0.128, 0.077, 1.174],
+        },
+      }],
+      [6.4, {
+        hipsY: 0.985,
+        rotations: {
+          hips: [0.02, -0.08, -0.025],
+          spine: [0.015, 0.06, 0.02],
+          chest: [-0.03, 0.04, -0.015],
+          neck: [0.01, -0.015, 0.005],
+          head: [-0.035, 0, 0.008],
+          leftShoulder: [0.05, 0.1, -0.08],
+          leftUpperArm: [-0.5, -0.35, -0.58],
+          leftLowerArm: [-0.42, -1.05, -0.38],
+          leftHand: [0.2, -0.35, 0.18],
+          rightShoulder: [0.012, -0.015, 0.018],
+          rightUpperArm: [-0.12, 0.08, 1.18],
+          rightLowerArm: [-0.06, 0.25, 0.06],
+          rightHand: [0.02, -0.02, -0.04],
+          leftUpperLeg: [-0.09, 0.07, -0.07],
+          leftLowerLeg: [0.18, -0.025, 0.035],
+          leftFoot: [-0.09, -0.04, 0.025],
+          rightUpperLeg: [0.055, -0.06, 0.06],
+          rightLowerLeg: [0.12, 0.03, -0.025],
+          rightFoot: [-0.065, 0.035, -0.02],
+        },
+      }],
+    ]),
+
+    // 루멘 패배: 오른손의 지팡이가 먼저 앞으로 빠지고, 왼무릎과 머리가 차례로 내려간다.
+    defeat: resultMotion('ranged', 6.2, 0.76, [
+      [0, {
+        hipsY: 0.62,
+        rotations: {
+          hips: [0.46, -0.12, -0.22],
+          spine: [0.72, 0.08, -0.18],
+          chest: [0.58, 0.1, -0.13],
+          neck: [0.34, -0.04, -0.04],
+          head: [0.68, -0.08, -0.08],
+          leftShoulder: [0.16, 0.1, -0.18],
+          leftUpperArm: [-0.12, -0.18, -0.92],
+          leftLowerArm: [-0.28, -0.68, -0.24],
+          leftHand: [0.18, -0.24, 0.2],
+          rightShoulder: [0.18, -0.12, 0.14],
+          rightUpperArm: [-0.84, 0.12, 0.45],
+          rightLowerArm: [-0.26, 0.42, 0.12],
+          rightHand: [0.28, -0.16, -0.42],
+          leftUpperLeg: [-1.14, 0.2, -0.24],
+          leftLowerLeg: [1.78, -0.08, 0.12],
+          leftFoot: [-0.66, -0.12, 0.08],
+          rightUpperLeg: [-0.36, -0.12, 0.16],
+          rightLowerLeg: [0.72, 0.08, -0.08],
+          rightFoot: [-0.31, 0.1, -0.06],
+        },
+      }],
+      [0.76, { hipsY: 0.99, rotations: {} }],
+      [1.03, {
+        hipsY: 0.965,
+        rotations: {
+          hips: [0.18, 0.16, -0.08],
+          spine: [0.12, -0.08, 0.05],
+          rightShoulder: [0.08, -0.08, 0.08],
+          rightUpperArm: [-0.48, 0.18, 0.72],
+          rightLowerArm: [-0.18, 0.56, 0.16],
+          rightHand: [0.14, -0.02, -0.28],
+        },
+      }],
+      [1.3, {
+        hipsY: 0.85,
+        rotations: {
+          hips: [0.38, -0.05, -0.16],
+          spine: [0.3, 0.02, -0.08],
+          chest: [0.12, 0.04, -0.03],
+          rightUpperArm: [-0.72, 0.14, 0.54],
+          rightLowerArm: [-0.24, 0.46, 0.14],
+          leftUpperLeg: [-0.62, 0.16, -0.18],
+          leftLowerLeg: [1.02, -0.07, 0.09],
+          rightUpperLeg: [-0.22, -0.1, 0.12],
+          rightLowerLeg: [0.46, 0.07, -0.06],
+        },
+      }],
+      [1.6, {
+        hipsY: 0.7,
+        rotations: {
+          hips: [0.48, -0.1, -0.21],
+          spine: [0.62, 0.06, -0.15],
+          chest: [0.4, 0.08, -0.09],
+          neck: [0.15, -0.03, -0.02],
+          head: [0.24, -0.04, -0.035],
+          rightUpperArm: [-0.82, 0.12, 0.47],
+          leftUpperLeg: [-1.02, 0.19, -0.22],
+          leftLowerLeg: [1.6, -0.08, 0.11],
+          rightUpperLeg: [-0.32, -0.11, 0.15],
+          rightLowerLeg: [0.65, 0.08, -0.075],
+        },
+      }],
+      [1.94, {
+        hipsY: 0.625,
+        rotations: {
+          hips: [0.46, -0.12, -0.22],
+          spine: [0.72, 0.08, -0.18],
+          chest: [0.58, 0.1, -0.13],
+          neck: [0.28, -0.04, -0.035],
+          head: [0.38, -0.06, -0.05],
+          leftShoulder: [0.16, 0.1, -0.18],
+          leftUpperArm: [-0.12, -0.18, -0.92],
+          leftLowerArm: [-0.28, -0.68, -0.24],
+          rightShoulder: [0.18, -0.12, 0.14],
+          rightUpperArm: [-0.84, 0.12, 0.45],
+          rightLowerArm: [-0.26, 0.42, 0.12],
+          rightHand: [0.28, -0.16, -0.42],
+          leftUpperLeg: [-1.14, 0.2, -0.24],
+          leftLowerLeg: [1.78, -0.08, 0.12],
+          leftFoot: [-0.66, -0.12, 0.08],
+          rightUpperLeg: [-0.36, -0.12, 0.16],
+          rightLowerLeg: [0.72, 0.08, -0.08],
+          rightFoot: [-0.31, 0.1, -0.06],
+        },
+      }],
+      [2.22, {
+        hipsY: 0.62,
+        rotations: {
+          hips: [0.46, -0.12, -0.22],
+          spine: [0.72, 0.08, -0.18],
+          chest: [0.58, 0.1, -0.13],
+          neck: [0.34, -0.04, -0.04],
+          head: [0.68, -0.08, -0.08],
+          leftShoulder: [0.16, 0.1, -0.18],
+          leftUpperArm: [-0.12, -0.18, -0.92],
+          leftLowerArm: [-0.28, -0.68, -0.24],
+          leftHand: [0.18, -0.24, 0.2],
+          rightShoulder: [0.18, -0.12, 0.14],
+          rightUpperArm: [-0.84, 0.12, 0.45],
+          rightLowerArm: [-0.26, 0.42, 0.12],
+          rightHand: [0.28, -0.16, -0.42],
+          leftUpperLeg: [-1.14, 0.2, -0.24],
+          leftLowerLeg: [1.78, -0.08, 0.12],
+          leftFoot: [-0.66, -0.12, 0.08],
+          rightUpperLeg: [-0.36, -0.12, 0.16],
+          rightLowerLeg: [0.72, 0.08, -0.08],
+          rightFoot: [-0.31, 0.1, -0.06],
+        },
+      }],
+      [4.12, {
+        hipsY: 0.628,
+        rotations: {
+          hips: [0.47, -0.116, -0.218],
+          spine: [0.704, 0.076, -0.176],
+          chest: [0.594, 0.097, -0.127],
+          neck: [0.326, -0.038, -0.039],
+          head: [0.692, -0.076, -0.077],
+          leftShoulder: [0.168, 0.098, -0.176],
+          rightShoulder: [0.188, -0.118, 0.136],
+        },
+      }],
+      [6.2, {
+        hipsY: 0.62,
+        rotations: {
+          hips: [0.46, -0.12, -0.22],
+          spine: [0.72, 0.08, -0.18],
+          chest: [0.58, 0.1, -0.13],
+          neck: [0.34, -0.04, -0.04],
+          head: [0.68, -0.08, -0.08],
+          leftShoulder: [0.16, 0.1, -0.18],
+          leftUpperArm: [-0.12, -0.18, -0.92],
+          leftLowerArm: [-0.28, -0.68, -0.24],
+          leftHand: [0.18, -0.24, 0.2],
+          rightShoulder: [0.18, -0.12, 0.14],
+          rightUpperArm: [-0.84, 0.12, 0.45],
+          rightLowerArm: [-0.26, 0.42, 0.12],
+          rightHand: [0.28, -0.16, -0.42],
+          leftUpperLeg: [-1.14, 0.2, -0.24],
+          leftLowerLeg: [1.78, -0.08, 0.12],
+          leftFoot: [-0.66, -0.12, 0.08],
+          rightUpperLeg: [-0.36, -0.12, 0.16],
+          rightLowerLeg: [0.72, 0.08, -0.08],
+          rightFoot: [-0.31, 0.1, -0.06],
+        },
+      }],
+    ]),
+  },
+
+  melee: {
+    // 월아 승리: 골반부터 크게 비틀어 한 번 털어 벤 뒤, 검을 왼허리 칼집으로 거둔다.
+    victory: resultMotion('melee', 6.6, 0.74, [
+      [0, {
+        hipsY: 0.985,
+        rotations: {
+          hips: [0.025, 0.02, -0.035],
+          spine: [0.015, -0.025, 0.025],
+          chest: [-0.055, -0.02, 0.018],
+          neck: [-0.01, 0.012, -0.006],
+          head: [-0.045, 0, -0.008],
+          leftShoulder: [0.08, 0.16, -0.11],
+          leftUpperArm: [0.12, 0.54, -0.72],
+          leftLowerArm: [-0.28, -0.92, 0.28],
+          leftHand: [0.22, 0.32, -0.22],
+          rightShoulder: [0.085, -0.16, 0.1],
+          rightUpperArm: [0.16, -0.66, 0.68],
+          rightLowerArm: [-0.22, 1.02, 0.3],
+          rightHand: [-0.16, -0.42, 0.5],
+          leftUpperLeg: [-0.12, 0.08, -0.08],
+          leftLowerLeg: [0.24, -0.04, 0.04],
+          leftFoot: [-0.12, -0.055, 0.03],
+          rightUpperLeg: [0.075, -0.07, 0.07],
+          rightLowerLeg: [0.16, 0.04, -0.03],
+          rightFoot: [-0.085, 0.05, -0.025],
+        },
+      }],
+      [0.74, { hipsY: 1, rotations: {} }],
+      [1.02, {
+        hipsY: 0.94,
+        rotations: {
+          hips: [0.18, 0.62, -0.2],
+          spine: [0.12, -0.28, 0.11],
+          leftUpperLeg: [-0.34, 0.2, -0.17],
+          rightUpperLeg: [0.28, -0.18, 0.15],
+        },
+      }],
+      [1.24, {
+        hipsY: 0.93,
+        rotations: {
+          hips: [0.22, 0.72, -0.24],
+          spine: [0.28, -0.74, 0.25],
+          chest: [0.04, -0.42, 0.12],
+          head: [-0.08, 0.34, -0.05],
+          rightShoulder: [0.14, 0.22, 0.16],
+          rightUpperArm: [0.42, 0.76, 0.32],
+          rightLowerArm: [-0.62, 1.18, 0.46],
+          rightHand: [-0.58, 0.62, -0.5],
+        },
+      }],
+      [1.48, {
+        hipsY: 0.955,
+        rotations: {
+          hips: [-0.14, -0.82, 0.25],
+          spine: [-0.2, 0.94, -0.3],
+          chest: [0.2, 1.08, -0.24],
+          neck: [0.08, -0.42, 0.08],
+          head: [0.12, -0.7, 0.15],
+          leftShoulder: [-0.04, 0.22, 0.12],
+          leftUpperArm: [-0.38, 0.38, -0.78],
+          leftLowerArm: [0.16, -0.52, 0.28],
+          rightShoulder: [-0.08, -0.28, -0.16],
+          rightUpperArm: [-1.02, -0.7, 0.12],
+          rightLowerArm: [-0.18, 0.16, -0.38],
+          rightHand: [0.38, -0.62, 0.72],
+          leftUpperLeg: [-0.48, 0.24, -0.22],
+          leftLowerLeg: [0.7, -0.14, 0.15],
+          rightUpperLeg: [0.4, -0.23, 0.2],
+          rightLowerLeg: [0.56, 0.13, -0.13],
+        },
+      }],
+      [1.82, {
+        hipsY: 0.97,
+        rotations: {
+          hips: [0.08, -0.38, 0.12],
+          spine: [0.12, 0.48, -0.16],
+          chest: [-0.06, 0.58, -0.13],
+          head: [-0.06, -0.38, 0.08],
+          leftUpperArm: [-0.28, 0.14, -0.9],
+          leftLowerArm: [0.04, -0.58, 0.16],
+          rightUpperArm: [-0.74, -0.34, 0.4],
+          rightLowerArm: [-0.32, 0.4, -0.24],
+          rightHand: [0.24, -0.36, 0.46],
+        },
+      }],
+      [2.18, {
+        hipsY: 0.98,
+        rotations: {
+          hips: [0.05, -0.14, 0.02],
+          spine: [0.08, 0.16, -0.04],
+          chest: [-0.04, 0.18, -0.035],
+          leftShoulder: [0.06, 0.12, -0.08],
+          leftUpperArm: [0.02, 0.42, -0.76],
+          leftLowerArm: [-0.2, -0.84, 0.24],
+          rightShoulder: [0.06, -0.12, 0.08],
+          rightUpperArm: [-0.2, -0.5, 0.62],
+          rightLowerArm: [-0.26, 0.82, 0.22],
+          rightHand: [-0.08, -0.34, 0.4],
+        },
+      }],
+      [2.7, {
+        hipsY: 0.985,
+        rotations: {
+          hips: [0.025, 0.02, -0.035],
+          spine: [0.015, -0.025, 0.025],
+          chest: [-0.055, -0.02, 0.018],
+          neck: [-0.01, 0.012, -0.006],
+          head: [-0.045, 0, -0.008],
+          leftShoulder: [0.08, 0.16, -0.11],
+          leftUpperArm: [0.12, 0.54, -0.72],
+          leftLowerArm: [-0.28, -0.92, 0.28],
+          leftHand: [0.22, 0.32, -0.22],
+          rightShoulder: [0.085, -0.16, 0.1],
+          rightUpperArm: [0.16, -0.66, 0.68],
+          rightLowerArm: [-0.22, 1.02, 0.3],
+          rightHand: [-0.16, -0.42, 0.5],
+          leftUpperLeg: [-0.12, 0.08, -0.08],
+          leftLowerLeg: [0.24, -0.04, 0.04],
+          leftFoot: [-0.12, -0.055, 0.03],
+          rightUpperLeg: [0.075, -0.07, 0.07],
+          rightLowerLeg: [0.16, 0.04, -0.03],
+          rightFoot: [-0.085, 0.05, -0.025],
+        },
+      }],
+      [4.35, {
+        hipsY: 0.994,
+        rotations: {
+          hips: [0.031, 0.024, -0.031],
+          spine: [0.004, -0.028, 0.022],
+          chest: [-0.035, -0.022, 0.014],
+          head: [-0.052, 0.004, -0.006],
+          leftShoulder: [0.091, 0.158, -0.105],
+          rightShoulder: [0.096, -0.158, 0.095],
+        },
+      }],
+      [6.6, {
+        hipsY: 0.985,
+        rotations: {
+          hips: [0.025, 0.02, -0.035],
+          spine: [0.015, -0.025, 0.025],
+          chest: [-0.055, -0.02, 0.018],
+          neck: [-0.01, 0.012, -0.006],
+          head: [-0.045, 0, -0.008],
+          leftShoulder: [0.08, 0.16, -0.11],
+          leftUpperArm: [0.12, 0.54, -0.72],
+          leftLowerArm: [-0.28, -0.92, 0.28],
+          leftHand: [0.22, 0.32, -0.22],
+          rightShoulder: [0.085, -0.16, 0.1],
+          rightUpperArm: [0.16, -0.66, 0.68],
+          rightLowerArm: [-0.22, 1.02, 0.3],
+          rightHand: [-0.16, -0.42, 0.5],
+          leftUpperLeg: [-0.12, 0.08, -0.08],
+          leftLowerLeg: [0.24, -0.04, 0.04],
+          leftFoot: [-0.12, -0.055, 0.03],
+          rightUpperLeg: [0.075, -0.07, 0.07],
+          rightLowerLeg: [0.16, 0.04, -0.03],
+          rightFoot: [-0.085, 0.05, -0.025],
+        },
+      }],
+    ]),
+
+    // 월아 패배: 검을 세워 버틴 뒤 오른무릎과 왼어깨가 비대칭으로 무너진다.
+    defeat: resultMotion('melee', 6.4, 0.78, [
+      [0, {
+        hipsY: 0.7,
+        rotations: {
+          hips: [0.34, -0.16, 0.3],
+          spine: [0.58, 0.08, 0.28],
+          chest: [0.46, 0.04, 0.36],
+          neck: [0.24, -0.04, 0.14],
+          head: [0.5, -0.08, 0.2],
+          leftShoulder: [0.18, 0.08, -0.28],
+          leftUpperArm: [-0.22, -0.16, -0.96],
+          leftLowerArm: [-0.2, -0.62, -0.24],
+          leftHand: [0.16, -0.2, 0.18],
+          rightShoulder: [0.2, -0.12, 0.22],
+          rightUpperArm: [-0.32, 0.12, 1.0],
+          rightLowerArm: [-0.28, 0.42, 0.14],
+          rightHand: [0.22, -0.2, 0.82],
+          leftUpperLeg: [-0.54, 0.13, -0.18],
+          leftLowerLeg: [1.02, -0.07, 0.09],
+          leftFoot: [-0.4, -0.1, 0.065],
+          rightUpperLeg: [-0.82, -0.18, 0.24],
+          rightLowerLeg: [1.42, 0.09, -0.11],
+          rightFoot: [-0.55, 0.12, -0.075],
+        },
+      }],
+      [0.78, { hipsY: 0.995, rotations: {} }],
+      [1.06, {
+        hipsY: 0.95,
+        rotations: {
+          hips: [0.18, 0.14, 0.08],
+          spine: [0.12, -0.08, 0.06],
+          rightShoulder: [0.1, -0.08, 0.12],
+          rightUpperArm: [-0.2, 0.18, 0.92],
+          rightLowerArm: [-0.22, 0.5, 0.16],
+          rightHand: [0.12, -0.12, 0.66],
+        },
+      }],
+      [1.34, {
+        hipsY: 0.82,
+        rotations: {
+          hips: [0.34, -0.05, 0.2],
+          spine: [0.28, 0.02, 0.14],
+          chest: [0.12, 0.01, 0.12],
+          rightUpperLeg: [-0.46, -0.14, 0.18],
+          rightLowerLeg: [0.88, 0.08, -0.08],
+          leftUpperLeg: [-0.3, 0.1, -0.13],
+          leftLowerLeg: [0.62, -0.06, 0.07],
+        },
+      }],
+      [1.62, {
+        hipsY: 0.73,
+        rotations: {
+          hips: [0.38, -0.12, 0.28],
+          spine: [0.52, 0.06, 0.24],
+          chest: [0.32, 0.03, 0.28],
+          neck: [0.1, -0.03, 0.08],
+          head: [0.18, -0.04, 0.1],
+          leftShoulder: [0.14, 0.06, -0.22],
+          rightShoulder: [0.18, -0.1, 0.2],
+          rightUpperLeg: [-0.74, -0.17, 0.22],
+          rightLowerLeg: [1.3, 0.09, -0.1],
+          leftUpperLeg: [-0.48, 0.12, -0.17],
+          leftLowerLeg: [0.92, -0.07, 0.085],
+        },
+      }],
+      [1.92, {
+        hipsY: 0.7,
+        rotations: {
+          hips: [0.34, -0.16, 0.3],
+          spine: [0.58, 0.08, 0.28],
+          chest: [0.46, 0.04, 0.36],
+          neck: [0.18, -0.035, 0.12],
+          head: [0.3, -0.06, 0.15],
+          leftShoulder: [0.18, 0.08, -0.28],
+          leftUpperArm: [-0.22, -0.16, -0.96],
+          leftLowerArm: [-0.2, -0.62, -0.24],
+          rightShoulder: [0.2, -0.12, 0.22],
+          rightUpperArm: [-0.32, 0.12, 1.0],
+          rightLowerArm: [-0.28, 0.42, 0.14],
+          rightHand: [0.22, -0.2, 0.82],
+          leftUpperLeg: [-0.54, 0.13, -0.18],
+          leftLowerLeg: [1.02, -0.07, 0.09],
+          rightUpperLeg: [-0.82, -0.18, 0.24],
+          rightLowerLeg: [1.42, 0.09, -0.11],
+        },
+      }],
+      [2.2, {
+        hipsY: 0.7,
+        rotations: {
+          hips: [0.34, -0.16, 0.3],
+          spine: [0.58, 0.08, 0.28],
+          chest: [0.46, 0.04, 0.36],
+          neck: [0.24, -0.04, 0.14],
+          head: [0.5, -0.08, 0.2],
+          leftShoulder: [0.18, 0.08, -0.28],
+          leftUpperArm: [-0.22, -0.16, -0.96],
+          leftLowerArm: [-0.2, -0.62, -0.24],
+          leftHand: [0.16, -0.2, 0.18],
+          rightShoulder: [0.2, -0.12, 0.22],
+          rightUpperArm: [-0.32, 0.12, 1.0],
+          rightLowerArm: [-0.28, 0.42, 0.14],
+          rightHand: [0.22, -0.2, 0.82],
+          leftUpperLeg: [-0.54, 0.13, -0.18],
+          leftLowerLeg: [1.02, -0.07, 0.09],
+          leftFoot: [-0.4, -0.1, 0.065],
+          rightUpperLeg: [-0.82, -0.18, 0.24],
+          rightLowerLeg: [1.42, 0.09, -0.11],
+          rightFoot: [-0.55, 0.12, -0.075],
+        },
+      }],
+      [4.24, {
+        hipsY: 0.708,
+        rotations: {
+          hips: [0.347, -0.156, 0.296],
+          spine: [0.565, 0.076, 0.275],
+          chest: [0.473, 0.038, 0.354],
+          neck: [0.228, -0.038, 0.137],
+          head: [0.511, -0.076, 0.195],
+          leftShoulder: [0.19, 0.078, -0.274],
+          rightShoulder: [0.21, -0.118, 0.215],
+        },
+      }],
+      [6.4, {
+        hipsY: 0.7,
+        rotations: {
+          hips: [0.34, -0.16, 0.3],
+          spine: [0.58, 0.08, 0.28],
+          chest: [0.46, 0.04, 0.36],
+          neck: [0.24, -0.04, 0.14],
+          head: [0.5, -0.08, 0.2],
+          leftShoulder: [0.18, 0.08, -0.28],
+          leftUpperArm: [-0.22, -0.16, -0.96],
+          leftLowerArm: [-0.2, -0.62, -0.24],
+          leftHand: [0.16, -0.2, 0.18],
+          rightShoulder: [0.2, -0.12, 0.22],
+          rightUpperArm: [-0.32, 0.12, 1.0],
+          rightLowerArm: [-0.28, 0.42, 0.14],
+          rightHand: [0.22, -0.2, 0.82],
+          leftUpperLeg: [-0.54, 0.13, -0.18],
+          leftLowerLeg: [1.02, -0.07, 0.09],
+          leftFoot: [-0.4, -0.1, 0.065],
+          rightUpperLeg: [-0.82, -0.18, 0.24],
+          rightLowerLeg: [1.42, 0.09, -0.11],
+          rightFoot: [-0.55, 0.12, -0.075],
+        },
+      }],
+    ]),
+  },
+}
+
+export type VrmAnimationState =
+  | 'idle'
+  | 'walk'
+  | 'victory'
+  | 'defeat'
+  | CharacterAction
 export type VrmaClipName = `${PlayerClass}.${VrmAnimationState}`
 
 export const VRMA_CLIP_ORDER = [
@@ -1204,6 +1858,8 @@ export const VRMA_CLIP_ORDER = [
   'ranged.w',
   'ranged.e',
   'ranged.r',
+  'ranged.victory',
+  'ranged.defeat',
   'melee.idle',
   'melee.walk',
   'melee.attack',
@@ -1213,6 +1869,8 @@ export const VRMA_CLIP_ORDER = [
   'melee.w',
   'melee.e',
   'melee.r',
+  'melee.victory',
+  'melee.defeat',
 ] as const satisfies readonly VrmaClipName[]
 
 export function clipKey(cls: PlayerClass, state: VrmAnimationState): VrmaClipName {

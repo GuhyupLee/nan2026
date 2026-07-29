@@ -1,6 +1,7 @@
 import {
   VRM_ACTION_MOTIONS,
   VRM_CLASS_STANCE,
+  VRM_RESULT_MOTIONS,
   VRMA_CLIP_ORDER,
 } from '../src/render/animation-data.ts'
 
@@ -27,6 +28,7 @@ const contract = {
       ),
     ]),
   ),
+  resultLoops: VRM_RESULT_MOTIONS,
 }
 
 process.stdout.write(JSON.stringify(contract))
