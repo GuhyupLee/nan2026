@@ -1,5 +1,10 @@
 import * as THREE from 'three'
 
+import {
+  BASE_SCATTER_GATHER_RADIUS,
+  MAX_SCATTER_GATHER_RADIUS,
+} from '../ultrawide-culling.ts'
+
 /**
  * 지면 산포물 배치.
  *
@@ -28,11 +33,9 @@ const CELL_SIZE = 8
 /**
  * 플레이어 주변 수집 반경(m).
  *
- * 화면 대각선이 닿는 최대 거리는 약 20m다. 여유를 두되 지나치게 넓히면
- * 청킹의 의미가 사라진다.
+ * 16:9 화면 대각선이 닿는 최대 거리는 약 20m라 기본 반경은 24m다.
+ * 울트라와이드에서는 이 기준을 유지하고 추가로 드러난 좌우 시야만 넓힌다.
  */
-const GATHER_RADIUS = 24
-
 export interface ScatterPlacement {
   x: number
   z: number
@@ -375,7 +378,7 @@ interface VariantBucket {
   mesh: THREE.InstancedMesh
   /** 이 변형에 속하는 배치. 셀 키로 묶어 둔다. */
   cells: Map<number, ScatterPlacement[]>
-  capacity: number
+  capacityBySpan: number[]
 }
 
 function cellKey(cx: number, cz: number): number {
@@ -399,6 +402,7 @@ export class ScatterField {
   private readonly scaleVec = new THREE.Vector3()
   private lastCellX = Number.NaN
   private lastCellZ = Number.NaN
+  private lastSpan = Number.NaN
 
   /** 실제로 GPU에 올라간 인스턴스 수. 예산 감사에 쓴다. */
   residentCount = 0
@@ -448,10 +452,14 @@ export class ScatterField {
       else table.set(key, [placement])
     }
 
-    const span = Math.ceil(GATHER_RADIUS / CELL_SIZE)
+    const maxSpan = Math.ceil(MAX_SCATTER_GATHER_RADIUS / CELL_SIZE)
     for (let index = 0; index < variants.length; index++) {
       const cells = perVariant[index]
-      const capacity = Math.max(1, worstCaseResident(cells, span))
+      const capacityBySpan = Array.from(
+        { length: maxSpan + 1 },
+        (_, span) => Math.max(1, worstCaseResident(cells, span)),
+      )
+      const capacity = capacityBySpan[maxSpan]
       const source = variants[index]
       const mesh = new THREE.InstancedMesh(source.geometry, source.material, capacity)
       mesh.name = `${name}-${index}`
@@ -463,7 +471,7 @@ export class ScatterField {
       // 끄는 편이 매번 재계산하는 것보다 싸고, 어차피 항상 화면 안이다.
       mesh.frustumCulled = false
       this.group.add(mesh)
-      this.buckets.push({ mesh, cells, capacity })
+      this.buckets.push({ mesh, cells, capacityBySpan })
     }
   }
 
@@ -472,18 +480,37 @@ export class ScatterField {
    *
    * 셀이 바뀌지 않았으면 아무것도 하지 않는다 — 대부분의 프레임이 여기서 끝난다.
    */
-  update(playerX: number, playerZ: number): void {
+  update(
+    playerX: number,
+    playerZ: number,
+    gatherRadius = BASE_SCATTER_GATHER_RADIUS,
+  ): void {
     const cellX = Math.floor(playerX / CELL_SIZE)
     const cellZ = Math.floor(playerZ / CELL_SIZE)
-    if (cellX === this.lastCellX && cellZ === this.lastCellZ) return
+    const span = Math.ceil(
+      THREE.MathUtils.clamp(
+        gatherRadius,
+        BASE_SCATTER_GATHER_RADIUS,
+        MAX_SCATTER_GATHER_RADIUS,
+      ) / CELL_SIZE,
+    )
+    if (
+      cellX === this.lastCellX &&
+      cellZ === this.lastCellZ &&
+      span === this.lastSpan
+    ) {
+      return
+    }
     this.lastCellX = cellX
     this.lastCellZ = cellZ
+    this.lastSpan = span
 
-    const span = Math.ceil(GATHER_RADIUS / CELL_SIZE)
     let total = 0
     for (const bucket of this.buckets) {
       let written = 0
-      const limit = Math.max(1, Math.floor(bucket.capacity * this.budget))
+      const spanCapacity =
+        bucket.capacityBySpan[Math.min(span, bucket.capacityBySpan.length - 1)]
+      const limit = Math.max(1, Math.floor(spanCapacity * this.budget))
       // 가까운 셀부터 채운다. 예산이 모자라면 먼 것이 잘린다.
       for (let ring = 0; ring <= span && written < limit; ring++) {
         for (let dz = -ring; dz <= ring && written < limit; dz++) {
@@ -524,6 +551,7 @@ export class ScatterField {
     this.budget = next
     this.lastCellX = Number.NaN
     this.lastCellZ = Number.NaN
+    this.lastSpan = Number.NaN
   }
 
   dispose(): void {
@@ -546,17 +574,41 @@ function worstCaseResident(
   cells: Map<number, ScatterPlacement[]>,
   span: number,
 ): number {
-  let worst = 0
+  if (cells.size === 0) return 0
+
+  let minCellX = Infinity
+  let maxCellX = -Infinity
+  let minCellZ = Infinity
+  let maxCellZ = -Infinity
   for (const key of cells.keys()) {
-    const cx = (key >> 10) - 512
-    const cz = (key & 0x3ff) - 512
-    let sum = 0
-    for (let dz = -span; dz <= span; dz++) {
-      for (let dx = -span; dx <= span; dx++) {
-        sum += cells.get(cellKey(cx + dx, cz + dz))?.length ?? 0
+    const cellX = (key >> 10) - 512
+    const cellZ = (key & 0x3ff) - 512
+    minCellX = Math.min(minCellX, cellX)
+    maxCellX = Math.max(maxCellX, cellX)
+    minCellZ = Math.min(minCellZ, cellZ)
+    maxCellZ = Math.max(maxCellZ, cellZ)
+  }
+
+  let worst = 0
+  for (
+    let centerZ = minCellZ - span;
+    centerZ <= maxCellZ + span;
+    centerZ++
+  ) {
+    for (
+      let centerX = minCellX - span;
+      centerX <= maxCellX + span;
+      centerX++
+    ) {
+      let sum = 0
+      for (let dz = -span; dz <= span; dz++) {
+        for (let dx = -span; dx <= span; dx++) {
+          sum +=
+            cells.get(cellKey(centerX + dx, centerZ + dz))?.length ?? 0
+        }
       }
+      if (sum > worst) worst = sum
     }
-    if (sum > worst) worst = sum
   }
   return worst
 }

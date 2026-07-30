@@ -48,6 +48,13 @@ import { CLASS_COLORS, REWARD_COLORS } from './palette.ts'
 import { PostFx } from './post.ts'
 import { SkillFx } from './skillfx.ts'
 import { WeaponTrail } from './trails.ts'
+import {
+  CAMERA_DEPTH,
+  CAMERA_FOV_DEGREES,
+  CAMERA_HEIGHT,
+  CAMERA_REFERENCE_ASPECT,
+  resolveScatterGatherRadius,
+} from './ultrawide-culling.ts'
 import { hasVrm } from './vrm-rig.ts'
 import { XpGemRenderer } from './xp-gems.ts'
 
@@ -61,14 +68,12 @@ import { XpGemRenderer } from './xp-gems.ts'
  * 부수 효과가 더 크다: 시야가 좁아지면 적이 위협적으로 느껴지고,
  * "화면을 가득 채운 적" 장면이 250마리가 아니라 100마리로 나온다(성능 이득).
  */
-const CAM_OFFSET = new THREE.Vector3(0, 14, 10.8)
+const CAM_OFFSET = new THREE.Vector3(0, CAMERA_HEIGHT, CAMERA_DEPTH)
 
 /** 시야각. 좁을수록 원근 왜곡이 줄어 MOBA다운 평면적 화면이 된다. */
-const CAM_FOV = 40
+const CAM_FOV = CAMERA_FOV_DEGREES
 
 /** 16:9보다 좁은 화면에서도 가로 전장 시야가 지나치게 잘리지 않게 한다. */
-const CAM_REFERENCE_ASPECT = 16 / 9
-
 /** 카메라 추적 반응 속도. 클수록 즉각적. */
 const CAM_FOLLOW = 14
 
@@ -449,7 +454,7 @@ export class Renderer {
     this.height = h
     const aspect = w / h
     const nextCameraScale = THREE.MathUtils.clamp(
-      Math.sqrt(CAM_REFERENCE_ASPECT / aspect),
+      Math.sqrt(CAMERA_REFERENCE_ASPECT / aspect),
       1,
       1.75,
     )
@@ -722,7 +727,15 @@ export class Renderer {
     this.post.setBloomBoost(this.feedbackBloom)
     this.updateEnvironment(world, visualTime, dt)
     // 산포 필드는 플레이어 주변 셀만 GPU에 올린다. 셀이 안 바뀌면 즉시 반환한다.
-    this.arena.update(dt, px, pz)
+    this.arena.update(
+      dt,
+      px,
+      pz,
+      resolveScatterGatherRadius(
+        this.width / Math.max(1, this.height),
+        this.cameraDistanceScale * this.zoom,
+      ),
+    )
 
     this.lightRig.position.set(px, 0, pz)
 

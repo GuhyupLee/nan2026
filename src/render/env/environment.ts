@@ -31,7 +31,12 @@ export interface EnvironmentVisual extends ArenaVisual {
    *
    * @param playerX 플레이어 월드 X. 산포 필드가 이 주변만 GPU에 올린다.
    */
-  update(dt: number, playerX: number, playerZ: number): void
+  update(
+    dt: number,
+    playerX: number,
+    playerZ: number,
+    gatherRadius?: number,
+  ): void
   /**
    * 렌더 품질 단계.
    *
@@ -438,13 +443,18 @@ export function createEnvironment(
       fallback.applyArc(arc)
       factory?.applyArc(arc)
     },
-    update(dt: number, playerX: number, playerZ: number): void {
+    update(
+      dt: number,
+      playerX: number,
+      playerZ: number,
+      gatherRadius?: number,
+    ): void {
       if (currentArc) atmosphere.update(dt, playerX, playerZ, currentArc)
       if (!factory) return
       factory.advanceWind(dt)
       let resident = 0
       for (const field of fields) {
-        field.update(playerX, playerZ)
+        field.update(playerX, playerZ, gatherRadius)
         resident += field.residentCount
       }
       stats.scatterResident = resident
