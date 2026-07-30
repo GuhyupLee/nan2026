@@ -4,7 +4,8 @@ import { applyUpgrade } from './content/upgrades.ts'
 import {
   InputState,
   applyPointerMove,
-  leadPointerMoveTarget,
+  leadPointerTarget,
+  leadPressedSkillTarget,
 } from './input.ts'
 import { installDevShot } from './render/env/devshot.ts'
 import { Renderer } from './render/renderer.ts'
@@ -402,7 +403,7 @@ function frame(now: number): void {
           input.movementPointerY,
           pointerMoveTarget,
         )
-        leadPointerMoveTarget(
+        leadPointerTarget(
           pointerMoveTarget,
           world.player.pos,
           world.player.vel,
@@ -420,6 +421,11 @@ function frame(now: number): void {
         simInput.skillAim = undefined
         simInput.aimedSkillSlot = undefined
       }
+      leadPressedSkillTarget(
+        simInput,
+        world.player.pos,
+        world.player.vel,
+      )
       if (
         !controlHintMoved &&
         (Math.abs(simInput.move.x) > 0.001 || Math.abs(simInput.move.y) > 0.001)

@@ -2,7 +2,8 @@ import assert from 'node:assert/strict'
 import {
   InputState,
   applyPointerMove,
-  leadPointerMoveTarget,
+  leadPointerTarget,
+  leadPressedSkillTarget,
 } from '../src/input.ts'
 import {
   PLAYER_ACTION_BUFFER_WINDOW,
@@ -803,27 +804,44 @@ for (const mode of ['instant', 'release'] as const) {
   const player = { x: 0, y: 0 }
 
   const stationary = { x: 8, y: 2 }
-  leadPointerMoveTarget(stationary, player, { x: 0, y: 0 })
+  leadPointerTarget(stationary, player, { x: 0, y: 0 })
   approx(stationary.x, 8, 'stationary click keeps literal target x')
   approx(stationary.y, 2, 'stationary click keeps literal target y')
 
   const forward = { x: 10, y: 0 }
-  leadPointerMoveTarget(forward, player, { x: 11, y: 0 })
+  leadPointerTarget(forward, player, { x: 11, y: 0 })
   approx(forward.x, 11.5, 'forward click receives capped movement lead')
   approx(forward.y, 0, 'forward lead preserves travel axis')
 
   const close = { x: 1, y: 0 }
-  leadPointerMoveTarget(close, player, { x: 11, y: 0 })
+  leadPointerTarget(close, player, { x: 11, y: 0 })
   approx(close.x, 1, 'nearby stop click remains literal')
 
   const reverse = { x: -10, y: 0 }
-  leadPointerMoveTarget(reverse, player, { x: 11, y: 0 })
+  leadPointerTarget(reverse, player, { x: 11, y: 0 })
   approx(reverse.x, -10, 'reverse click is not pulled by old velocity')
 
   const side = { x: 0, y: 10 }
-  leadPointerMoveTarget(side, player, { x: 11, y: 0 })
+  leadPointerTarget(side, player, { x: 11, y: 0 })
   approx(side.x, 0, 'perpendicular click is not pulled sideways')
   approx(side.y, 10, 'perpendicular click keeps literal destination')
+
+  const idleAim = idleAt(10, 0)
+  leadPressedSkillTarget(idleAim, player, { x: 11, y: 0 })
+  approx(idleAim.aim.x, 10, 'hover aim is not led without a skill press')
+
+  const instantCast = idleAt(10, 0)
+  instantCast.skillsPressed = SKILL_BIT.e
+  leadPressedSkillTarget(instantCast, player, { x: 11, y: 0 })
+  approx(instantCast.aim.x, 11.5, 'instant skill uses predicted cursor target')
+
+  const releaseCast = idleAt(3, 2)
+  releaseCast.skillAim = { x: 10, y: 0 }
+  releaseCast.aimedSkillSlot = 'e'
+  releaseCast.skillsPressed = SKILL_BIT.e
+  leadPressedSkillTarget(releaseCast, player, { x: 11, y: 0 })
+  approx(releaseCast.skillAim.x, 11.5, 'release cast leads locked skill target')
+  approx(releaseCast.aim.x, 3, 'release cast preserves battlefield hover aim')
 }
 
 // The floating touch stick is genuinely analog between its 8 px deadzone and

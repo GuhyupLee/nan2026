@@ -639,7 +639,7 @@ export function applyPointerMove(
  * not be reapplied every simulation tick, otherwise the destination would
  * drift indefinitely. Close clicks and turn/reversal commands stay literal.
  */
-export function leadPointerMoveTarget(
+export function leadPointerTarget(
   target: Vec2,
   player: Vec2,
   velocity: Vec2,
@@ -696,4 +696,18 @@ export function leadPointerMoveTarget(
   out.x = target.x + velocityX * leadDistance
   out.y = target.y + velocityY * leadDistance
   return out
+}
+
+/**
+ * Applies the same one-shot lead to the target owned by a newly pressed skill.
+ * Release-cast drags use their dedicated skillAim; instant/keyboard casts use
+ * the regular battlefield aim that becomes World.lastAim on this tick.
+ */
+export function leadPressedSkillTarget(
+  input: Input,
+  player: Vec2,
+  velocity: Vec2,
+): void {
+  if (input.skillsPressed === 0) return
+  leadPointerTarget(input.skillAim ?? input.aim, player, velocity)
 }
