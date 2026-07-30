@@ -26,6 +26,10 @@ import {
   type SkillId,
 } from '../sim/skills.ts'
 import type { World } from '../sim/types.ts'
+import {
+  ChoiceInputGate,
+  type ChoiceInputSnapshot,
+} from './choice-input-gate.ts'
 import { trapFocus } from './focus-trap.ts'
 
 /**
@@ -535,6 +539,7 @@ export function showLevelUp(
   parent: HTMLElement,
   world: World,
   onSelect?: () => void,
+  blockedInput?: ChoiceInputSnapshot,
 ): Promise<void> {
   const cards = buildLevelUpCards(world)
 
@@ -564,6 +569,34 @@ export function showLevelUp(
     root.setAttribute('aria-modal', 'true')
     root.setAttribute('aria-labelledby', 'levelup-title')
     root.setAttribute('aria-describedby', 'levelup-guide')
+
+    const inputGate = new ChoiceInputGate(blockedInput)
+    const onGatePointerDown = (event: PointerEvent): void => {
+      if (inputGate.beginPointerPress()) return
+      event.preventDefault()
+      event.stopImmediatePropagation()
+    }
+    const onGatePointerUp = (): void => inputGate.releasePointer()
+    const onGateKeyUp = (event: KeyboardEvent): void =>
+      inputGate.releaseKey(event.code)
+    const onGateClick = (event: MouseEvent): void => {
+      if (inputGate.allowsClick(event.detail)) return
+      event.preventDefault()
+      event.stopImmediatePropagation()
+    }
+    root.addEventListener('pointerdown', onGatePointerDown, true)
+    root.addEventListener('click', onGateClick, true)
+    window.addEventListener('pointerup', onGatePointerUp, true)
+    window.addEventListener('pointercancel', onGatePointerUp, true)
+    window.addEventListener('keyup', onGateKeyUp, true)
+
+    const releaseInputGate = (): void => {
+      root.removeEventListener('pointerdown', onGatePointerDown, true)
+      root.removeEventListener('click', onGateClick, true)
+      window.removeEventListener('pointerup', onGatePointerUp, true)
+      window.removeEventListener('pointercancel', onGatePointerUp, true)
+      window.removeEventListener('keyup', onGateKeyUp, true)
+    }
 
     const banner = document.createElement('div')
     banner.className = 'banner'
@@ -609,6 +642,7 @@ export function showLevelUp(
       if (done) return
       done = true
       window.removeEventListener('keydown', onKey)
+      releaseInputGate()
       releaseFocusTrap()
       root.setAttribute('aria-busy', 'true')
       root.classList.add('resolving')
@@ -632,6 +666,7 @@ export function showLevelUp(
       world.upgradeRerollsRemaining -= 1
       world.upgradeRerollsUsed += 1
       window.removeEventListener('keydown', onKey)
+      releaseInputGate()
       releaseFocusTrap()
       root.remove()
       void showLevelUp(parent, world, onSelect).then(resolve)
@@ -706,6 +741,10 @@ export function showLevelUp(
     })
 
     const onKey = (e: KeyboardEvent): void => {
+      if (!inputGate.allowsKeyDown(e.code)) {
+        e.preventDefault()
+        return
+      }
       if ((e.key === 'r' || e.key === 'R') && canReroll) {
         e.preventDefault()
         reroll()

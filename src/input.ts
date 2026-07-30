@@ -93,6 +93,7 @@ export class InputState {
 
   private mousePointerId: number | null = null
   private mouseMoveActive = false
+  private readonly physicallyPressedPointers = new Set<number>()
   private movementPointerRevision = 0
   private consumedMovementPointerRevision = 0
   private touchPointerId: number | null = null
@@ -127,6 +128,7 @@ export class InputState {
     surface.appendChild(this.touchStick)
 
     surface.addEventListener('pointerdown', this.onPointerDown)
+    window.addEventListener('pointerdown', this.onGlobalPointerDown, true)
     window.addEventListener('pointermove', this.onPointerMove)
     window.addEventListener('pointerup', this.onPointerUp)
     window.addEventListener('pointercancel', this.onPointerUp)
@@ -140,6 +142,7 @@ export class InputState {
 
   private readonly onPointerDown = (e: PointerEvent): void => {
     if (e.target !== this.surface && !this.surface.contains(e.target as Node)) return
+    this.physicallyPressedPointers.add(e.pointerId)
 
     if (e.pointerType === 'touch') {
       // 첫 전장 터치만 이동을 점유한다. 이후 포인터는 스킬용으로 남긴다.
@@ -194,6 +197,10 @@ export class InputState {
     }
   }
 
+  private readonly onGlobalPointerDown = (e: PointerEvent): void => {
+    this.physicallyPressedPointers.add(e.pointerId)
+  }
+
   private readonly onPointerMove = (e: PointerEvent): void => {
     if (e.pointerType === 'touch') {
       if (e.pointerId !== this.touchPointerId) return
@@ -227,6 +234,7 @@ export class InputState {
   }
 
   private readonly onPointerUp = (e: PointerEvent): void => {
+    this.physicallyPressedPointers.delete(e.pointerId)
     if (e.pointerType === 'touch') {
       if (e.pointerId !== this.touchPointerId) return
 
@@ -322,7 +330,7 @@ export class InputState {
     ) {
       return
     }
-    if (e.repeat) return
+    if (e.repeat || this.held.has(e.code)) return
     if (MOVEMENT_KEYS.has(e.code) && this.touchPointerId === null) {
       this.mouseMoveActive = false
       this.pointerHeld = false
@@ -334,13 +342,15 @@ export class InputState {
   }
 
   private readonly onKeyUp = (e: KeyboardEvent): void => {
-    this.held.delete(e.code)
+    const wasHeld = this.held.delete(e.code)
+    if (!wasHeld) return
     if (isEditableTarget(e.target)) return
     const skill = SKILL_KEYS[e.code]
     if (skill !== undefined) this.releaseSkill(skill)
   }
 
   private readonly onBlur = (): void => {
+    this.physicallyPressedPointers.clear()
     this.held.clear()
     this.pendingSkills = 0
     this.pendingSkillOrder.length = 0
@@ -414,6 +424,16 @@ export class InputState {
 
   get targetingSkill(): SkillId | null {
     return this.targetedSkill
+  }
+
+  captureChoiceInput(): {
+    heldCodes: string[]
+    pointerDown: boolean
+  } {
+    return {
+      heldCodes: [...this.held],
+      pointerDown: this.physicallyPressedPointers.size > 0,
+    }
   }
 
   getCastMode(): CastMode {
@@ -572,6 +592,7 @@ export class InputState {
 
   dispose(): void {
     this.surface.removeEventListener('pointerdown', this.onPointerDown)
+    window.removeEventListener('pointerdown', this.onGlobalPointerDown, true)
     this.surface.removeEventListener('contextmenu', this.onContextMenu)
     window.removeEventListener('pointermove', this.onPointerMove)
     window.removeEventListener('pointerup', this.onPointerUp)

@@ -301,6 +301,53 @@ for (const mode of ['instant', 'release'] as const) {
   }
 }
 
+// Release casting must be completed only by the keyup paired with a physical
+// keydown. A late/orphan Q keyup after an overlay or focus transition must not
+// turn a targeting preview into an unintended cast.
+{
+  const { input } = createInputHarness()
+  input.setCastMode('release')
+  input.startSkill('q')
+  inputWindow.dispatch('keyup', keyEvent('KeyQ'))
+
+  const sampled = createInput()
+  input.sample(sampled)
+  assert.equal(sampled.skillsPressed, 0)
+  assert.equal(input.targetingSkill, 'q')
+  input.cancelSkill('q')
+  input.dispose()
+}
+
+{
+  const { input, surface } = createInputHarness()
+  input.setCastMode('release')
+  inputWindow.dispatch('keydown', keyEvent('KeyQ'))
+  surface.dispatch(
+    'pointerdown',
+    pointerEvent(surface, {
+      pointerId: 91,
+      buttons: 1,
+      clientX: 700,
+      clientY: 260,
+    }),
+  )
+
+  const snapshot = input.captureChoiceInput()
+  assert.deepEqual(snapshot.heldCodes, ['KeyQ'])
+  assert.equal(snapshot.pointerDown, true)
+
+  input.releaseMovement()
+  inputWindow.dispatch('keyup', keyEvent('KeyQ'))
+  const sampled = createInput()
+  input.sample(sampled)
+  assert.equal(sampled.skillsPressed, 0)
+  inputWindow.dispatch(
+    'pointerup',
+    pointerEvent(surface, { pointerId: 91, button: 0 }),
+  )
+  input.dispose()
+}
+
 // SkillBar calls these handlers in pointerdown -> pointermove -> pointerup
 // order. Its HUD coordinate may aim the skill, but it must never replace the
 // last battlefield pointer used by the next ordinary movement/aim tick.

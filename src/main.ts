@@ -483,9 +483,15 @@ function frame(now: number): void {
   // 여기서 화면을 띄우지 않으면 게임이 영영 멈춘다.
   if (running && world.outcome === 'alive' && world.awaitingChoice && !choiceOpen) {
     choiceOpen = true
+    const blockedInput = input.captureChoiceInput()
     releaseGameplayInput()
     const target = world
-    void showLevelUp(document.body, target, () => audio.upgradeChoice()).then(() => {
+    void showLevelUp(
+      document.body,
+      target,
+      () => audio.upgradeChoice(),
+      blockedInput,
+    ).then(() => {
       releaseGameplayInput()
       resolveRewardChoice(target)
       choiceOpen = false

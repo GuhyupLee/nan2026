@@ -75,7 +75,9 @@ const RULES: Record<RunDifficulty, DifficultyRules> = {
     bossPhaseCount: 3,
     bossPhaseTwoRatio: 2 / 3,
     bossPhaseThreeRatio: 1 / 3,
-    enemySpeedMultiplier: 1.18,
+    // 만월의 난도는 체력·피해·추가 패턴에서 만든다. 이동속도 증가는
+    // 회피 여지를 없애므로 보통과 같은 속도를 유지한다.
+    enemySpeedMultiplier: 1,
     enemyHealthMultiplier: 1.15,
     extendedHealthGrowthMultiplier: 0.55,
     contactDamageMultiplier: 1.5,
