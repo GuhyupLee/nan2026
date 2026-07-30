@@ -568,6 +568,66 @@ for (const mode of ['instant', 'release'] as const) {
   input.dispose()
 }
 
+// A held battlefield drag survives a transient zero-button move sample and
+// pointer-capture loss. Combat presentation can perturb delivery order, but
+// only pointerup/cancel may end the physical drag and freeze its destination.
+{
+  const { input, surface } = createInputHarness()
+  surface.dispatch(
+    'pointerdown',
+    pointerEvent(surface, {
+      pointerId: 18,
+      buttons: 1,
+      clientX: 700,
+      clientY: 300,
+    }),
+  )
+  assert.equal(input.consumeMovementPointerUpdate(), true)
+
+  surface.dispatch(
+    'lostpointercapture',
+    pointerEvent(surface, {
+      pointerId: 18,
+      buttons: 1,
+      clientX: 700,
+      clientY: 300,
+    }),
+  )
+  assert.equal(input.pointerHeld, true, 'capture loss preserves held movement')
+
+  inputWindow.dispatch(
+    'pointermove',
+    pointerEvent(surface, {
+      pointerId: 18,
+      buttons: 0,
+      clientX: 720,
+      clientY: 280,
+    }),
+  )
+  assert.equal(input.pointerHeld, true, 'zero-button sample does not cancel drag')
+  approx(input.movementPointerX, 700, 'zero-button sample keeps destination x')
+  approx(input.movementPointerY, 300, 'zero-button sample keeps destination y')
+  assert.equal(input.consumeMovementPointerUpdate(), false)
+
+  inputWindow.dispatch(
+    'pointermove',
+    pointerEvent(surface, {
+      pointerId: 18,
+      buttons: 1,
+      clientX: 760,
+      clientY: 240,
+    }),
+  )
+  approx(input.movementPointerX, 760, 'held drag resumes destination x')
+  approx(input.movementPointerY, 240, 'held drag resumes destination y')
+  assert.equal(
+    input.consumeMovementPointerUpdate(),
+    true,
+    'held drag resumes after capture perturbation',
+  )
+  input.dispose()
+}
+
 // Releasing a battlefield click keeps its movement anchor active while subsequent
 // hover updates remain available for independent aiming. Keyboard movement and
 // a center stop both cancel the locked direction.
@@ -1191,5 +1251,5 @@ for (const playerClass of ['ranged', 'melee'] as const) {
 }
 
 console.log(
-  'control-check: targeting, locked aim, destination clicks, analog touch, FIFO, buffer, flash guards, dash immunity, W→F origin, Q volley, deferred Q cooldown, and combat-speed invariance ok',
+  'control-check: targeting, locked aim, destination clicks, resilient held drags, analog touch, FIFO, buffer, flash guards, dash immunity, W→F origin, Q volley, deferred Q cooldown, and combat-speed invariance ok',
 )

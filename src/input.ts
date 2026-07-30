@@ -206,18 +206,13 @@ export class InputState {
       target instanceof Node &&
       (target === this.surface || this.surface.contains(target))
     if (this.mousePointerId === null && !overGameSurface) return
+    this.pointerX = e.clientX
+    this.pointerY = e.clientY
     if (
       this.mousePointerId !== null &&
       e.pointerId === this.mousePointerId &&
-      e.buttons === 0
+      (e.buttons & 1) !== 0
     ) {
-      this.mousePointerId = null
-      this.pointerHeld = this.mouseMoveActive || this.touchPointerId !== null
-      return
-    }
-    this.pointerX = e.clientX
-    this.pointerY = e.clientY
-    if (this.mousePointerId !== null && e.pointerId === this.mousePointerId) {
       this.movementPointerX = e.clientX
       this.movementPointerY = e.clientY
       this.movementPointerRevision += 1
@@ -249,9 +244,10 @@ export class InputState {
 
   private readonly onLostPointerCapture = (e: PointerEvent): void => {
     if (e.pointerId === this.mousePointerId) {
-      this.mousePointerId = null
-      this.mouseMoveActive = false
-      this.pointerHeld = this.touchPointerId !== null
+      // 캡처는 전달 경로일 뿐 좌클릭 유지 상태가 아니다. 전투 연출이나
+      // 브라우저 이벤트 순서 때문에 캡처만 잠깐 풀려도 window 리스너가
+      // 실제 pointerup/cancel까지 같은 포인터의 드래그를 계속 받는다.
+      this.pointerHeld = this.mouseMoveActive || this.touchPointerId !== null
     }
     if (e.pointerId === this.touchPointerId) {
       this.touchPointerId = null
