@@ -1,7 +1,11 @@
 import { GameAudio } from './audio.ts'
 import { getClassSkills } from './content/skills.ts'
 import { applyUpgrade } from './content/upgrades.ts'
-import { InputState, applyPointerMove } from './input.ts'
+import {
+  InputState,
+  applyPointerMove,
+  leadPointerMoveTarget,
+} from './input.ts'
 import { installDevShot } from './render/env/devshot.ts'
 import { Renderer } from './render/renderer.ts'
 import {
@@ -397,6 +401,11 @@ function frame(now: number): void {
           input.movementPointerX,
           input.movementPointerY,
           pointerMoveTarget,
+        )
+        leadPointerMoveTarget(
+          pointerMoveTarget,
+          world.player.pos,
+          world.player.vel,
         )
       }
       applyPointerMove(input, simInput, world.player.pos, pointerMoveTarget)

@@ -26,6 +26,11 @@ const MOVEMENT_KEYS = new Set([
 ])
 const MOVE_STOP_RADIUS = 0.32
 const MOVE_SLOW_RADIUS = 1.4
+const MOVE_TARGET_LEAD_SECONDS = 0.14
+const MOVE_TARGET_LEAD_MAX_DISTANCE = 1.5
+const MOVE_TARGET_LEAD_MIN_ALIGNMENT = 0.15
+const MOVE_TARGET_LEAD_FULL_ALIGNMENT = 0.85
+const MOVE_TARGET_LEAD_FULL_DISTANCE = 5.5
 // 112px 베이스와 48px 노브 안에서 노브가 정확히 가장자리까지 움직인다.
 const TOUCH_STICK_RADIUS = 32
 const TOUCH_STICK_DEADZONE = 8
@@ -623,4 +628,72 @@ export function applyPointerMove(
   const speedScale = slowT * slowT * (3 - 2 * slowT)
   out.move.x = normalizedX * speedScale
   out.move.y = normalizedY * speedScale
+}
+
+/**
+ * Leads a newly projected click target toward the player's current travel
+ * direction. This compensates for the ground point that a following camera
+ * would place under the same screen-space cursor a moment later.
+ *
+ * The result is calculated only when a new pointer command arrives. It must
+ * not be reapplied every simulation tick, otherwise the destination would
+ * drift indefinitely. Close clicks and turn/reversal commands stay literal.
+ */
+export function leadPointerMoveTarget(
+  target: Vec2,
+  player: Vec2,
+  velocity: Vec2,
+  out: Vec2 = target,
+): Vec2 {
+  const dx = target.x - player.x
+  const dy = target.y - player.y
+  const targetDistance = Math.hypot(dx, dy)
+  const speed = Math.hypot(velocity.x, velocity.y)
+
+  if (
+    targetDistance <= MOVE_SLOW_RADIUS ||
+    speed <= 0.01
+  ) {
+    out.x = target.x
+    out.y = target.y
+    return out
+  }
+
+  const targetX = dx / targetDistance
+  const targetY = dy / targetDistance
+  const velocityX = velocity.x / speed
+  const velocityY = velocity.y / speed
+  const alignment = targetX * velocityX + targetY * velocityY
+  const alignmentT = Math.max(
+    0,
+    Math.min(
+      1,
+      (alignment - MOVE_TARGET_LEAD_MIN_ALIGNMENT) /
+        (MOVE_TARGET_LEAD_FULL_ALIGNMENT -
+          MOVE_TARGET_LEAD_MIN_ALIGNMENT),
+    ),
+  )
+  const distanceT = Math.max(
+    0,
+    Math.min(
+      1,
+      (targetDistance - MOVE_SLOW_RADIUS) /
+        (MOVE_TARGET_LEAD_FULL_DISTANCE - MOVE_SLOW_RADIUS),
+    ),
+  )
+  const alignmentWeight =
+    alignmentT * alignmentT * (3 - 2 * alignmentT)
+  const distanceWeight =
+    distanceT * distanceT * (3 - 2 * distanceT)
+  const leadDistance =
+    Math.min(
+      MOVE_TARGET_LEAD_MAX_DISTANCE,
+      speed * MOVE_TARGET_LEAD_SECONDS,
+    ) *
+    alignmentWeight *
+    distanceWeight
+
+  out.x = target.x + velocityX * leadDistance
+  out.y = target.y + velocityY * leadDistance
+  return out
 }

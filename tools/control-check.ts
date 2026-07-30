@@ -1,5 +1,9 @@
 import assert from 'node:assert/strict'
-import { InputState, applyPointerMove } from '../src/input.ts'
+import {
+  InputState,
+  applyPointerMove,
+  leadPointerMoveTarget,
+} from '../src/input.ts'
 import {
   PLAYER_ACTION_BUFFER_WINDOW,
 } from '../src/sim/actions.ts'
@@ -790,6 +794,36 @@ for (const mode of ['instant', 'release'] as const) {
   const full = idleAt(4, 0)
   applyPointerMove(pointer, full, player)
   approx(Math.hypot(full.move.x, full.move.y), 1, 'far movement remains full speed')
+}
+
+// A new ground command predicts the point that will remain under the cursor as
+// the follow camera catches up. It is directional rather than inertial:
+// forward commands get a short lead, while stops and hard turns remain exact.
+{
+  const player = { x: 0, y: 0 }
+
+  const stationary = { x: 8, y: 2 }
+  leadPointerMoveTarget(stationary, player, { x: 0, y: 0 })
+  approx(stationary.x, 8, 'stationary click keeps literal target x')
+  approx(stationary.y, 2, 'stationary click keeps literal target y')
+
+  const forward = { x: 10, y: 0 }
+  leadPointerMoveTarget(forward, player, { x: 11, y: 0 })
+  approx(forward.x, 11.5, 'forward click receives capped movement lead')
+  approx(forward.y, 0, 'forward lead preserves travel axis')
+
+  const close = { x: 1, y: 0 }
+  leadPointerMoveTarget(close, player, { x: 11, y: 0 })
+  approx(close.x, 1, 'nearby stop click remains literal')
+
+  const reverse = { x: -10, y: 0 }
+  leadPointerMoveTarget(reverse, player, { x: 11, y: 0 })
+  approx(reverse.x, -10, 'reverse click is not pulled by old velocity')
+
+  const side = { x: 0, y: 10 }
+  leadPointerMoveTarget(side, player, { x: 11, y: 0 })
+  approx(side.x, 0, 'perpendicular click is not pulled sideways')
+  approx(side.y, 10, 'perpendicular click keeps literal destination')
 }
 
 // The floating touch stick is genuinely analog between its 8 px deadzone and
