@@ -570,9 +570,11 @@ export function showLevelUp(
     root.setAttribute('aria-labelledby', 'levelup-title')
     root.setAttribute('aria-describedby', 'levelup-guide')
 
-    const inputGate = new ChoiceInputGate(blockedInput)
+    const inputGate = new ChoiceInputGate(blockedInput, performance.now())
+    const onGatePointerMove = (event: PointerEvent): void =>
+      inputGate.notePointerMove(event.clientX, event.clientY)
     const onGatePointerDown = (event: PointerEvent): void => {
-      if (inputGate.beginPointerPress()) return
+      if (inputGate.beginPointerPress(performance.now())) return
       event.preventDefault()
       event.stopImmediatePropagation()
     }
@@ -584,6 +586,7 @@ export function showLevelUp(
       event.preventDefault()
       event.stopImmediatePropagation()
     }
+    root.addEventListener('pointermove', onGatePointerMove, true)
     root.addEventListener('pointerdown', onGatePointerDown, true)
     root.addEventListener('click', onGateClick, true)
     window.addEventListener('pointerup', onGatePointerUp, true)
@@ -591,6 +594,7 @@ export function showLevelUp(
     window.addEventListener('keyup', onGateKeyUp, true)
 
     const releaseInputGate = (): void => {
+      root.removeEventListener('pointermove', onGatePointerMove, true)
       root.removeEventListener('pointerdown', onGatePointerDown, true)
       root.removeEventListener('click', onGateClick, true)
       window.removeEventListener('pointerup', onGatePointerUp, true)

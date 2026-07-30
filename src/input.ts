@@ -429,10 +429,14 @@ export class InputState {
   captureChoiceInput(): {
     heldCodes: string[]
     pointerDown: boolean
+    pointerX: number
+    pointerY: number
   } {
     return {
       heldCodes: [...this.held],
       pointerDown: this.physicallyPressedPointers.size > 0,
+      pointerX: this.pointerX,
+      pointerY: this.pointerY,
     }
   }
 
