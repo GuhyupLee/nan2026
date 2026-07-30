@@ -220,10 +220,9 @@ export class Renderer {
   private playerHitReactionAt = -Infinity
   private playerHitReactionStrength = 0
   private playerHitReactionSide = 1
-  /** 공격자도 타격 방향으로 반응하게 하는 렌더 전용 루트 임펄스. */
+  /** 이동 위치를 건드리지 않는 근접 타격 순간의 짧은 자세 압축. */
   private attackImpactReactionAt = -Infinity
   private attackImpactReactionStrength = 0
-  private attackImpactReactionAngle = 0
   /** 결과 전신 루프가 시작된 벽시각. 결과 확정 뒤 시뮬레이션 시계는 멈춘다. */
   private presentedOutcome: World['outcome'] = 'alive'
   private outcomePresentationAt = -Infinity
@@ -645,7 +644,6 @@ export class Renderer {
       this.playerHitReactionSide = 1
       this.attackImpactReactionAt = -Infinity
       this.attackImpactReactionStrength = 0
-      this.attackImpactReactionAngle = 0
       this.presentedOutcome = 'alive'
       this.outcomePresentationAt = now
     }
@@ -811,8 +809,8 @@ export class Renderer {
   }
 
   /**
-   * 맞은 적의 시뮬레이션 좌표를 건드리지 않고 공격자 루트만 잠깐 전진시킨다.
-   * 벽시계 경로라 시뮬레이션 진행과 무관하게 2~3프레임 안에 원위치로 풀린다.
+   * 근접 타격 순간 자세만 잠깐 압축한다. 월드 위치는 건드리지 않으므로
+   * 이동 중 공격이 캐릭터를 뒤로 당기거나 느리게 보이게 하지 않는다.
    */
   private applyAttackImpactPresentation(world: World, now: number): void {
     if (world.outcome !== 'alive') return
@@ -826,7 +824,6 @@ export class Renderer {
     }
 
     const progress = elapsed / ATTACK_IMPACT_REACTION_DURATION
-    const settle = (1 - progress) * (1 - progress)
     const impactFrame = Math.max(0, 1 - progress / 0.3)
     const motionScale = this.reducedMotion.matches
       ? 0.35
@@ -834,11 +831,8 @@ export class Renderer {
         ? 0.78
         : 1
     const strength = this.attackImpactReactionStrength
-    const push = (0.055 + strength * 0.1) * settle * motionScale
     const group = this.charRig.group
 
-    group.position.x += Math.cos(this.attackImpactReactionAngle) * push
-    group.position.z += Math.sin(this.attackImpactReactionAngle) * push
     group.rotation.x -= impactFrame * strength * 0.035 * motionScale
     group.scale.x *= 1 + impactFrame * strength * 0.028 * motionScale
     group.scale.y *= 1 - impactFrame * strength * 0.042 * motionScale
@@ -1126,11 +1120,18 @@ export class Renderer {
     if (!discreteImpact) return
 
     const lethalLift = kill === null ? 0 : 1
-    this.impact.shake(
-      0.09 + strongestPower * 0.18 + lethalLift * 0.025,
-      0.18 + strongestPower * 0.13,
-      18 - strongestPower * 8,
-    )
+    const heavyImpact =
+      kill !== null ||
+      strongest.capped ||
+      world.casts.length > 0 ||
+      strongest.amount >= 48
+    if (heavyImpact) {
+      this.impact.shake(
+        0.09 + strongestPower * 0.18 + lethalLift * 0.025,
+        0.18 + strongestPower * 0.13,
+        18 - strongestPower * 8,
+      )
+    }
 
     // 기존 파티클 풀·드로우콜을 재사용한다. 제한 tier에서는 새 버스트를
     // 아예 요청하지 않아 기존 비용 상한을 그대로 지킨다.
@@ -1193,7 +1194,6 @@ export class Renderer {
 
     this.attackImpactReactionAt = now
     this.attackImpactReactionStrength = strongestPower
-    this.attackImpactReactionAngle = attackAngle
   }
 
   /** 실제 피해량과 대상 체급을 0..1의 연출 강도로 압축한다. */

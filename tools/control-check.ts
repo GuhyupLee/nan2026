@@ -593,6 +593,16 @@ for (const mode of ['instant', 'release'] as const) {
     }),
   )
   assert.equal(input.pointerHeld, true, 'click release keeps direction active')
+  assert.equal(
+    input.consumeMovementPointerUpdate(),
+    true,
+    'new click exposes one destination update',
+  )
+  assert.equal(
+    input.consumeMovementPointerUpdate(),
+    false,
+    'stationary click does not move its world destination with the camera',
+  )
 
   inputWindow.dispatch(
     'pointermove',
@@ -607,6 +617,11 @@ for (const mode of ['instant', 'release'] as const) {
   approx(input.pointerY, 600, 'hover continues updating aim y')
   approx(input.movementPointerX, 800, 'hover preserves movement anchor x')
   approx(input.movementPointerY, 200, 'hover preserves movement anchor y')
+  assert.equal(
+    input.consumeMovementPointerUpdate(),
+    false,
+    'hover aim cannot re-project the locked movement destination',
+  )
 
   const moving = idleAt(300, 600)
   applyPointerMove(input, moving, { x: 0, y: 0 }, { x: 8, y: 0 })
@@ -703,11 +718,11 @@ for (const mode of ['instant', 'release'] as const) {
   } as unknown as InputState
   const player = { x: 0, y: 0 }
 
-  const stopped = idleAt(0.4, 0)
+  const stopped = idleAt(0.3, 0)
   applyPointerMove(pointer, stopped, player)
   approx(Math.hypot(stopped.move.x, stopped.move.y), 0, 'arrival stop radius')
 
-  const eased = idleAt(1.5, 0)
+  const eased = idleAt(0.8, 0)
   applyPointerMove(pointer, eased, player)
   const easedMagnitude = Math.hypot(eased.move.x, eased.move.y)
   assert.ok(easedMagnitude > 0 && easedMagnitude < 1, 'arrival zone scales movement')
@@ -1130,6 +1145,51 @@ for (const mode of ['instant', 'release'] as const) {
   approx(damaged.player.vel.y, unhurt.player.vel.y, 'damage preserves velocity direction')
 }
 
+// Automatic basic attacks are also presentation-only with respect to movement.
+// Both classes must cover the same path as an idle control while repeatedly
+// hitting a stationary target.
+for (const playerClass of ['ranged', 'melee'] as const) {
+  const attacking = createWorld(9_016, playerClass)
+  const control = createWorld(9_016, playerClass)
+  for (const world of [attacking, control]) {
+    world.spawnEnabled = false
+  }
+  control.player.attackCooldown = Number.POSITIVE_INFINITY
+  const target = addTarget(attacking, 1.5, 0, 1_000_000)
+
+  const move = idleAt(10, 0)
+  move.move.y = 1
+  for (let tick = 0; tick < 90; tick += 1) {
+    stepWorld(attacking, move)
+    stepWorld(control, move)
+  }
+
+  assert.ok(
+    attacking.enemies.hp[target]! < 1_000_000,
+    `${playerClass} attack probe fired`,
+  )
+  approx(
+    attacking.player.pos.x,
+    control.player.pos.x,
+    `${playerClass} attacks preserve movement x`,
+  )
+  approx(
+    attacking.player.pos.y,
+    control.player.pos.y,
+    `${playerClass} attacks preserve movement y`,
+  )
+  approx(
+    attacking.player.vel.x,
+    control.player.vel.x,
+    `${playerClass} attacks preserve velocity x`,
+  )
+  approx(
+    attacking.player.vel.y,
+    control.player.vel.y,
+    `${playerClass} attacks preserve velocity y`,
+  )
+}
+
 console.log(
-  'control-check: targeting, locked aim, analog touch, FIFO, buffer, flash guards, dash immunity, W→F origin, Q volley, deferred Q cooldown, and damage-speed invariance ok',
+  'control-check: targeting, locked aim, destination clicks, analog touch, FIFO, buffer, flash guards, dash immunity, W→F origin, Q volley, deferred Q cooldown, and combat-speed invariance ok',
 )

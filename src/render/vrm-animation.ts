@@ -42,8 +42,8 @@ const BASIC_ATTACK_RECOVERY_START: Readonly<
  * 궁극기는 전신 실루엣이 중요해 가장 적게 남긴다.
  */
 const ACTION_LOCOMOTION_FLOOR: Readonly<Record<CharacterAction, number>> = {
-  attack: 0.5,
-  empowered: 0.46,
+  attack: 0.72,
+  empowered: 0.66,
   q: 0.38,
   w: 0.36,
   e: 0.34,

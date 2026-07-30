@@ -392,11 +392,13 @@ function frame(now: number): void {
       input.sample(simInput)
       // 조준점(월드 좌표)을 먼저 구해야 포인터 이동 방향을 계산할 수 있다.
       renderer.screenToGround(input.pointerX, input.pointerY, simInput.aim)
-      renderer.screenToGround(
-        input.movementPointerX,
-        input.movementPointerY,
-        pointerMoveTarget,
-      )
+      if (input.consumeMovementPointerUpdate()) {
+        renderer.screenToGround(
+          input.movementPointerX,
+          input.movementPointerY,
+          pointerMoveTarget,
+        )
+      }
       applyPointerMove(input, simInput, world.player.pos, pointerMoveTarget)
       if (input.hasSkillPointerAim) {
         renderer.screenToGround(

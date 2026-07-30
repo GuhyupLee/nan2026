@@ -24,8 +24,8 @@ const MOVEMENT_KEYS = new Set([
   'ArrowUp',
   'ArrowDown',
 ])
-const MOVE_STOP_RADIUS = 0.55
-const MOVE_SLOW_RADIUS = 2.6
+const MOVE_STOP_RADIUS = 0.32
+const MOVE_SLOW_RADIUS = 1.4
 // 112px 베이스와 48px 노브 안에서 노브가 정확히 가장자리까지 움직인다.
 const TOUCH_STICK_RADIUS = 32
 const TOUCH_STICK_DEADZONE = 8
@@ -88,6 +88,8 @@ export class InputState {
 
   private mousePointerId: number | null = null
   private mouseMoveActive = false
+  private movementPointerRevision = 0
+  private consumedMovementPointerRevision = 0
   private touchPointerId: number | null = null
   private touchOriginX = 0
   private touchOriginY = 0
@@ -176,6 +178,7 @@ export class InputState {
     this.pointerY = e.clientY
     this.movementPointerX = e.clientX
     this.movementPointerY = e.clientY
+    this.movementPointerRevision += 1
     this.mouseMoveActive = true
     this.pointerHeld = true
     this.hasActed = true
@@ -217,6 +220,7 @@ export class InputState {
     if (this.mousePointerId !== null && e.pointerId === this.mousePointerId) {
       this.movementPointerX = e.clientX
       this.movementPointerY = e.clientY
+      this.movementPointerRevision += 1
       this.mouseMoveActive = true
       this.pointerHeld = true
     }
@@ -388,6 +392,23 @@ export class InputState {
     if (this.touchPointerId !== null) return
     this.mouseMoveActive = false
     this.pointerHeld = false
+  }
+
+  /**
+   * Returns true exactly once for each new mouse movement command.
+   *
+   * The renderer must project that screen coordinate to the ground only when
+   * this changes. Re-projecting it every simulation tick makes the destination
+   * follow the camera instead of remaining at the clicked world position.
+   */
+  consumeMovementPointerUpdate(): boolean {
+    if (
+      this.movementPointerRevision === this.consumedMovementPointerRevision
+    ) {
+      return false
+    }
+    this.consumedMovementPointerRevision = this.movementPointerRevision
+    return true
   }
 
   get targetingSkill(): SkillId | null {
