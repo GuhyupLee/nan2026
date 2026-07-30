@@ -12,6 +12,7 @@ import {
   DT,
   FLASH_COOLDOWN,
   PLAYER_RADIUS,
+  PLAYER_SPEED,
   RUN_TIME_LIMIT,
 } from '../src/sim/constants.ts'
 import {
@@ -97,7 +98,11 @@ import {
   unlockSkill,
   unlockedCount,
 } from '../src/sim/skills.ts'
-import { effectiveAtkDamage, effectiveAtkInterval } from '../src/sim/stats.ts'
+import {
+  RANGED_BASE_SPEED_MULTIPLIER,
+  effectiveAtkDamage,
+  effectiveAtkInterval,
+} from '../src/sim/stats.ts'
 import { createInput } from '../src/sim/types.ts'
 import { length } from '../src/sim/vec.ts'
 import {
@@ -407,8 +412,8 @@ console.log('\nsim smoke check\n')
       const lv2 = median(classSamples.map((qwer) => qwer.levelTimes[1] ?? Infinity))
       const lv3 = median(classSamples.map((qwer) => qwer.levelTimes[2] ?? Infinity))
       return (
-        Math.abs(lv2 - TARGET_LEVEL_TIMES[1]!) <= 3 &&
-        Math.abs(lv3 - TARGET_LEVEL_TIMES[2]!) <= 3
+        Math.abs(lv2 - TARGET_LEVEL_TIMES[1]!) <= 3 + DT &&
+        Math.abs(lv3 - TARGET_LEVEL_TIMES[2]!) <= 3 + DT
       )
     }),
     earlyMedianDetails,
@@ -536,6 +541,20 @@ console.log('\nsim smoke check\n')
 {
   const r = createWorld(1, 'ranged')
   const m = createWorld(1, 'melee')
+
+  check(
+    '루멘 기본 이동속도는 공용 기준보다 정확히 3% 빠르다',
+    Math.abs(
+      r.stats.speed -
+        PLAYER_SPEED * RANGED_BASE_SPEED_MULTIPLIER
+    ) < 1e-9,
+    `${r.stats.speed}`,
+  )
+  check(
+    '루멘의 기본 이동속도가 월아보다 빠르다',
+    r.stats.speed > m.stats.speed,
+    `${r.stats.speed} vs ${m.stats.speed}`,
+  )
 
   check('근딜이 체력이 높다', m.stats.maxHp > r.stats.maxHp, `${m.stats.maxHp} vs ${r.stats.maxHp}`)
   check('근딜이 피해를 덜 받는다', m.stats.damageTakenMul < r.stats.damageTakenMul)

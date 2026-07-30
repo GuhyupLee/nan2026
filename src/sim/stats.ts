@@ -17,6 +17,9 @@ import {
 } from './constants.ts'
 import type { PlayerClass, RunMetaSnapshot } from './types.ts'
 
+/** Lumen's small baseline mobility buffer before account/meta multipliers. */
+export const RANGED_BASE_SPEED_MULTIPLIER = 1.03
+
 /**
  * 런타임 튜닝 상태 — 강화 카드가 건드리는 단일 진실 원천.
  *
@@ -136,7 +139,9 @@ export function createStats(
     // 근접은 더 높은 피해 감소와 회복으로 붙어서 버티고, 원거리는 거리와
     // 점등 처치 회복으로 위험을 관리한다.
     maxHp: (melee ? 130 : PLAYER_MAX_HP) + maxHpBonus,
-    speed: (melee ? 10.5 : PLAYER_SPEED) * speedMultiplier,
+    speed:
+      (melee ? 10.5 : PLAYER_SPEED * RANGED_BASE_SPEED_MULTIPLIER) *
+      speedMultiplier,
     radius: melee ? 0.62 : PLAYER_RADIUS,
     // 근접은 붙어 있는 것이 일이라 실제로 맞는 시간이 원거리보다 길다.
     // 원거리는 광도약 방향을 직접 골라 회피하므로, 내구는 월아보다 분명히

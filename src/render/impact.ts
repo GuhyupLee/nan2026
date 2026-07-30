@@ -33,6 +33,23 @@ import { MAX_ENEMIES } from '../sim/enemies.ts'
 const TRAUMA_MAX = 0.9
 
 /**
+ * Overlapping camera-shake requests share one strength budget. Repeated weak
+ * hits must not build up into a stronger shake than any individual event.
+ */
+export function coalesceShakeTrauma(
+  current: number,
+  requested: number,
+): number {
+  const safeCurrent = Number.isFinite(current)
+    ? THREE.MathUtils.clamp(current, 0, TRAUMA_MAX)
+    : 0
+  const safeRequested = Number.isFinite(requested)
+    ? THREE.MathUtils.clamp(requested, 0, TRAUMA_MAX)
+    : 0
+  return Math.max(safeCurrent, safeRequested)
+}
+
+/**
  * 세기 1일 때의 화면 이동량(월드 유닛).
  *
  * 카메라 거리 ≈ 17.7, FOV 40, 1080p 기준 1월드유닛 ≈ 82px이다.
@@ -434,7 +451,9 @@ export class ImpactFx {
     if (s <= 0) return
 
     const d = THREE.MathUtils.clamp(durationSec, 0.06, 1.2)
-    this.trauma = Math.min(TRAUMA_MAX, this.trauma + s)
+    const nextTrauma = coalesceShakeTrauma(this.trauma, s)
+    if (nextTrauma <= this.trauma) return
+    this.trauma = nextTrauma
 
     // 감쇠율은 "이 요청이 자기 몫을 d 안에 태우는" 속도. 더 긴 여운을 원하는
     // 쪽을 따른다 — 폭발 직후의 잔타가 폭발의 여운을 잘라내면 안 된다.

@@ -25,6 +25,10 @@ import { vrmActionPhaseSeconds } from './animation-data.ts'
 import { type ArenaArc, sampleArenaArc } from './arena.ts'
 import { createEnvironment, type EnvironmentVisual } from './env/environment.ts'
 import { BattlefieldPickupRenderer } from './battlefield-pickups.ts'
+import {
+  selectDeathCameraBeat,
+  shouldShakeDamageImpact,
+} from './combat-shake.ts'
 import { CombatReadabilityFx } from './combat-readability.ts'
 import {
   type CharacterRig,
@@ -880,11 +884,13 @@ export class Renderer {
       // 문구를 띄우지 않는다. 지면 초승 문양, 빛, 저주파 카메라 펀치가
       // 한 덩어리로 티어 상승을 말한다. 최상위도 보스 연출보다 작게 제한한다.
       const tier = cadenceBeat.tier
-      this.impact.shake(
-        0.18 + tier * 0.065,
-        0.24 + tier * 0.055,
-        11 - tier * 0.7,
-      )
+      if (world.playerClass === 'melee') {
+        this.impact.shake(
+          0.18 + tier * 0.065,
+          0.24 + tier * 0.055,
+          11 - tier * 0.7,
+        )
+      }
       this.post.flash(color, 0.07 + tier * 0.025, 0.18 + tier * 0.035)
       this.pulseBloom(1.32 + tier * 0.17)
     }
@@ -920,19 +926,21 @@ export class Renderer {
     }
     this.lastBossActive = world.boss.active
 
-    for (let i = 0; i < world.deaths.length; i++) {
-      const d = world.deaths[i]!
-      if (d.type === TYPE_BOSS) {
-        this.impact.shake(0.9, 1.1, 12)
-        this.post.flash(0xffffff, 0.5, 0.6)
-        this.pulseBloom(2.45)
-      } else if (d.type === TYPE_ELITE) {
-        this.impact.shake(0.52, 0.46, 9)
-        this.post.flash(0xe4bd70, 0.17, 0.3)
-        this.pulseBloom(1.78)
-      } else if (d.type === 2 && !bombPickupTriggered) {
-        this.impact.shake(0.2, 0.24)
-      }
+    const deathCameraBeat = selectDeathCameraBeat(
+      world.deaths,
+      world.playerClass,
+      bombPickupTriggered,
+    )
+    if (deathCameraBeat === 'boss') {
+      this.impact.shake(0.9, 1.1, 12)
+      this.post.flash(0xffffff, 0.5, 0.6)
+      this.pulseBloom(2.45)
+    } else if (deathCameraBeat === 'elite') {
+      this.impact.shake(0.52, 0.46, 9)
+      this.post.flash(0xe4bd70, 0.17, 0.3)
+      this.pulseBloom(1.78)
+    } else if (deathCameraBeat === 'brute') {
+      this.impact.shake(0.2, 0.24)
     }
 
     if (world.eliteBeatIndex > this.lastEliteBeatIndex) {
@@ -1120,11 +1128,11 @@ export class Renderer {
     if (!discreteImpact) return
 
     const lethalLift = kill === null ? 0 : 1
-    const heavyImpact =
-      kill !== null ||
-      strongest.capped ||
-      world.casts.length > 0 ||
-      strongest.amount >= 48
+    const heavyImpact = shouldShakeDamageImpact(
+      world.playerClass,
+      strongest,
+      kill !== null,
+    )
     if (heavyImpact) {
       this.impact.shake(
         0.09 + strongestPower * 0.18 + lethalLift * 0.025,
