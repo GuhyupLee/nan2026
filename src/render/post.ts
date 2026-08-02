@@ -107,7 +107,7 @@ const GRADE_SHADER = {
 }
 
 /**
- * 블룸 기본값. 전부 눈으로 맞췄다.
+ * 블룸 기본값.
  *
  * 처음에 strength 0.62 / radius 0.42 / threshold 0.9로 잡았더니 화면이 하얗게
  * 터졌다. 원인은 skillfx가 이미 발광 게인을 threshold 0.9를 넘도록 올려둔
@@ -115,20 +115,20 @@ const GRADE_SHADER = {
  * 블룸 쪽을 낮춘 이유는, 게인은 "후처리가 꺼진 저사양 경로"에서도 이펙트가
  * 보이게 하는 값이라 그쪽을 건드리면 off 품질에서 이펙트가 사라진다.
  *
- * radius를 오히려 키운 것도 의도다 — 세기를 줄이면서 반경을 넓히면 총 밝기는
- * 같아도 하얀 코어 대신 부드러운 번짐이 된다. 발광체가 "탔다"가 아니라
- * "빛난다"로 읽히는 지점이 여기다.
+ * 전투 중에는 여러 헤일로가 가산되어 단일 이펙트보다 훨씬 밝아진다. 코어의
+ * 색과 윤곽은 원본 렌더가 이미 보존하므로, bloom은 좁고 약한 보조광만 남긴다.
  */
 const BLOOM = {
-  // 0.30에서 한 번 더 내렸다. 뱀서라이크는 한 화면에 발광 이펙트가 열 개
-  // 넘게 동시에 살아 있는데, 헤일로는 서로 **합쳐진다**. 하나만 놓고 맞춘
-  // 값이 실제 전투에서는 화면 전체를 물들이는 안개가 됐다.
-  strength: 0.2,
-  // 반경도 같은 이유로 줄였다. 넓을수록 겹침이 심해진다.
-  radius: 0.4,
+  // 기존 0.2는 효과가 겹치는 후반 전투에서 화면 전체를 밝은 안개로 만들었다.
+  strength: 0.12,
+  // 넓은 헤일로보다 스킬 코어 가까이에만 짧은 빛을 남긴다.
+  radius: 0.24,
   /** 이 값을 넘는 선형 휘도만 번진다. 발광체만 걸리도록 높게 잡았다. */
-  threshold: 1.0,
+  threshold: 1.1,
 }
+
+const BLOOM_BOOST_MAX = 1.65
+const FLASH_COMFORT_SCALE = 0.58
 
 export class PostFx {
   private readonly gl: THREE.WebGLRenderer
@@ -255,11 +255,11 @@ export class PostFx {
    * 드로우콜과 오버드로가 늘어난다.
    */
   flash(color: number, strength: number, durationSec: number): void {
-    const motionScale = this.reducedMotion.matches ? 0.45 : 1
+    const motionScale = this.reducedMotion.matches ? 0.3 : FLASH_COMFORT_SCALE
     // 발광 강도는 틴트에도 곱한다. 피격 경고는 남아야 하므로 완전히 없애지
     // 않고, 화면 전체가 물드는 정도만 줄인다.
     strength *= motionScale * this.glowScale
-    durationSec *= this.reducedMotion.matches ? 0.6 : 1
+    durationSec *= this.reducedMotion.matches ? 0.42 : 0.75
     // 진행 중인 틴트보다 약하면 무시한다. 연타로 화면이 계속 물들면
     // 피격 경고가 배경이 되어 오히려 정보를 잃는다.
     const now = this.tintLeft > 0 ? (this.tintLeft / this.tintDur) * this.tintPeak : 0
@@ -272,7 +272,7 @@ export class PostFx {
 
   /** 궁극기 순간처럼 화면 전체가 밝아져야 할 때 블룸을 잠깐 키운다. */
   setBloomBoost(k: number): void {
-    this.bloomBoost = Math.max(0.2, Math.min(3, k))
+    this.bloomBoost = Math.max(0.2, Math.min(BLOOM_BOOST_MAX, k))
     this.applyBloomStrength()
   }
 
@@ -297,7 +297,7 @@ export class PostFx {
    */
   private applyAberration(): void {
     this.grade.uniforms.uAberration.value =
-      this.quality === 'low' ? 0 : 1.6 * this.glowScale
+      this.quality === 'low' ? 0 : 0.8 * this.glowScale
   }
 
   private applyBloomStrength(): void {

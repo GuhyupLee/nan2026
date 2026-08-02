@@ -24,7 +24,8 @@ const STORAGE_KEY = 'myeongwol.glow.v1'
 /** 최소 강도. 이보다 낮추면 전투 정보가 사라진다. */
 export const GLOW_MIN = 0.35
 export const GLOW_MAX = 1
-export const GLOW_DEFAULT = 1
+/** 전투 정보는 선명하게 남기면서 장시간 플레이의 눈부심을 줄인 기본값. */
+export const GLOW_DEFAULT = 0.65
 
 function clamp(value: number): number {
   if (!Number.isFinite(value)) return GLOW_DEFAULT
