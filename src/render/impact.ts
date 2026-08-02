@@ -26,11 +26,10 @@ import { MAX_ENEMIES } from '../sim/enemies.ts'
 /**
  * 트라우마 상한.
  *
- * 흔들림 세기는 trauma²이라 1.0을 허용하면 최대치에서 화면을 못 본다.
- * 0.9로 자르면 세기 상한이 0.81이 되어 "크게 흔들렸다"와 "조작 불가"
- * 사이에 머문다.
+ * 흔들림 세기는 trauma²이다. 전투 정보가 많은 화면에서는 큰 한 방도
+ * 조준점을 놓치지 않을 정도만 남겨야 하므로 0.7에서 제한한다.
  */
-const TRAUMA_MAX = 0.9
+const TRAUMA_MAX = 0.7
 
 /**
  * Overlapping camera-shake requests share one strength budget. Repeated weak
@@ -53,19 +52,18 @@ export function coalesceShakeTrauma(
  * 세기 1일 때의 화면 이동량(월드 유닛).
  *
  * 카메라 거리 ≈ 17.7, FOV 40, 1080p 기준 1월드유닛 ≈ 82px이다.
- * 0.42 × (트라우마 상한 0.81) ≈ 0.34유닛 ≈ 28px. 캐릭터 키가 약 140px이니
- * 최대 흔들림이 캐릭터의 1/5쯤 움직이는 셈 — 화면이 얻어맞은 것처럼 보이되
- * 조준은 계속 가능한 크기다.
+ * 품질 배율까지 적용한 최대 이동은 약 4px이다. 피격감은 남지만 연속 전투에서
+ * 지형과 조준점이 흔들려 보이지 않는 크기다.
  */
-const SHAKE_AMPLITUDE = 0.42
+const SHAKE_AMPLITUDE = 0.18
 
 /**
- * 최대 롤 각도(라디안). 1.26°.
+ * 최대 롤 각도(라디안). 품질 배율 적용 전 약 0.34°.
  *
  * 롤은 아주 조금만 넣어야 한다. 쿼터뷰는 바닥 격자가 화면을 지배해서
  * 회전이 즉시 눈에 띄고, 2°만 넘어가도 멀미가 온다.
  */
-const SHAKE_ROLL_MAX = 0.022
+const SHAKE_ROLL_MAX = 0.006
 
 /** 기본 진동수(Hz). 60fps에서 한 주기가 약 3프레임 — 흐려지지 않고 덜컹거린다. */
 const SHAKE_DEFAULT_FREQUENCY = 21
@@ -119,7 +117,7 @@ const GLYPH_OUTLINE_PX = 10
 const GLYPH_SHADOW_PX = 10
 
 /** 동시에 떠 있을 수 있는 숫자 개수와, 숫자 하나의 최대 글리프 수. */
-const MAX_NUMBERS = 32
+const MAX_NUMBERS = 20
 const NUMBER_MAX_DIGITS = 6
 const MAX_GLYPHS_PER_NUMBER = NUMBER_MAX_DIGITS + 1
 const MAX_GLYPHS = MAX_NUMBERS * MAX_GLYPHS_PER_NUMBER
@@ -130,11 +128,10 @@ const DAMAGE_NUMBER_RENDER_ORDER = 100
 /**
  * 기본 쿼드 한 변(월드 유닛).
  *
- * 84px 폰트의 대문자 높이는 셀의 약 0.46이다. 0.86 × 0.46 ≈ 0.40유닛,
- * 1080p에서 약 33px. 이 카메라에서 캐릭터가 140px인데 숫자가 33px이면
- * 읽히면서도 화면을 잡아먹지 않는다.
+ * 84px 폰트의 대문자 높이는 셀의 약 0.46이다. 일반 피해는 1080p에서
+ * 약 20px로 보인다. 치명타만 한 단계 크게 남겨 전투 결과의 우선순위를 만든다.
  */
-const NUMBER_QUAD = 0.86
+const NUMBER_QUAD = 0.64
 
 /**
  * 글자 간격(쿼드 크기 배수).
@@ -180,11 +177,51 @@ interface NumberStyleDef {
  * - xp:     옅은 하늘색 + 0.78배 + 낮은 알파. 정보량이 가장 적으니 가장 약하게.
  */
 const NUMBER_STYLES: Readonly<Record<DamageStyle, NumberStyleDef>> = {
-  normal: { color: 0xfff0dc, scale: 1, life: 0.72, rise: 1.25, punch: 0.2, drift: 0.32, alpha: 0.95 },
-  crit: { color: 0xffc24d, scale: 1.55, life: 0.95, rise: 1.7, punch: 0.6, drift: 0.5, alpha: 1 },
-  capped: { color: 0xc98cff, scale: 1.25, life: 0.9, rise: 1.55, punch: 0.4, drift: 0.4, alpha: 1 },
-  heal: { color: 0x7df0a0, scale: 1.1, life: 0.9, rise: 1.5, punch: 0.25, drift: 0.22, alpha: 1 },
-  xp: { color: 0x9fe8ff, scale: 0.78, life: 0.55, rise: 1, punch: 0.12, drift: 0.4, alpha: 0.75 },
+  normal: {
+    color: 0xfff0dc,
+    scale: 0.9,
+    life: 0.5,
+    rise: 0.86,
+    punch: 0.12,
+    drift: 0.2,
+    alpha: 0.88,
+  },
+  crit: {
+    color: 0xffc24d,
+    scale: 1.28,
+    life: 0.68,
+    rise: 1.12,
+    punch: 0.35,
+    drift: 0.32,
+    alpha: 0.96,
+  },
+  capped: {
+    color: 0xc98cff,
+    scale: 1.08,
+    life: 0.64,
+    rise: 1.02,
+    punch: 0.24,
+    drift: 0.28,
+    alpha: 0.96,
+  },
+  heal: {
+    color: 0x7df0a0,
+    scale: 0.94,
+    life: 0.62,
+    rise: 0.94,
+    punch: 0.16,
+    drift: 0.16,
+    alpha: 0.94,
+  },
+  xp: {
+    color: 0x9fe8ff,
+    scale: 0.68,
+    life: 0.42,
+    rise: 0.72,
+    punch: 0.08,
+    drift: 0.24,
+    alpha: 0.68,
+  },
 }
 
 /** 떠 있는 숫자 하나. 풀에서 재사용하므로 필드는 전부 미리 잡아 둔다. */

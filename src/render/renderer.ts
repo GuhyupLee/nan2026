@@ -75,7 +75,7 @@ const CAM_FOV = CAMERA_FOV_DEGREES
 
 /** 16:9보다 좁은 화면에서도 가로 전장 시야가 지나치게 잘리지 않게 한다. */
 /** 카메라 추적 반응 속도. 클수록 즉각적. */
-const CAM_FOLLOW = 14
+const CAM_FOLLOW = 24
 
 const BG_COLOR = 0x05070d
 
@@ -145,9 +145,9 @@ const targetingSolution: TargetingSolution = {
   snapped: false,
 }
 
-const PLAYER_HIT_REACTION_DURATION = 0.22
+const PLAYER_HIT_REACTION_DURATION = 0.16
 /** 실제 접촉 뒤 공격자에게만 남는 짧은 전진 관성·임팩트 포즈. */
-const ATTACK_IMPACT_REACTION_DURATION = 0.14
+const ATTACK_IMPACT_REACTION_DURATION = 0.1
 
 /**
  * 렌더러.
@@ -318,7 +318,12 @@ export class Renderer {
         this.impactParticles.burst(x, z, angle, color),
       onShake: (strength) => this.impact.shake(strength, 0.26),
     })
-    this.weaponTrail = new WeaponTrail(this.scene, { color: CLASS_COLORS[this.charClass] })
+    this.weaponTrail = new WeaponTrail(this.scene, {
+      color: CLASS_COLORS[this.charClass],
+      lifetime: 0.09,
+      width: 0.72,
+      intensity: 1.25,
+    })
     this.attachTrail()
 
     // 타기팅 프리뷰는 단위 지오메트리를 scale만 바꿔 재사용한다.
@@ -814,14 +819,14 @@ export class Renderer {
       (1 - progress * 0.28) *
       this.playerHitReactionStrength
     const motionScale = this.reducedMotion.matches ? 0.42 : 1
-    group.rotation.x -= pulse * 0.09 * motionScale
+    group.rotation.x -= pulse * 0.05 * motionScale
     group.rotation.z +=
-      pulse * 0.065 * this.playerHitReactionSide * motionScale
-    group.position.y -= pulse * 0.025 * motionScale
+      pulse * 0.035 * this.playerHitReactionSide * motionScale
+    group.position.y -= pulse * 0.014 * motionScale
     group.scale.set(
-      1 + pulse * 0.025 * motionScale,
-      1 - pulse * 0.045 * motionScale,
-      1 + pulse * 0.025 * motionScale,
+      1 + pulse * 0.014 * motionScale,
+      1 - pulse * 0.024 * motionScale,
+      1 + pulse * 0.014 * motionScale,
     )
   }
 
@@ -850,10 +855,10 @@ export class Renderer {
     const strength = this.attackImpactReactionStrength
     const group = this.charRig.group
 
-    group.rotation.x -= impactFrame * strength * 0.035 * motionScale
-    group.scale.x *= 1 + impactFrame * strength * 0.028 * motionScale
-    group.scale.y *= 1 - impactFrame * strength * 0.042 * motionScale
-    group.scale.z *= 1 + impactFrame * strength * 0.028 * motionScale
+    group.rotation.x -= impactFrame * strength * 0.022 * motionScale
+    group.scale.x *= 1 + impactFrame * strength * 0.018 * motionScale
+    group.scale.y *= 1 - impactFrame * strength * 0.026 * motionScale
+    group.scale.z *= 1 + impactFrame * strength * 0.018 * motionScale
   }
 
   /**
@@ -1350,7 +1355,7 @@ export class Renderer {
       Math.min(width, height) <= 700
     const nextPixelRatio = Math.min(window.devicePixelRatio || 1, nextConstrained ? 1.35 : 2)
     const nextShadowMapSize = nextConstrained ? 1024 : 2048
-    this.impact.setShakeScale(nextConstrained ? 0.6 : 1)
+    this.impact.setShakeScale(nextConstrained ? 0.38 : 0.55)
     this.impactParticles.setQuality(nextConstrained ? 0.45 : 1)
     this.killCrescendo.setQuality(nextConstrained ? 0.45 : 1)
     this.battlefieldPickupRenderer.setQuality(nextConstrained ? 0.45 : 1)
@@ -1524,10 +1529,10 @@ export class Renderer {
         startedAt + playerActionDuration(world.playerClass, action.kind)
     }
 
-    // 광역기는 한 틱에 수십 체를 때릴 수 있다. 기존 32개 숫자 풀을 지키면서
-    // 정예·보스 피드백을 먼저 보여주고 한 프레임 최대 8개만 넘긴다.
+    // 광역기는 한 틱에 수십 체를 때릴 수 있다. 20개 숫자 풀 안에서
+    // 정예·보스 피드백을 먼저 보여주고 한 프레임 최대 5개만 넘긴다.
     let damageNumbers = 0
-    for (let i = 0; i < world.damageFeedback.length && damageNumbers < 4; i++) {
+    for (let i = 0; i < world.damageFeedback.length && damageNumbers < 3; i++) {
       const hit = world.damageFeedback[i]!
       if (hit.enemyType !== TYPE_ELITE && hit.enemyType !== TYPE_BOSS) continue
       this.impact.popNumber(
@@ -1539,7 +1544,7 @@ export class Renderer {
       )
       damageNumbers += 1
     }
-    for (let i = 0; i < world.damageFeedback.length && damageNumbers < 8; i++) {
+    for (let i = 0; i < world.damageFeedback.length && damageNumbers < 5; i++) {
       const hit = world.damageFeedback[i]!
       if (hit.enemyType === TYPE_ELITE || hit.enemyType === TYPE_BOSS) continue
       this.impact.popNumber(
@@ -1564,7 +1569,11 @@ export class Renderer {
   private consumeWeaponTrailBursts(world: World): void {
     if (world.casts.length === 0 && world.attacks.length === 0) return
 
-    const motionScale = this.reducedMotion.matches ? 0.42 : this.constrained ? 0.72 : 1
+    const motionScale = this.reducedMotion.matches
+      ? 0.24
+      : this.constrained
+        ? 0.42
+        : 0.58
     for (let i = 0; i < world.casts.length; i++) {
       const slot = world.casts[i]!.slot
       if (slot !== 'q' && slot !== 'w' && slot !== 'e' && slot !== 'r') continue

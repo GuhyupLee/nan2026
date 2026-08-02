@@ -95,15 +95,15 @@ button {
 }
 
 .floatbar .lv {
-  min-width: 1.12rem;
-  height: 1.12rem;
-  padding: 0 0.18rem;
+  min-width: 1rem;
+  height: 1rem;
+  padding: 0 0.15rem;
   display: grid;
   place-items: center;
   border: var(--ui-hairline) solid #8b949f;
   color: #f4f5f6;
   background: #232933;
-  font-size: 0.6rem;
+  font-size: 0.52rem;
   font-weight: 780;
   line-height: 1;
   font-variant-numeric: tabular-nums;
@@ -112,8 +112,8 @@ button {
 
 .floatbar .track {
   position: relative;
-  width: 5.6rem;
-  height: 0.55rem;
+  width: 5.2rem;
+  height: 0.46rem;
   overflow: hidden;
   border: var(--ui-hairline) solid #59616d;
   background: #080b10;
@@ -130,7 +130,7 @@ button {
 }
 
 .floatbar .ghost {
-  background: #9f3947;
+  background: rgba(159, 57, 71, 0.58);
   /* transition을 걸지 않는다. hud.ts가 매 프레임 width를 직접 보간하는데
      CSS 지연 0.18s가 매번 갱신되어 만료되지 않으므로, 두 애니메이션이
      싸우다가 결국 아무 연출도 보이지 않게 된다. */

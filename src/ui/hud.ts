@@ -200,10 +200,13 @@ export class Hud {
     // 배경이 되므로, 읽을 만한 덩어리가 됐을 때만 가장자리를 짧게 울린다.
     if (p.hp < this.lastHp && !this.reducedMotion.matches) {
       this.pendingDamage += this.lastHp - p.hp
-      if (this.pendingDamage >= 5) {
+      if (this.pendingDamage >= 7) {
         this.damagePulse = Math.max(
           this.damagePulse,
-          Math.min(0.72, 0.24 + (this.pendingDamage / Math.max(1, s.maxHp)) * 2.4),
+          Math.min(
+            0.42,
+            0.14 + (this.pendingDamage / Math.max(1, s.maxHp)) * 1.45,
+          ),
         )
         this.pendingDamage = 0
       }
@@ -211,8 +214,8 @@ export class Hud {
       this.pendingDamage = 0
     }
     this.lastHp = p.hp
-    this.damagePulse = Math.max(0, this.damagePulse - dt * 1.7)
-    const criticalVignette = ratio <= 0.28 ? (0.28 - ratio) * 1.15 : 0
+    this.damagePulse = Math.max(0, this.damagePulse - dt * 3.6)
+    const criticalVignette = ratio <= 0.28 ? (0.28 - ratio) * 0.75 : 0
     const vignette = this.reducedMotion.matches
       ? criticalVignette
       : Math.max(criticalVignette, this.damagePulse)
@@ -231,10 +234,10 @@ export class Hud {
 
     this.fill.style.width = `${(ratio * 100).toFixed(1)}%`
 
-    // 붉은 잔상은 아래로만 천천히 따라가고, 회복할 때는 즉시 맞춘다.
-    // 얼마나 크게 맞았는지가 눈에 남는다.
+    // 붉은 잔상은 피격량만 짧게 보여 주고 빠르게 실제 체력에 합류한다.
+    // 오래 남겨 현재 체력으로 오해하게 만들지 않는다.
     if (ratio > this.ghostRatio) this.ghostRatio = ratio
-    else this.ghostRatio = Math.max(ratio, this.ghostRatio - dt * 0.5)
+    else this.ghostRatio = Math.max(ratio, this.ghostRatio - dt * 3.25)
     this.ghost.style.width = `${(this.ghostRatio * 100).toFixed(1)}%`
 
     this.floatBar.dataset.danger = ratio <= 0.25 ? 'crit' : ratio <= 0.5 ? 'warn' : 'ok'
